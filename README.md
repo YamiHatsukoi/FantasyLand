@@ -51,7 +51,12 @@ Trình duyệt (GitHub Pages)                         Supabase (gói Free)
 ### 1. Supabase
 
 1. Tạo project miễn phí tại <https://supabase.com>.
-2. Mở **SQL Editor**, dán toàn bộ nội dung [`supabase/schema.sql`](supabase/schema.sql) rồi bấm **Run**. File chạy lại nhiều lần cũng không sao.
+2. Mở **SQL Editor** và chạy lần lượt 3 file, mỗi file một query riêng (**New query** → dán **toàn bộ** nội dung → **Run**):
+   1. [`supabase/01_tables.sql`](supabase/01_tables.sql) — bảng, RLS, trigger băm mật khẩu
+   2. [`supabase/02_auth.sql`](supabase/02_auth.sql) — hàm đăng nhập
+   3. [`supabase/03_saves.sql`](supabase/03_saves.sql) — hàm tải/lưu game, đăng xuất
+
+   Mẹo: mở file trên GitHub, bấm nút **Copy raw file** (biểu tượng 📋) để chắc chắn copy đủ. Chạy lại nhiều lần cũng không sao.
 3. **Tạo tài khoản người chơi:** vào **Table Editor → players → Insert row**, điền `username` (3–32 ký tự) và `password` (gõ mật khẩu thường, sẽ tự được băm). Hoặc dùng SQL:
    ```sql
    insert into public.players (username, password) values ('tenban', 'matkhau123');
@@ -96,7 +101,7 @@ src/
   render/     sprite pixel (vẽ bằng dữ liệu ký tự), tile theo biome, camera bản đồ
   screens/    đăng nhập, Thánh Địa, Vực Sâu, chiến đấu, gamebook, đội hình, túi đồ
   net/        client Supabase RPC, quản lý lưu game
-supabase/schema.sql   bảng + RLS + hàm RPC
+supabase/0*.sql       bảng + RLS + hàm RPC (chạy theo thứ tự 01 → 03)
 tests/                vitest
 ```
 
