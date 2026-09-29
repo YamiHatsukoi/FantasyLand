@@ -65,7 +65,7 @@ export const ARCHETYPES = [
 ];
 export const BOSS_ARCHETYPES = ["ancient_treant", "sand_wyrm", "drowned_queen"];
 
-const ELEMENT_SKILL: Partial<Record<Element, string[]>> = {
+export const ELEMENT_SKILL: Partial<Record<Element, string[]>> = {
   fire: ["fire_breath", "wisp_fire"],
   ice: ["frost_breath", "frost_shard"],
   lightning: ["static_touch", "spark"],
@@ -78,7 +78,7 @@ const ELEMENT_SKILL: Partial<Record<Element, string[]>> = {
   arcane: ["magic_missile", "mana_burn"],
 };
 
-const WEAKNESS: Partial<Record<Element, Element>> = {
+export const WEAKNESS: Partial<Record<Element, Element>> = {
   fire: "water", ice: "fire", lightning: "earth", water: "lightning", earth: "wind",
   wind: "ice", light: "dark", dark: "light", poison: "fire", arcane: "dark",
 };

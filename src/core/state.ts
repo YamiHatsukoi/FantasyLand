@@ -3,7 +3,7 @@ import { PARTY_SIZE, costFor, type Cost, passiveSlotsFor, skillSlotsFor } from "
 import { CLASSES, COMPANIONS, classStats, xpForLevel } from "../data/classes";
 import { getItem, type EquipSlot, type MealBuff } from "../data/items";
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 export interface Character {
   id: string;
@@ -308,6 +308,16 @@ export function migrate(raw: unknown): GameState {
     g.npcs = {};
     g.tavern = { day: 0, offers: [] };
     g.report = [];
+  }
+  if ((g.v ?? 1) < 3) {
+    // v3: dungeon floors became 4x larger with new layouts — keep progress, reset exploration.
+    for (const fs of Object.values(g.floors ?? {})) {
+      fs.fog = "";
+      fs.done = [];
+      delete fs.px;
+      delete fs.py;
+    }
+    if (g.expedition) g.expedition.done = [];
   }
   g.v = SAVE_VERSION;
   for (const b of g.buildings) if (b.type === "farm" && !b.plot) b.plot = { soil: 0, watered: false };

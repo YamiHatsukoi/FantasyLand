@@ -56,7 +56,7 @@ export function getSettlement(floor: number, idx: number): Settlement {
   const rng = new Rng(hashString(`settle:${key}`));
   const score = floor / 6 + rng.next() * 1.2 - idx * 0.35;
   const size: SettlementSize = idx === 0 && floor <= 2 ? "village" : score < 0.8 ? "village" : score < 1.7 ? "town" : "city";
-  const words = SETTLEMENT_WORDS[def.biome] ?? SETTLEMENT_WORDS.forest;
+  const words = SETTLEMENT_WORDS[def.family] ?? SETTLEMENT_WORDS.forest;
   const name = `${rng.pick(SETTLEMENT_PREFIX[size])} ${words[(idx * 2 + floor) % words.length]}`;
   const shops: ShopKind[] = size === "village" ? ["general", rng.pick<ShopKind>(["seeds", "market", "apothecary"])]
     : size === "town" ? ["general", "smith", "apothecary", "seeds", rng.pick<ShopKind>(["tailor", "market"])]
@@ -68,7 +68,7 @@ export function getSettlement(floor: number, idx: number): Settlement {
     : size === "town"
       ? `Thị trấn tấp nập với chợ phiên, lò rèn và quán trọ. Lữ khách từ các tầng khác thường dừng chân ở đây.`
       : `Một thành phố thật sự dưới lòng Vực Sâu: tường đá, tháp canh, hàng chục cửa tiệm và hàng nghìn cư dân.`;
-  const s: Settlement = { id: key, floor, idx, name, size, biome: def.biome, shops, npcs, desc };
+  const s: Settlement = { id: key, floor, idx, name, size, biome: def.family, shops, npcs, desc };
   settlementCache.set(key, s);
   return s;
 }
@@ -386,7 +386,7 @@ export function questFor(g: GameState, npc: NpcDef): QuestInfo {
   const rewardItem = rng.pick(itemsWithShapes(TASTE[npc.job].shapes, 60 + npc.floor * 30).filter((i) => i.type !== "equip").concat(getItem("potion_hp2")));
   const reward = { gold, items: { [rewardItem.id]: kind === "boss" ? 3 : 1, ...(kind === "boss" ? { mana_crystal: 3 } : {}) } };
   if (kind === "fetch") {
-    const mats = BIOME_MATS[f.biome] ?? BIOME_MATS.forest;
+    const mats = BIOME_MATS[f.family] ?? BIOME_MATS.forest;
     const item = rng.pick([mats.wood, mats.stone, mats.herb, mats.fiber, mats.hide]);
     return { kind, item, n: rng.int(3, 6), start: 0, reward };
   }
@@ -511,7 +511,7 @@ export function tavernOffers(g: GameState): RecruitOffer[] {
   const offers: RecruitOffer[] = [];
   for (let i = 0; i < n; i++) {
     const floor = rng.int(1, Math.max(1, g.maxFloor));
-    const biome = getFloor(floor).biome;
+    const biome = getFloor(floor).family;
     const job = rng.pick<Job>(["adventurer", "mercenary", "hunter", "scholar", "priest", "guard", "herbalist", "bard"]);
     const npc = makeNpc(rng, `t${g.day}_${i}`, floor, { id: "tavern", name: "Quán Rượu Thánh Địa", biome }, job);
     const level = Math.max(1, heroLv - 3 + tav.level + rng.int(-1, 1));

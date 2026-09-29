@@ -316,7 +316,7 @@ function feedSettlers(g: GameState, lines: string[]): boolean {
 
 export function unlockedBiomeIds(g: GameState): string[] {
   const set = new Set<string>();
-  for (let f = 1; f <= Math.max(1, g.maxFloor); f++) set.add(getFloor(f).biome);
+  for (let f = 1; f <= Math.max(1, g.maxFloor); f++) set.add(getFloor(f).family);
   return [...set].filter((b) => BIOME_MATS[b]);
 }
 

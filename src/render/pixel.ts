@@ -1,5 +1,6 @@
 import { SPRITES } from "./sprites";
 import { tint } from "../data/enemies";
+import { creatureCanvas, parseCreature } from "./creatures";
 
 const cache = new Map<string, HTMLCanvasElement>();
 const urlCache = new Map<string, string>();
@@ -13,6 +14,8 @@ export function spriteCanvas(id: string, pal?: Record<string, string>): HTMLCanv
   const k = key(id, pal);
   const hit = cache.get(k);
   if (hit) return hit;
+  const cr = parseCreature(id);
+  if (cr) return creatureCanvas(cr);
   const def = SPRITES[id] ?? SPRITES.slime;
   const c = document.createElement("canvas");
   c.width = 16;
