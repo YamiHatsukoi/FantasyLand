@@ -31,8 +31,8 @@ export interface FloorMap {
   stairs: { x: number; y: number };
 }
 
-export const MAP_W = 72;
-export const MAP_H = 56;
+export const MAP_W = 144;
+export const MAP_H = 112;
 
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
 
@@ -51,8 +51,8 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
   const E = new Float32Array(w * h), M = new Float32Array(w * h), C = new Float32Array(w * h);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = idx(x, y);
-    E[i] = elev(x / 14, y / 14);
-    M[i] = moist(x / 10, y / 10);
+    E[i] = elev(x / 20, y / 20) * 0.8 + elev(x / 7 + 90, y / 7) * 0.2;
+    M[i] = moist(x / 12, y / 12);
     C[i] = clump(x / 4, y / 4) * 0.75 + elev(x / 7 + 40, y / 7) * 0.25;
   }
   const quant = (arr: Float32Array, q: number) => {
@@ -86,10 +86,11 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
   const start = { x: 5, y: Math.floor(h / 2) + rng.int(-8, 8) };
   const centers: { x: number; y: number }[] = [];
   const nReg = def.regions.length;
+  const cols = nReg > 6 ? 4 : 3;
   for (let i = 0; i < nReg; i++) {
-    const col = i % 3, row = Math.floor(i / 3);
-    const cx = Math.round(((col + 0.5) / 3) * (w - 16)) + 8 + rng.int(-5, 5);
-    const cy = Math.round(((row + 0.5) / Math.ceil(nReg / 3)) * (h - 14)) + 7 + rng.int(-4, 4);
+    const col = i % cols, row = Math.floor(i / cols);
+    const cx = Math.round(((col + 0.5) / cols) * (w - 20)) + 10 + rng.int(-6, 6);
+    const cy = Math.round(((row + 0.5) / Math.ceil(nReg / cols)) * (h - 18)) + 9 + rng.int(-5, 5);
     centers.push({ x: cx, y: cy });
   }
   const stairs = { x: w - 6, y: Math.floor(h / 2) + rng.int(-10, 10) };
@@ -97,7 +98,7 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
   // Carve winding roads so everything important is connected.
   const carve = (a: { x: number; y: number }, b: { x: number; y: number }) => {
     let x = a.x, y = a.y;
-    for (let guard = 0; guard < 600 && (x !== b.x || y !== b.y); guard++) {
+    for (let guard = 0; guard < 1600 && (x !== b.x || y !== b.y); guard++) {
       const dx = Math.sign(b.x - x), dy = Math.sign(b.y - y);
       if (dx && (!dy || rng.chance(0.55))) x += dx; else y += dy;
       if (rng.chance(0.18)) { const [jx, jy] = rng.pick(DIRS); x = Math.max(3, Math.min(w - 4, x + jx)); y = Math.max(3, Math.min(h - 4, y + jy)); }
@@ -112,7 +113,8 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
   };
   const order = [start, ...centers.slice().sort((a, b) => a.x - b.x), stairs];
   for (let i = 0; i < order.length - 1; i++) carve(order[i], order[i + 1]);
-  for (let i = 0; i < centers.length; i++) carve(centers[i], centers[(i + 3) % centers.length]);
+  for (let i = 0; i < centers.length; i++) carve(centers[i], centers[(i + cols) % centers.length]);
+  for (let i = 0; i < centers.length; i += 2) carve(centers[i], centers[(i + 1) % centers.length]);
   // clear a small plaza around key points
   for (const p of [start, stairs, ...centers]) {
     for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) {
@@ -139,7 +141,8 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
   }
   // Unreachable passable pockets become obstacles so the player never sees unreachable loot.
   for (let i = 0; i < w * h; i++) if (dist[i] < 0 && PASSABLE.has(tiles[i])) tiles[i] = T.OBSTACLE;
-  const maxDist = Math.max(...dist);
+  let maxDist = 1;
+  for (let i = 0; i < dist.length; i++) if (dist[i] > maxDist) maxDist = dist[i];
 
   // Regions (Voronoi on centres).
   const region = new Uint8Array(w * h);
@@ -167,21 +170,21 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
     return ent;
   };
   const near = (cx: number, cy: number, r: number, spacing = 2): { x: number; y: number } | null => {
-    for (let tries = 0; tries < 200; tries++) {
-      const rr = Math.min(r + Math.floor(tries / 20), 30);
+    for (let tries = 0; tries < 300; tries++) {
+      const rr = Math.min(r + Math.floor(tries / 20), 40);
       const x = cx + rng.int(-rr, rr), y = cy + rng.int(-rr, rr);
       if (free(x, y, spacing)) return { x, y };
     }
     return null;
   };
   const randomSpot = (minDist = 0, spacing = 2) => {
-    for (let tries = 0; tries < 500; tries++) {
+    for (let tries = 0; tries < 1500; tries++) {
       const x = rng.int(3, w - 4), y = rng.int(3, h - 4);
       if (free(x, y, spacing) && dist[idx(x, y)] >= minDist) return { x, y };
     }
     return null;
   };
-  const levelAt = (x: number, y: number) => def.levelBase + Math.floor((3.2 * dist[idx(x, y)]) / Math.max(1, maxDist));
+  const levelAt = (x: number, y: number) => def.levelBase + Math.floor((4.2 * dist[idx(x, y)]) / Math.max(1, maxDist));
 
   place({ kind: "portal", x: start.x, y: start.y, sprite: "portal" });
   occupied.add(idx(start.x + 1, start.y));
@@ -198,21 +201,21 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
     const p = randomSpot(8, 3);
     if (p) place({ kind: "random", x: p.x, y: p.y, sprite: "question" });
   }
-  for (const c of [centers[1], centers[Math.min(4, centers.length - 1)]]) {
+  for (const c of centers.filter((_, i) => i % 3 === 1)) {
     const p = near(c.x, c.y, 5);
     if (p) place({ kind: "camp", x: p.x, y: p.y, sprite: "campfire" });
   }
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 22; i++) {
     const p = randomSpot(10, 2);
     if (p) place({ kind: "chest", x: p.x, y: p.y, sprite: "chest" });
   }
-  for (let i = 0; i < 34; i++) {
+  for (let i = 0; i < 130; i++) {
     const p = randomSpot(3, 1);
     if (!p) continue;
     const n = rng.weighted(biome.nodes, (nd) => nd.w);
     place({ kind: "node", x: p.x, y: p.y, sprite: n.node, ref: n.item });
   }
-  for (let i = 0; i < 26; i++) {
+  for (let i = 0; i < 95; i++) {
     const p = randomSpot(9, 2);
     if (!p) continue;
     const group = rng.pick(def.groups);
@@ -255,7 +258,7 @@ export function encodeFog(fog: Uint8Array): string {
   return btoa(bin);
 }
 
-/** A* over passable tiles; returns the path excluding the start tile. */
+/** A* over passable tiles (binary heap); returns the path excluding the start tile. */
 export function findPath(
   map: { w: number; h: number },
   canWalk: (x: number, y: number) => boolean,
@@ -263,15 +266,47 @@ export function findPath(
 ): { x: number; y: number }[] | null {
   const w = map.w;
   const key = (x: number, y: number) => y * w + x;
-  const open: { k: number; f: number }[] = [{ k: key(sx, sy), f: 0 }];
+  const heapK: number[] = [], heapF: number[] = [];
+  const push = (k: number, f: number) => {
+    heapK.push(k); heapF.push(f);
+    let i = heapK.length - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (heapF[p] <= heapF[i]) break;
+      [heapK[p], heapK[i]] = [heapK[i], heapK[p]];
+      [heapF[p], heapF[i]] = [heapF[i], heapF[p]];
+      i = p;
+    }
+  };
+  const pop = () => {
+    const k = heapK[0];
+    const lk = heapK.pop()!, lf = heapF.pop()!;
+    if (heapK.length) {
+      heapK[0] = lk; heapF[0] = lf;
+      let i = 0;
+      for (;;) {
+        const l = i * 2 + 1, r = l + 1;
+        let m = i;
+        if (l < heapK.length && heapF[l] < heapF[m]) m = l;
+        if (r < heapK.length && heapF[r] < heapF[m]) m = r;
+        if (m === i) break;
+        [heapK[m], heapK[i]] = [heapK[i], heapK[m]];
+        [heapF[m], heapF[i]] = [heapF[i], heapF[m]];
+        i = m;
+      }
+    }
+    return k;
+  };
   const g = new Map<number, number>([[key(sx, sy), 0]]);
   const came = new Map<number, number>();
+  const closed = new Set<number>();
   const goal = key(tx, ty);
+  push(key(sx, sy), 0);
   let steps = 0;
-  while (open.length && steps++ < limit) {
-    let bi = 0;
-    for (let i = 1; i < open.length; i++) if (open[i].f < open[bi].f) bi = i;
-    const cur = open.splice(bi, 1)[0].k;
+  while (heapK.length && steps++ < limit) {
+    const cur = pop();
+    if (closed.has(cur)) continue;
+    closed.add(cur);
     if (cur === goal) {
       const path: { x: number; y: number }[] = [];
       let c = cur;
@@ -284,14 +319,15 @@ export function findPath(
     const cx = cur % w, cy = Math.floor(cur / w);
     for (const [dx, dy] of DIRS) {
       const nx = cx + dx, ny = cy + dy;
-      const nk = key(nx, ny);
-      if (nk !== goal && !canWalk(nx, ny)) continue;
       if (nx < 0 || ny < 0 || nx >= map.w || ny >= map.h) continue;
+      const nk = key(nx, ny);
+      if (closed.has(nk)) continue;
+      if (nk !== goal && !canWalk(nx, ny)) continue;
       const ng = g.get(cur)! + 1;
       if (ng < (g.get(nk) ?? Infinity)) {
         g.set(nk, ng);
         came.set(nk, cur);
-        open.push({ k: nk, f: ng + Math.abs(nx - tx) + Math.abs(ny - ty) });
+        push(nk, ng + Math.abs(nx - tx) + Math.abs(ny - ty));
       }
     }
   }

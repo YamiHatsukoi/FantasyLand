@@ -5,6 +5,7 @@ import { ENEMIES } from "../data/enemies";
 import { ITEM_LIST, getItem } from "../data/items";
 import { PLAYER_SKILLS } from "../data/skills";
 import { MapView } from "../render/mapview";
+import { drawParticles } from "../render/particles";
 import { spriteCanvas } from "../render/pixel";
 import { PASSABLE, T, tileSet } from "../render/tiles";
 import { RANDOM_EVENTS } from "../story";
@@ -219,7 +220,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     if (!fog[idx(tx, ty)]) return;
     const e = entityAt(tx, ty);
     if (e && Math.abs(e.x - player.x) + Math.abs(e.y - player.y) === 1) return tryStep(e.x, e.y);
-    const path = findPath(map, (x, y) => walkable(x, y) && fog[idx(x, y)] === 1, player.x, player.y, tx, ty, 6000);
+    const path = findPath(map, (x, y) => walkable(x, y) && fog[idx(x, y)] === 1, player.x, player.y, tx, ty, 25000);
     if (path) player.path = path;
   };
 
@@ -479,31 +480,78 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     c.fillStyle = "#000";
     c.fillRect(0, 0, view.w, view.h);
     const vr = view.visible();
-    const frame = Math.floor(t / 450) % 3;
+    const frame = Math.floor(t / 380) % 4;
     const inSight = (x: number, y: number) => (x - player.x) ** 2 + (y - player.y) ** 2 <= SIGHT * SIGHT + 2;
-    for (let y = vr.y0; y <= vr.y1; y++) {
+    const tileAt = (x: number, y: number) => (x < 0 || y < 0 || x >= map.w || y >= map.h ? T.WALL : map.tiles[idx(x, y)]);
+    const isLiquid = (tt: number) => tt === T.WATER || tt === T.SHALLOW;
+    const TL = view.tile;
+    const drawables: { y: number; fn: () => void }[] = [];
+    for (let y = vr.y0; y <= vr.y1 + 2; y++) {
       for (let x = vr.x0; x <= vr.x1; x++) {
         if (x < 0 || y < 0 || x >= map.w || y >= map.h) continue;
         const i = idx(x, y);
         if (!fog[i]) continue;
         const tt = map.tiles[i];
-        view.img(tt === T.WATER ? tiles.water[(frame + x + y) % 3] : tiles.tiles[tt][map.variant[i]], x, y);
-        if (!inSight(x, y)) {
-          c.fillStyle = "rgba(0,0,0,0.5)";
-          c.fillRect(view.sx(x), view.sy(y), view.tile, view.tile);
+        const v = map.variant[i];
+        if (y <= vr.y1) {
+          const img = tt === T.WATER ? tiles.water[(frame + x * 3 + y) % 4] : tt === T.OBSTACLE ? tiles.tiles[T.GROUND][v] : tiles.tiles[tt][v];
+          view.img(img, x, y);
+          const sx = view.sx(x), sy = view.sy(y);
+          if (tt === T.WATER) {
+            // foam where the liquid meets land
+            const edges: [number, number, number][] = [[0, -1, 0], [1, 0, 90], [0, 1, 180], [-1, 0, 270]];
+            for (const [dx, dy, rot] of edges) {
+              if (isLiquid(tileAt(x + dx, y + dy))) continue;
+              c.save();
+              c.translate(sx + TL / 2, sy + TL / 2);
+              c.rotate((rot * Math.PI) / 180);
+              c.drawImage(tiles.shore, -TL / 2, -TL / 2, TL, TL);
+              c.restore();
+            }
+          }
+          if (tt === T.ALT) {
+            const edges: [number, number, number][] = [[0, -1, 0], [1, 0, 90], [0, 1, 180], [-1, 0, 270]];
+            for (const [dx, dy, rot] of edges) {
+              const nt = tileAt(x + dx, y + dy);
+              if (nt !== T.GROUND && nt !== T.DECOR && nt !== T.OBSTACLE) continue;
+              c.save();
+              c.translate(sx + TL / 2, sy + TL / 2);
+              c.rotate((rot * Math.PI) / 180);
+              c.drawImage(tiles.edge, -TL / 2, -TL / 2, TL, TL);
+              c.restore();
+            }
+          }
+          if (tt === T.WALL && tileAt(x, y + 1) !== T.WALL) c.drawImage(tiles.wallFace, sx, sy + TL * 0.55, TL, TL * 0.45);
+          if (tt !== T.WALL && tileAt(x, y - 1) === T.WALL) { c.fillStyle = "rgba(0,0,0,.22)"; c.fillRect(sx, sy, TL, TL * 0.25); }
+        }
+        if (tt === T.OBSTACLE) {
+          const tall = tiles.tall[(v + x * 7 + y * 13) % tiles.tall.length];
+          const seen = inSight(x, y);
+          drawables.push({ y: y + 0.99, fn: () => view.img(tall, x, y, { h: 1.5, alpha: seen ? 1 : 0.55 }) });
         }
       }
     }
-
+    for (let y = vr.y0; y <= vr.y1; y++) for (let x = vr.x0; x <= vr.x1; x++) {
+      if (x < 0 || y < 0 || x >= map.w || y >= map.h || !fog[idx(x, y)] || inSight(x, y)) continue;
+      c.fillStyle = "rgba(0,0,0,0.45)";
+      c.fillRect(view.sx(x), view.sy(y), TL, TL);
+    }
     // entities
     const bob = (seed: number) => Math.sin(t / 260 + seed) * 0.06;
     for (const e of ents) {
       if (!alive(e) || !fog[idx(e.x, e.y)]) continue;
       if (e.x < vr.x0 - 1 || e.x > vr.x1 + 1 || e.y < vr.y0 - 1 || e.y > vr.y1 + 1) continue;
+      drawables.push({ y: e.py + (e.kind === "town" ? 1.2 : 1), fn: () => drawEntity(e) });
+    }
+    const drawEntity = (e: (typeof ents)[number]) => {
       const seen = inSight(e.x, e.y);
       if (e.kind === "monster") {
-        if (!seen) continue;
+        if (!seen) return;
         const ed = ENEMIES[e.group![0]];
+        c.fillStyle = "rgba(0,0,0,0.3)";
+        c.beginPath();
+        c.ellipse(view.sx(e.px) + TL / 2, view.sy(e.py) + TL * 0.92, TL * 0.3, TL * 0.09, 0, 0, Math.PI * 2);
+        c.fill();
         view.img(spriteCanvas(ed.sprite, ed.palette), e.px, e.py, { dy: bob(e.x) - 0.05, flip: player.x < e.x });
         if (e.group!.length > 1) {
           c.font = `bold ${Math.round(view.tile * 0.28)}px sans-serif`;
@@ -514,7 +562,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
           c.strokeText(`×${e.group!.length}`, tx, ty);
           c.fillText(`×${e.group!.length}`, tx, ty);
         }
-        continue;
+        return;
       }
       if (e.kind === "town") {
         const s = getSettlement(floorN, Number(e.ref ?? 0));
@@ -533,7 +581,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         const tw = c.measureText(s.name).width;
         c.strokeText(s.name, view.sx(e.x) + view.tile / 2 - tw / 2, view.sy(e.y) + view.tile * 1.25);
         c.fillText(s.name, view.sx(e.x) + view.tile / 2 - tw / 2, view.sy(e.y) + view.tile * 1.25);
-        continue;
+        return;
       }
       const sprite = e.kind === "guardian" ? "marker" : e.sprite;
       const scale = e.kind === "stairs" || e.kind === "portal" ? 1 : 0.9;
@@ -553,27 +601,35 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         c.arc(view.sx(e.x) + view.tile / 2, view.sy(e.y) + view.tile / 2, view.tile * 0.7, 0, Math.PI * 2);
         c.fill();
       }
-    }
+    };
 
-    // party (companions follow the trail)
-    const members = g.party.map((id) => g.chars[id]);
-    for (let i = members.length - 1; i >= 0; i--) {
-      const ch = members[i];
-      const pos = i === 0 ? { x: player.px, y: player.py } : trail[i * 1 - 1] ?? { x: player.px, y: player.py };
+    const drawMember = (ch: (typeof g.chars)[string], pos: { x: number; y: number }, i: number) => {
       c.fillStyle = "rgba(0,0,0,0.3)";
       c.beginPath();
       c.ellipse(view.sx(pos.x) + view.tile / 2, view.sy(pos.y) + view.tile * 0.92, view.tile * 0.28, view.tile * 0.09, 0, 0, Math.PI * 2);
       c.fill();
       const moving = i === 0 && Math.abs(player.px - player.x) + Math.abs(player.py - player.y) > 0.05;
       view.img(spriteCanvas(ch.sprite, ch.pal), pos.x, pos.y, { flip: player.flip, dy: moving ? -Math.abs(Math.sin(t / 70)) * 0.08 : 0, alpha: ch.hp <= 0 ? 0.4 : 1, scale: i === 0 ? 1 : 0.85 });
+    };
+
+    // party (companions follow the trail)
+    const members = g.party.map((id) => g.chars[id]);
+    for (let i = members.length - 1; i >= 0; i--) {
+      const ch = members[i];
+      const pos = i === 0 ? { x: player.px, y: player.py } : trail[i * 1 - 1] ?? { x: player.px, y: player.py };
+      drawables.push({ y: pos.y + 1 + (i === 0 ? 0.01 : 0), fn: () => drawMember(ch, pos, i) });
     }
+    drawables.sort((a, b) => a.y - b.y);
+    for (const d of drawables) d.fn();
+    drawParticles(c, biome.particles, view.w, view.h, t, view.camX, view.camY, TL);
 
     // lighting
     if (biome.night) {
       const cx = view.sx(player.px) + view.tile / 2, cy = view.sy(player.py) + view.tile / 2;
-      const grd = c.createRadialGradient(cx, cy, view.tile * 2, cx, cy, view.tile * (SIGHT + 1.5));
+      const grd = c.createRadialGradient(cx, cy, view.tile * 1.5, cx, cy, view.tile * (SIGHT + 1.5));
       grd.addColorStop(0, "rgba(0,0,0,0)");
-      grd.addColorStop(1, "rgba(0,0,10,0.72)");
+      grd.addColorStop(0.55, "rgba(0,0,12,0.35)");
+      grd.addColorStop(1, "rgba(0,0,12,0.78)");
       c.fillStyle = grd;
       c.fillRect(0, 0, view.w, view.h);
     } else {

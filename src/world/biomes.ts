@@ -1,10 +1,17 @@
-export type ObstacleKind =
-  | "tree" | "pine" | "cactus" | "rock" | "dead_tree" | "mangrove" | "crystal"
-  | "ice_spike" | "giant_mushroom" | "coral" | "bamboo" | "pillar" | "lava_rock" | "sakura" | "palm";
+/** Obstacle motif drawn as a tall sprite (see render/tiles.ts OBSTACLES for the full list). */
+export type ObstacleKind = string;
 
-export type DecorKind =
-  | "flowers" | "grass" | "pebbles" | "bones" | "reeds" | "snow" | "embers"
-  | "sparkles" | "leaves" | "shells" | "glow";
+/** Small ground decoration (see render/tiles.ts DECORS). */
+export type DecorKind = string;
+
+/** Texture pattern of walkable ground (see render/tiles.ts GROUNDS). */
+export type GroundPattern = string;
+
+/** What fills the "water" tiles. */
+export type LiquidKind = "water" | "lava" | "acid" | "void" | "tar" | "mercury" | "honey" | "blood" | "cloud" | "ink" | "light" | "sand";
+
+/** Screen-space weather/ambience particles. */
+export type ParticleKind = "none" | "snow" | "ash" | "spores" | "petals" | "rain" | "bubbles" | "stars" | "leaves" | "embers" | "dust" | "fireflies" | "motes" | "glyphs" | "feathers" | "sparks";
 
 export interface Biome {
   id: string;
@@ -14,9 +21,16 @@ export interface Biome {
   water: [string, string, string];
   wall: [string, string];
   obstacle: ObstacleKind;
+  /** Extra obstacle motifs mixed in with the main one. */
+  obstacles?: ObstacleKind[];
   obs: [string, string, string, string]; // dark, mid, light, trunk
   decor: DecorKind;
   decorColors: string[];
+  pattern?: GroundPattern;
+  liquid?: LiquidKind;
+  particles?: ParticleKind;
+  /** Light colour of the player's lantern / glowing things on dark floors. */
+  glow?: string;
   waterLevel: number;
   obstacleLevel: number;
   bg: [string, string];

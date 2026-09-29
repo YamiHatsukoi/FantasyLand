@@ -38,6 +38,7 @@ export const SPRITES: Record<string, SpriteDef> = {
   samira: human({ h: "#2a1a12", c: "#e0a040", b: "#b0302a", p: "#8a5a2a", s: "#c68a5a" }),
   morwen: human({ h: "#3a5a4a", c: "#2a4a3a", b: "#8be04e", p: "#1f2f2a", t: "#1f3a2e", s: "#d8e0c8" }, HAT),
   kaito: human({ h: "#1a1a1a", c: "#2a2a3a", b: "#d8b030", p: "#2a2a3a", s: "#e8c8a0" }),
+  hana: human({ h: "#1a1a2a", c: "#c83a3a", b: "#e8e0d0", p: "#3a3a4a", s: "#f2d0b0" }),
   villager: human({ h: "#8a6a4a", c: "#a0a060", b: "#6a5a3a", p: "#5a4a3a" }),
   nomad: human({ h: "#e8e0d0", c: "#d8c090", b: "#8a3a2a", p: "#a08060", s: "#b07a4a" }),
 

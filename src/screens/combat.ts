@@ -15,6 +15,7 @@ import { spriteURL } from "../render/pixel";
 import { T, tileSet } from "../render/tiles";
 import { giveToGame } from "../story/runner";
 import { BIOMES } from "../world/biomes";
+import { getFloor } from "../world/floors";
 import { bar, h, nn, sleep, toast } from "../ui/dom";
 
 const ENEMY_EL: Record<string, string> = {
@@ -58,10 +59,10 @@ function groundURL(biomeId: string): string {
   if (!url) {
     const set = tileSet(BIOMES[biomeId] ?? BIOMES.forest);
     const c = document.createElement("canvas");
-    c.width = 32;
-    c.height = 32;
+    c.width = 64;
+    c.height = 64;
     const g = c.getContext("2d")!;
-    [set.tiles[T.GROUND][0], set.tiles[T.GROUND][1], set.tiles[T.DECOR][1], set.tiles[T.GROUND][2]].forEach((t, i) => g.drawImage(t, (i % 2) * 16, Math.floor(i / 2) * 16));
+    [set.tiles[T.GROUND][0], set.tiles[T.GROUND][1], set.tiles[T.DECOR][1], set.tiles[T.GROUND][2]].forEach((t, i) => g.drawImage(t, (i % 2) * 32, Math.floor(i / 2) * 32));
     url = c.toDataURL();
     groundCache.set(biomeId, url);
   }
@@ -450,16 +451,17 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         if (!u.boss && rng.chance(0.04 + setup.floor * 0.004)) loot.mana_crystal = (loot.mana_crystal ?? 0) + 1;
         if (u.boss) loot.monster_core = (loot.monster_core ?? 0) + 1;
         // biome materials, essences and gear
-        const mats = BIOME_MATS[setup.biome];
+        const fam = getFloor(Math.max(1, setup.floor)).family;
+        const mats = BIOME_MATS[fam];
         if (mats && rng.chance(u.boss ? 1 : 0.3)) { const id = rng.pick([mats.hide, mats.fiber, mats.herb, mats.gem]); loot[id] = (loot[id] ?? 0) + (u.boss ? 3 : 1); }
-        const el = ENEMY_EL[setup.biome];
+        const el = ENEMY_EL[fam];
         if (el && ESSENCES[el] && rng.chance(u.boss ? 1 : 0.05)) loot[ESSENCES[el]] = (loot[ESSENCES[el]] ?? 0) + (u.boss ? 2 : 1);
         if (rng.chance(u.boss ? 0.8 : 0.025)) {
           const t = Math.min(12, metalTierForFloor(setup.floor) + (u.boss ? 1 : 0));
           const pool = ITEM_LIST.filter((i) => i.equip && i.tier === t && !i.tags?.includes("legendary"));
           if (pool.length) { const id = rng.pick(pool).id; loot[id] = (loot[id] ?? 0) + 1; }
         }
-        const legs = LEGENDARY_BY_BIOME[setup.biome];
+        const legs = LEGENDARY_BY_BIOME[fam];
         if (u.boss && legs?.length && rng.chance(0.35)) { const id = rng.pick(legs); loot[id] = (loot[id] ?? 0) + 1; }
       }
       g.stats.kills += enemies.length;

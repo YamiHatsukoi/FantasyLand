@@ -29,16 +29,28 @@ describe("floors", () => {
         const passable = (x: number, y: number) => x >= 0 && y >= 0 && x < m.w && y < m.h && PASSABLE.has(m.tiles[y * m.w + x]);
         const startX = m.start.x + 1;
         expect(passable(startX, m.start.y), `start floor ${n}`).toBe(true);
+        // flood fill once from the start instead of a path per entity
+        const seen = new Uint8Array(m.w * m.h);
+        const q = [m.start.y * m.w + startX];
+        seen[q[0]] = 1;
+        for (let k = 0; k < q.length; k++) {
+          const x = q[k] % m.w, y = Math.floor(q[k] / m.w);
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const nx = x + dx, ny = y + dy, ni = ny * m.w + nx;
+            if (passable(nx, ny) && !seen[ni]) { seen[ni] = 1; q.push(ni); }
+          }
+        }
         for (const e of m.entities) {
           if (e.kind === "portal") continue;
           expect(passable(e.x, e.y), `${n}/${seed} ${e.kind} on passable tile`).toBe(true);
-          const path = findPath(m, passable, startX, m.start.y, e.x, e.y, 20000);
-          expect(path, `${n}/${seed} ${e.kind} ${e.id} reachable`).not.toBeNull();
+          expect(seen[e.y * m.w + e.x], `${n}/${seed} ${e.kind} ${e.id} reachable`).toBe(1);
         }
+        const far = m.entities.find((e) => e.kind === "stairs")!;
+        expect(findPath(m, passable, startX, m.start.y, far.x, far.y, 40000), `${n}/${seed} stairs path`).not.toBeNull();
         expect(m.entities.filter((e) => e.kind === "event").length).toBe(getFloor(n).events.length);
       }
     }
-  });
+  }, 60000);
 });
 
 describe("story graph", () => {

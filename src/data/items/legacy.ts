@@ -20,4 +20,9 @@ I("soul_wax", "Sáp Linh Hồn", "material", 14, "Sáp từ những ngọn đèn
 I("pearl", "Ngọc Trai Đen", "material", 40, "Ngọc trai sinh ra từ nước mắt của vương quốc chìm.", "pearl", ["#3a3a4a", "#ffffff", "#ffffff"], { tier: 3, tags: ["swamp"], icon: "⚫" });
 I("mana_crystal", "Tinh Thể Ma Lực", "material", 25, "Ma lực kết tinh. Dùng để nghiên cứu kỹ năng.", "crystal", ["#5ab0ff", "#2a4a8a", "#d0f0ff"], { icon: "💎" });
 I("monster_core", "Lõi Quái Vật", "material", 30, "Trái tim kết tinh của quái vật mạnh.", "orb", ["#e83a3a", "#5a1a1a", "#ffffff"], { icon: "🔴" });
+I("garden_page", "Trang Sổ Tay Người Làm Vườn", "key", 0, "Một trang giấy cũ, nét chữ nghiêng nghiêng. Hana muốn đọc tất cả những trang như thế này.", "scroll", ["#e8dcc0", "#6a4a2a", "#3a8a3a"], { icon: "📄" });
+I("star_chart", "Bản Đồ Sao Của Hana", "key", 0, "Bầu trời của từng tầng, vẽ tay. Không có hai bầu trời nào giống nhau.", "book", ["#1a2a4a", "#ffe14a", "#ffffff"], { icon: "🗺️" });
+I("false_thorn", "Gai Giả Của Brakka", "key", 0, "Một chiếc gai đen thô kệch rèn ở Durgath. Đặt cạnh ngọn lửa, ngọn lửa ngừng lay động.", "thorn", ["#3a3a3a", "#6a6a6a", "#ff8a3a"], { icon: "🪡" });
+I("hana_notebook", "Sổ Tay Của Hana", "key", 0, "Cuốn sổ dày cộp của Hana: bản đồ sao, những trang Sổ Tay đã ghép, và dòng chữ cuối cùng bị bỏ dở.", "book", ["#c83a3a", "#e8e0d0", "#1a1a2a"], { icon: "📓" });
+I("kaito_seed", "Hạt Giống Của Kaito", "key", 0, "Một quả nhỏ vỏ cứng như gỗ. Kaito dặn: tới đáy rồi hãy trồng.", "seed", ["#6a4a2a", "#8ad86a", "#ffe8a0"], { icon: "🌰" });
 I("black_thorn", "Gai Đen", "key", 0, "Chiếc gai đen rút ra từ Boss Canh Cửa. Nó vẫn còn ấm, và dường như đang đập.", "thorn", ["#2a1a2a", "#5a2a5a", "#ff3a6a"], { icon: "🖤" });
