@@ -2,7 +2,8 @@
  * Thin client for the Supabase RPC functions defined in supabase/0*.sql.
  * Without configuration the game runs in offline mode (saves in localStorage).
  */
-const URL = ((import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? "").replace(/\/+$/, "");
+// Accept the project URL with or without a trailing "/rest/v1" or slash.
+const URL = ((import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? "").trim().replace(/\/+$/, "").replace(/\/rest\/v1$/, "");
 const KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) ?? "";
 
 export const ONLINE = Boolean(URL && KEY);
@@ -30,10 +31,22 @@ async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
   } catch {
     throw new ApiError("network", "Không kết nối được máy chủ.");
   }
-  if (!res.ok) throw new ApiError(`http_${res.status}`, `Máy chủ trả lỗi ${res.status}.`);
+  if (!res.ok) throw new ApiError(`http_${res.status}`, await describeHttpError(res, fn));
   const data = (await res.json()) as T & { error?: string };
   if (data && typeof data === "object" && "error" in data && data.error) throw new ApiError(data.error);
   return data;
+}
+
+/** Turns a PostgREST error response into an actionable Vietnamese message. */
+async function describeHttpError(res: Response, fn: string): Promise<string> {
+  let body: { code?: string; message?: string; hint?: string } = {};
+  try { body = (await res.json()) as typeof body; } catch { /* not JSON */ }
+  if (body.code === "PGRST202" || (res.status === 404 && body.message?.includes("function"))) {
+    return `Supabase chưa có hàm ${fn}. Hãy chạy lại 3 file trong thư mục supabase/ (SQL Editor), sau đó chạy: notify pgrst, 'reload schema';`;
+  }
+  if (res.status === 404) return "Máy chủ trả lỗi 404: SUPABASE_URL có vẻ sai (cần dạng https://xxxx.supabase.co).";
+  if (res.status === 401 || res.status === 403) return `Máy chủ từ chối truy cập (${res.status}): kiểm tra SUPABASE_ANON_KEY và quyền execute của hàm ${fn}.`;
+  return `Máy chủ trả lỗi ${res.status}${body.message ? `: ${body.message}` : "."}`;
 }
 
 export async function login(username: string, password: string): Promise<Session> {
