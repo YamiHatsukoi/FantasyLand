@@ -73,3 +73,8 @@ window.addEventListener("pagehide", () => void app.saver?.flush());
 const cached = cachedSession();
 if (cached) void startSession(cached);
 else showLogin();
+
+// Service worker makes the game installable as an app (Chrome Android "Install app").
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => { navigator.serviceWorker.register("./sw.js").catch(() => undefined); });
+}
