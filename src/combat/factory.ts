@@ -1,17 +1,25 @@
 import { charPassives, charStats, type Character } from "../core/state";
+import type { StatMods } from "./types";
 import { ENEMIES, type EnemyDef } from "../data/enemies";
 import type { Stats, Unit } from "./types";
 
-export function unitFromCharacter(ch: Character): Unit {
-  const base = charStats(ch);
+/** Builds a battle unit. `buffs` are party-wide fractions (meal, temple blessing); crit/eva are flat. */
+export function unitFromCharacter(ch: Character, buffs: StatMods = {}): Unit {
+  const raw = charStats(ch);
+  const base = { ...raw };
+  for (const [k, v] of Object.entries(buffs) as [keyof Stats, number][]) {
+    if (!v || !(k in base)) continue;
+    base[k] = k === "crit" || k === "eva" ? base[k] + v : Math.round(base[k] * (1 + v));
+  }
   return {
     uid: `a_${ch.id}`,
     side: "ally",
     name: ch.name,
     sprite: ch.sprite,
+    palette: ch.pal,
     level: ch.level,
     base,
-    hp: Math.min(ch.hp, base.hp),
+    hp: Math.min(ch.hp <= 0 ? 0 : ch.hp + Math.max(0, base.hp - raw.hp), base.hp),
     mp: Math.min(ch.mp, base.mp),
     statuses: [],
     skills: [...ch.equipped],

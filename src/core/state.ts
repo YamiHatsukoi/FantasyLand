@@ -1,9 +1,9 @@
-import type { Stats } from "../combat/types";
-import { BUILDINGS, type Cost, partySizeFor, passiveSlotsFor, skillSlotsFor } from "../data/buildings";
+import type { StatMods, Stats } from "../combat/types";
+import { PARTY_SIZE, costFor, type Cost, passiveSlotsFor, skillSlotsFor } from "../data/buildings";
 import { CLASSES, COMPANIONS, classStats, xpForLevel } from "../data/classes";
-import { getItem, type EquipSlot } from "../data/items";
+import { getItem, type EquipSlot, type MealBuff } from "../data/items";
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 export interface Character {
   id: string;
@@ -19,6 +19,9 @@ export interface Character {
   passives: string[];
   equippedPassives: string[];
   gear: Partial<Record<EquipSlot, string>>;
+  pal?: Record<string, string>; // palette override for generated recruits
+  origin?: string; // npc id this character was recruited from
+  bio?: string;
 }
 
 export interface PlacedBuilding {
@@ -27,7 +30,49 @@ export interface PlacedBuilding {
   x: number;
   y: number;
   level: number;
+  plot?: PlotState; // farm plots
+  slots?: PlotState[]; // greenhouse beds
+  /** @deprecated v1 save format */
   crop?: { id: string; planted: number };
+}
+
+export interface CropState {
+  id: string;
+  growth: number; // accumulated growth days
+  harvests: number;
+  perfect: boolean; // never went thirsty
+}
+
+export interface PlotState {
+  crop?: CropState;
+  soil: number; // 0..3
+  watered: boolean;
+}
+
+export type Weather = "sun" | "cloud" | "rain" | "storm" | "snow";
+
+/** What an NPC remembers about the player. */
+export interface NpcMemory {
+  aff: number; // affinity -100..100
+  talks: number;
+  lastDay: number;
+  giftDay: number;
+  seen: string[]; // dialogue line ids already said
+  mem: string[]; // memory tags
+  quest?: { id: string; stage: number; startDay: number };
+  questsDone: string[];
+  recruited?: boolean;
+}
+
+export interface RecruitOffer {
+  id: string;
+  name: string;
+  classId: string;
+  level: number;
+  price: number;
+  pal: Record<string, string>;
+  bio: string;
+  passive: string;
 }
 
 export interface FloorState {
@@ -45,6 +90,8 @@ export interface Expedition {
   bagGold: number;
   steps: number;
   done: string[]; // monsters / nodes / camps used during this run (they respawn next run)
+  blessing?: number; // temple blessing, fraction added to all stats
+  repel?: number; // steps left of monster repel
 }
 
 export interface GameState {
@@ -66,6 +113,12 @@ export interface GameState {
   learnedRecipes: string[];
   log: string[];
   stats: { battles: number; kills: number; deaths: number; steps: number };
+  settlers: number;
+  weather: Weather;
+  meal: MealBuff | null;
+  npcs: Record<string, NpcMemory>;
+  tavern: { day: number; offers: RecruitOffer[] };
+  report: string[];
 }
 
 export function newGame(heroName: string, classId: string, seed: number): GameState {
@@ -82,10 +135,13 @@ export function newGame(heroName: string, classId: string, seed: number): GameSt
     party: ["hero"],
     inventory: { seed_wheat: 6, seed_radish: 3, wood: 12, stone: 8, herb: 3, potion_hp: 3, bread: 2 },
     buildings: [
-      { id: "b_house", type: "house", x: 16, y: 16, level: 1 },
-      { id: "b_gate", type: "gate", x: 17, y: 13, level: 1 },
-      { id: "b_farm1", type: "farm", x: 20, y: 19, level: 1 },
-      { id: "b_farm2", type: "farm", x: 21, y: 19, level: 1 },
+      { id: "b_house", type: "house", x: 34, y: 34, level: 1 },
+      { id: "b_gate", type: "gate", x: 35, y: 31, level: 1 },
+      { id: "b_farm1", type: "farm", x: 38, y: 37, level: 1, plot: { soil: 0, watered: false } },
+      { id: "b_farm2", type: "farm", x: 39, y: 37, level: 1, plot: { soil: 0, watered: false } },
+      { id: "b_farm3", type: "farm", x: 38, y: 38, level: 1, plot: { soil: 0, watered: false } },
+      { id: "b_farm4", type: "farm", x: 39, y: 38, level: 1, plot: { soil: 0, watered: false } },
+      { id: "b_well", type: "well", x: 37, y: 39, level: 1 },
     ],
     territory: 0,
     flags: { seed: seed },
@@ -95,6 +151,12 @@ export function newGame(heroName: string, classId: string, seed: number): GameSt
     learnedRecipes: [],
     log: [],
     stats: { battles: 0, kills: 0, deaths: 0, steps: 0 },
+    settlers: 0,
+    weather: "sun",
+    meal: null,
+    npcs: {},
+    tavern: { day: 0, offers: [] },
+    report: [],
   };
 }
 
@@ -128,9 +190,18 @@ export function building(g: GameState, type: string) {
   return g.buildings.find((b) => b.type === type);
 }
 export const houseLevel = (g: GameState) => building(g, "house")?.level ?? 1;
-export const partySize = (g: GameState) => partySizeFor(houseLevel(g));
+export const partySize = (_g: GameState) => PARTY_SIZE;
 export const passiveSlots = (g: GameState) => passiveSlotsFor(houseLevel(g));
 export const skillSlots = (g: GameState) => skillSlotsFor(houseLevel(g));
+
+/** Party-wide buffs: meal eaten this expedition + temple blessing. */
+export function partyBuffs(g: GameState): StatMods {
+  const out: StatMods = {};
+  for (const [k, v] of Object.entries(g.meal?.mods ?? {})) out[k as keyof StatMods] = (out[k as keyof StatMods] ?? 0) + (v as number);
+  const bl = g.expedition?.blessing ?? 0;
+  if (bl) for (const k of ["hp", "atk", "mag", "def", "res", "spd"] as const) out[k] = (out[k] ?? 0) + bl;
+  return out;
+}
 
 /** Full stats of a character including gear. */
 export function charStats(ch: Character): Stats {
@@ -200,7 +271,7 @@ export function pay(g: GameState, cost: Cost): boolean {
 }
 
 export function buildingCost(type: string, level: number): Cost {
-  return BUILDINGS[type].cost[level] ?? {};
+  return costFor(type, level);
 }
 
 export function healParty(g: GameState) {
@@ -220,7 +291,32 @@ export function logMsg(g: GameState, msg: string) {
 export function migrate(raw: unknown): GameState {
   const g = raw as GameState;
   if (!g || typeof g !== "object" || !g.chars) throw new Error("Save không hợp lệ");
+  if ((g.v ?? 1) < 2) {
+    // v2: sanctuary world grew from 36x36 to 72x72 (centre 18 -> 36); farm plots gained soil/water state.
+    for (const b of g.buildings) {
+      b.x += 18;
+      b.y += 18;
+      if (b.type === "farm") {
+        b.plot = { soil: 0, watered: false };
+        if (b.crop) b.plot.crop = { id: b.crop.id, growth: Math.max(0, g.day - b.crop.planted), harvests: 0, perfect: false };
+        delete b.crop;
+      }
+    }
+    g.settlers = 0;
+    g.weather = "sun";
+    g.meal = null;
+    g.npcs = {};
+    g.tavern = { day: 0, offers: [] };
+    g.report = [];
+  }
   g.v = SAVE_VERSION;
+  for (const b of g.buildings) if (b.type === "farm" && !b.plot) b.plot = { soil: 0, watered: false };
+  g.npcs ??= {};
+  g.settlers ??= 0;
+  g.weather ??= "sun";
+  g.meal ??= null;
+  g.tavern ??= { day: 0, offers: [] };
+  g.report ??= [];
   g.log ??= [];
   g.stats ??= { battles: 0, kills: 0, deaths: 0, steps: 0 };
   g.learnedRecipes ??= [];

@@ -335,3 +335,32 @@ img.big-portrait { width: 72px; height: 72px; flex: none; background: rgba(0,0,0
 img.mini-portrait { width: 36px; height: 36px; flex: none; }
 .zoom { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); z-index: 5; display: flex; flex-direction: column; gap: 6px; }
 .hud-right { margin-left: auto; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+
+/* pixel item icons */
+img.iicon { width: 32px; height: 32px; image-rendering: pixelated; image-rendering: crisp-edges; flex: none; vertical-align: middle; }
+img.iicon.xs { width: 16px; height: 16px; margin: -2px 0; }
+img.iicon.lg { width: 48px; height: 48px; }
+.item-row .ico img.iicon { width: 32px; height: 32px; }
+.cost span { display: inline-flex; align-items: center; gap: 2px; }
+.loot-chip { display: inline-flex; align-items: center; gap: 3px; padding: 3px 8px; border-radius: 8px; background: var(--panel-2); font-size: 13px; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; margin-bottom: 10px; }
+.plot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; }
+.plot { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px; border-radius: 10px; border: 1px solid var(--line); background: #3a2a1a; cursor: pointer; font-size: 11px; text-align: center; }
+.plot.wet { background: #2a2014; box-shadow: inset 0 0 0 2px #3b8fd655; }
+.plot.ready { border-color: var(--gold); }
+.plot.sel { outline: 2px solid var(--gold); }
+.report { line-height: 1.6; font-size: 14px; }
+.report div { padding: 2px 0; border-bottom: 1px dashed var(--line); }
+.searchbar { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; flex-wrap: wrap; }
+.searchbar .input { flex: 1; min-width: 140px; padding: 6px 10px; font-size: 14px; }
+.cat-list { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 6px; }
+.cat-list button { flex: none; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: transparent; cursor: pointer; font-size: 12px; white-space: nowrap; }
+.cat-list button.on { border-color: var(--gold); color: var(--gold); background: var(--panel-2); }
+.npc-log { max-height: 34dvh; min-height: 120px; flex: none; margin: 8px 0; }
+.npc-line { padding: 3px 0; line-height: 1.5; }
+.npc-line.you { color: #9fd8ff; }
+.npc-line.sys { color: var(--gold); font-size: 12px; }
+.npc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.npc-card { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; text-align: left; font-size: 12px; }
+.npc-card img { width: 36px; height: 36px; flex: none; }
+.npc-card .nm { font-weight: 600; font-size: 13px; }

@@ -1,10 +1,11 @@
-import { BUILDINGS, TERRITORY_SIZES, farmLimitFor } from "../data/buildings";
+import { BUILDINGS, RANK_NAMES, TERRITORY_SIZES, farmLimitFor } from "../data/buildings";
 import type { GameState, PlacedBuilding } from "../core/state";
+import { rankOf } from "./town";
 
-export const SZ_W = 36;
-export const SZ_H = 36;
-export const SZ_C = 18;
-export const SPROUT = { x: 14, y: 17 };
+export const SZ_W = 72;
+export const SZ_H = 72;
+export const SZ_C = 36;
+export const SPROUT = { x: 32, y: 35 };
 
 export function territory(level: number) {
   const s = TERRITORY_SIZES[Math.min(level, TERRITORY_SIZES.length - 1)];
@@ -40,6 +41,7 @@ export function canPlace(g: GameState, type: string, x: number, y: number, ignor
 export function buildLimitReason(g: GameState, type: string): string | null {
   const def = BUILDINGS[type];
   const n = g.buildings.filter((b) => b.type === type).length;
+  if (def.rank > rankOf(g)) return `Cần khu định cư hạng ${RANK_NAMES[def.rank]}`;
   if (def.unique && n > 0) return "Đã xây";
   if (type === "farm" && n >= farmLimitFor(g.territory)) return `Tối đa ${farmLimitFor(g.territory)} ô ruộng (mở rộng lãnh địa để thêm)`;
   return null;

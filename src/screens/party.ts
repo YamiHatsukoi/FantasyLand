@@ -7,6 +7,7 @@ import { getPassive } from "../data/passives";
 import { SCHOOL_NAMES, getSkill } from "../data/skills";
 import { spriteImg } from "../render/pixel";
 import { bar, h, nn, openModal, toast, type ModalHandle } from "../ui/dom";
+import { itemImg } from "../ui/icon";
 
 const SLOT_NAMES: Record<EquipSlot, string> = { weapon: "Vũ khí", armor: "Giáp", accessory: "Trang sức" };
 const STAT_NAMES: Record<string, string> = { hp: "Máu", mp: "MP", atk: "Công", mag: "Phép", def: "Thủ", res: "Kháng", spd: "Tốc", crit: "Chí mạng", eva: "Né" };
@@ -25,7 +26,7 @@ export function openParty(opts: { inDungeon: boolean; onChange?: () => void; sel
 
 function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, select: (id: string) => void) {
   const g = app.game;
-  const ids = [g.heroId, ...Object.keys(g.chars).filter((id) => id !== g.heroId)];
+  const ids = [g.heroId, ...g.party.filter((id) => id !== g.heroId), ...Object.keys(g.chars).filter((id) => id !== g.heroId && !g.party.includes(id)).sort((a, b) => g.chars[b].level - g.chars[a].level)];
   const ch = g.chars[currentId] ?? g.chars[g.heroId];
   const cls = CLASSES[ch.classId];
   const s = charStats(ch);
@@ -35,7 +36,7 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
     const c = g.chars[id];
     const inParty = g.party.includes(id);
     return h("button", { class: `char-tab ${id === ch.id ? "on" : ""}`, onclick: () => select(id) },
-      spriteImg(c.sprite), h("div", null, c.name.split(" ")[0]), h("div", { class: "muted" }, `Lv${c.level}`),
+      spriteImg(c.sprite, c.pal), h("div", null, c.name.split(" ")[0]), h("div", { class: "muted" }, `Lv${c.level}`),
       h("span", { class: `badge ${inParty ? "" : "gray"}` }, inParty ? "Trong đội" : "Dự bị"));
   }));
 
@@ -45,17 +46,18 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
     disabled: inDungeon,
     onclick: () => {
       if (inParty) g.party = g.party.filter((x) => x !== ch.id);
-      else if (g.party.length >= partySize(g)) return toast(`Đội tối đa ${partySize(g)} người. Nâng cấp Nhà Chính để mở thêm chỗ.`, "bad");
+      else if (g.party.length >= partySize(g)) return toast(`Đội mang theo tối đa ${partySize(g)} người (bạn + ${partySize(g) - 1} đồng đội). Cho một người nghỉ trước.`, "bad");
       else g.party.push(ch.id);
       rerender();
     },
   }, inParty ? "Cho nghỉ" : "Đưa vào đội");
 
   const header = h("div", { class: "row", style: "align-items:flex-start;gap:12px" },
-    spriteImg(ch.sprite, undefined, "sprite big-portrait"),
+    spriteImg(ch.sprite, ch.pal, "sprite big-portrait"),
     h("div", { class: "grow col", style: "gap:4px" },
       h("div", { class: "row between" }, h("b", { style: "font-size:18px" }, ch.name), rosterBtn),
       h("div", { class: "muted small" }, `${cls.icon} ${cls.name} · Cấp ${ch.level} · ${cls.desc}`),
+      ch.bio ? h("div", { class: "small" }, ch.bio) : null,
       bar(ch.hp, s.hp, "hp big", `Máu ${ch.hp}/${s.hp}`),
       bar(ch.mp, s.mp, "mp big", `MP ${ch.mp}/${s.mp}`),
       bar(ch.xp, xpForLevel(ch.level), "xp big", `EXP ${ch.xp}/${xpForLevel(ch.level)}`),
@@ -72,7 +74,7 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
     const it = id ? getItem(id) : null;
     return h("button", { class: `slot ${it ? "filled" : ""}`, onclick: () => pickGear(ch, slot, rerender) },
       h("div", { class: "muted small" }, SLOT_NAMES[slot]),
-      it ? h("div", null, `${it.icon} ${it.name}`) : h("div", { class: "muted" }, "— trống —"),
+      it ? h("div", { class: "row", style: "gap:6px;flex-wrap:nowrap" }, itemImg(it.id), it.name) : h("div", { class: "muted" }, "— trống —"),
       it?.equip ? h("div", { class: "small good" }, statText(it.equip.stats), it.equip.passive ? ` · ✦ ${getPassive(it.equip.passive).name}` : "") : null);
   }));
 
@@ -125,7 +127,7 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
   const tomeList = tomes.length ? h("div", { class: "list" }, tomes.map((it) => {
     const known = it.skill ? ch.skills.includes(it.skill) : ch.passives.includes(it.passive!);
     return h("div", { class: "item-row" },
-      h("span", { class: "ico" }, it.icon),
+      h("span", { class: "ico" }, itemImg(it.id)),
       h("div", { class: "meta" }, h("div", { class: "name" }, it.name, h("span", { class: "qty" }, ` ×${g.inventory[it.id]}`)), h("div", { class: "desc" }, it.skill ? describeSkill(getSkill(it.skill)).join(" ") : it.desc)),
       h("button", {
         class: "btn small primary", disabled: known,
@@ -157,7 +159,7 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
 function pickGear(ch: Character, slot: EquipSlot, done: () => void) {
   const g = app.game;
   const m = openModal(`${SLOT_NAMES[slot]} — ${ch.name}`);
-  const items = Object.keys(g.inventory).map(getItem).filter((it) => it.equip?.slot === slot);
+  const items = Object.keys(g.inventory).map(getItem).filter((it) => it.equip?.slot === slot).sort((a, b) => (b.tier ?? 0) - (a.tier ?? 0) || b.value - a.value);
   const cur = ch.gear[slot];
   const list = h("div", { class: "list" });
   if (cur) {
@@ -175,8 +177,8 @@ function pickGear(ch: Character, slot: EquipSlot, done: () => void) {
         m.close();
         done();
       },
-    }, h("span", { class: "ico" }, it.icon),
-    h("div", { class: "meta" }, h("div", { class: "name" }, it.name, h("span", { class: "qty" }, ` ×${g.inventory[it.id]}`)),
+    }, h("span", { class: "ico" }, itemImg(it.id)),
+    h("div", { class: "meta" }, h("div", { class: "name" }, it.name, it.tier ? h("span", { class: "tag" }, `Bậc ${it.tier}`) : null, h("span", { class: "qty" }, ` ×${g.inventory[it.id]}`)),
       h("div", { class: "desc good" }, statText(it.equip!.stats), it.equip!.passive ? ` · ✦ ${getPassive(it.equip!.passive).name}: ${getPassive(it.equip!.passive).desc}` : ""))));
   }
   if (!items.length && !cur) list.append(h("p", { class: "muted" }, "Chưa có trang bị nào cho ô này. Hãy rèn ở Lò Rèn hoặc tìm trong Vực Sâu."));

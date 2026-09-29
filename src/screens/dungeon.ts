@@ -2,7 +2,7 @@ import { app, type Screen } from "../app";
 import { Rng, hashString } from "../core/rng";
 import { charStats, logMsg, removeItem, type FloorState, type GameState } from "../core/state";
 import { ENEMIES } from "../data/enemies";
-import { getItem } from "../data/items";
+import { ITEM_LIST, getItem } from "../data/items";
 import { PLAYER_SKILLS } from "../data/skills";
 import { MapView } from "../render/mapview";
 import { spriteCanvas } from "../render/pixel";
@@ -12,11 +12,14 @@ import { giveToGame, randomLoot } from "../story/runner";
 import type { BattleSpec } from "../story/types";
 import { BIOMES } from "../world/biomes";
 import { getFloor, type FloorDef } from "../world/floors";
+import { getSettlement } from "../world/people";
+import { buildingCanvas } from "../render/buildings";
+import { openSettlement } from "./settlement";
 import { decodeFog, encodeFog, findPath, generateFloor, type FloorMap, type MapEntity } from "../world/mapgen";
 import { confirmBox, h, nn, openModal, toast, topModalOpen } from "../ui/dom";
 import { runBattle, type BattleOutcome } from "./combat";
 import { openJournal, openMenu, partyMini, saveDot, showBanner } from "./common";
-import { openInventory } from "./inventory";
+import { openInventory, setFieldSpecial } from "./inventory";
 import { openParty } from "./party";
 import { playStory } from "./story";
 
@@ -44,7 +47,8 @@ export function ensureFloorState(g: GameState, n: number): { fs: FloorState; fre
 }
 
 export function startExpedition(g: GameState, floor: number) {
-  g.expedition = { floor, bag: {}, bagGold: 0, steps: 0, done: [] };
+  const temple = g.buildings.find((b) => b.type === "temple");
+  g.expedition = { floor, bag: {}, bagGold: 0, steps: 0, done: [], blessing: temple ? 0.03 * temple.level : 0 };
   const fs = g.floors[floor];
   if (fs) { delete fs.px; delete fs.py; }
   logMsg(g, `Xuống Vực Sâu — tầng ${floor}.`);
@@ -72,7 +76,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   const alive = (e: MapEntity) => {
     if (e.kind === "monster" || e.kind === "node" || e.kind === "camp") return !ex.done.includes(e.id);
     if (e.kind === "guardian") return !fs.cleared;
-    if (e.kind === "stairs" || e.kind === "portal") return true;
+    if (e.kind === "stairs" || e.kind === "portal" || e.kind === "town") return true;
     return !fs.done.includes(e.id);
   };
   const ents = map.entities.map((e) => ({ ...e, px: e.x, py: e.y, stun: 0 }));
@@ -178,6 +182,10 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   }
 
   function moveMonsters() {
+    if (ex.repel && ex.repel > 0) { ex.repel--; if (ex.repel === 0) toast("Hiệu lực xua quái đã hết.", "info"); }
+    const repelled = (ex.repel ?? 0) > 0;
+    const lure = (ex.repel ?? 0) < 0;
+    if (lure) { ex.repel = (ex.repel ?? 0) + 1; }
     for (const m of ents) {
       if (m.kind !== "monster" || !alive(m)) continue;
       if (m.stun > 0) { m.stun--; continue; }
@@ -185,7 +193,10 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
       const dist = Math.abs(dx) + Math.abs(dy);
       if (dist > 12) continue;
       let nx = m.x, ny = m.y;
-      if (dist <= 5 && fog[idx(m.x, m.y)] && rng.chance(0.6)) {
+      if (repelled && dist <= 6) {
+        // flee from the player
+        if (Math.abs(dx) > Math.abs(dy)) nx -= Math.sign(dx); else ny -= Math.sign(dy);
+      } else if ((dist <= 5 || (lure && dist <= 12)) && fog[idx(m.x, m.y)] && rng.chance(lure ? 0.9 : 0.6)) {
         if (Math.abs(dx) > Math.abs(dy)) nx += Math.sign(dx); else ny += Math.sign(dy);
         if (nx === player.x && ny === player.y) {
           void fightMonster(m, false);
@@ -263,7 +274,10 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
           const sk = rng.pick(pool);
           loot[`tome:${sk.id}`] = 1;
         }
-        if (rng.chance(0.4)) loot[rng.pick(["seed_wheat", "seed_radish", "seed_berry", "seed_herb", "seed_mushroom"])] = rng.int(1, 3);
+        if (rng.chance(0.45)) {
+          const seeds = ITEM_LIST.filter((i) => (i.type === "seed" || i.type === "sapling") && (i.tier ?? 1) <= 1 + Math.floor(floorN / 3));
+          loot[rng.pick(seeds).id] = rng.int(1, 3);
+        }
         const gold = rng.int(15, 35) * floorN;
         g.gold += gold;
         ex.bagGold += gold;
@@ -310,8 +324,15 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         updateHud();
         return savePos(true);
       }
+      case "town": {
+        player.path = [];
+        const s = getSettlement(floorN, Number(e.ref ?? 0));
+        if (!g.flags[`seen_town_${s.id}`]) { g.flags[`seen_town_${s.id}`] = true; showBanner(el, s.name, s.size === "village" ? "Làng" : s.size === "town" ? "Thị trấn" : "Thành phố"); }
+        openSettlement(s, () => { updateHud(); savePos(); });
+        return;
+      }
       case "stairs": {
-        if (!fs.cleared) return toast("🔒 Cầu thang bị phong ấn. Hãy đánh bại kẻ canh giữ tầng.", "bad");
+        if (!fs.cleared) return toast("🔒 Cầu thang bị phong ấn. Hãy đánh bại Boss Canh Cửa của tầng.", "bad");
         if (floorN >= 100) return toast("Đây là tầng sâu nhất... Trái Tim Vực Sâu vẫn đang chờ được viết tiếp.", "info", 5000);
         if (!(await confirmBox("Cầu Thang", `Xuống tầng ${floorN + 1}: ${getFloor(floorN + 1).name}?`, "Xuống"))) return;
         savePos(true);
@@ -323,10 +344,22 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         return hooks.changeFloor(floorN + 1);
       }
       case "portal": {
-        if (!(await confirmBox("Cổng Dịch Chuyển", "Trở về Thánh Địa? Toàn bộ chiến lợi phẩm sẽ được mang về an toàn.", "Trở về"))) return;
+        const choice = await portalMenu();
+        if (choice === null) return;
+        if (choice > 0) {
+          savePos(true);
+          ex.floor = choice;
+          const next = g.floors[choice];
+          if (next) { delete next.px; delete next.py; }
+          ex.done = [];
+          logMsg(g, `Dịch chuyển tới tầng ${choice}.`);
+          app.dirty(true);
+          return hooks.changeFloor(choice);
+        }
         savePos();
         const lines = bagLines();
         g.expedition = null;
+        g.meal = null;
         g.flags.tired = true;
         logMsg(g, `Trở về từ tầng ${floorN}.`);
         app.dirty(true);
@@ -335,6 +368,27 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         return;
       }
     }
+  }
+
+  /** Portal: go home (0), jump to another unlocked floor (n) or cancel (null). */
+  function portalMenu(): Promise<number | null> {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (v: number | null) => { if (!done) { done = true; resolve(v); } };
+      const m = openModal("🌀 Cổng Dịch Chuyển", { onClose: () => finish(null) });
+      const floors = h("div", { class: "list" });
+      for (let f = g.maxFloor; f >= 1; f--) {
+        if (f === floorN) continue;
+        const fd = getFloor(f);
+        floors.append(h("button", { class: "item-row", onclick: () => { finish(f); m.close(); } },
+          h("span", { class: "ico" }, g.floors[f]?.cleared ? "✅" : "🌀"),
+          h("div", { class: "meta" }, h("div", { class: "name" }, `Tầng ${f}: ${fd.name}`), h("div", { class: "desc" }, `Cấp quái ~${fd.levelBase}–${fd.levelBase + 4}`))));
+      }
+      m.body.append(
+        h("button", { class: "btn primary block", onclick: () => { finish(0); m.close(); } }, "🏡 Trở về Thánh Địa (mang theo toàn bộ chiến lợi phẩm)"),
+        h("div", { class: "section-title" }, "Dịch chuyển tới đầu tầng đã mở khoá"),
+        floors.children.length ? floors : h("p", { class: "muted" }, "Chưa mở khoá tầng nào khác."));
+    });
   }
 
   function bagLines() {
@@ -363,6 +417,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
       ch.hp = Math.max(1, Math.round(charStats(ch).hp * 0.2));
     }
     g.expedition = null;
+    g.meal = null;
     g.flags.tired = true;
     logMsg(g, voluntary ? `Thoát khẩn cấp khỏi tầng ${floorN}.` : `Gục ngã ở tầng ${floorN}.`);
     app.dirty(true);
@@ -383,7 +438,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
       c.fillStyle = col[map.tiles[idx(x, y)]];
       c.fillRect(x * s, y * s, s, s);
     }
-    const mark: Record<string, string> = { event: "#ffe14a", guardian: "#ff4a4a", stairs: "#c08aff", portal: "#6ab8ff", chest: "#f2a23a", camp: "#ff7a3a", random: "#8fd8ff" };
+    const mark: Record<string, string> = { town: "#ffffff", event: "#ffe14a", guardian: "#ff4a4a", stairs: "#c08aff", portal: "#6ab8ff", chest: "#f2a23a", camp: "#ff7a3a", random: "#8fd8ff" };
     for (const e of ents) {
       if (!alive(e) || !fog[idx(e.x, e.y)] || !mark[e.kind]) continue;
       c.fillStyle = mark[e.kind];
@@ -392,7 +447,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     c.fillStyle = "#fff";
     c.fillRect(player.x * s - 2, player.y * s - 2, s + 4, s + 4);
     const explored = fog.reduce((a, b) => a + b, 0);
-    m.body.append(cv, h("p", { class: "muted small" }, `Đã khám phá ${Math.round((explored / (map.w * map.h)) * 100)}%. ⬜ Bạn  🟨 Sự kiện  🟥 Kẻ canh giữ  🟪 Cầu thang  🟦 Cổng về  🟧 Rương/Lửa trại`),
+    m.body.append(cv, h("p", { class: "muted small" }, `Đã khám phá ${Math.round((explored / (map.w * map.h)) * 100)}%. ⬜ Bạn  🟨 Sự kiện  🟥 Boss Canh Cửa  🏘️(trắng) Làng/Thành phố  🟪 Cầu thang  🟦 Cổng về  🟧 Rương/Lửa trại`),
       h("div", { class: "col", style: "gap:3px" }, def.regions.map((r, i) => h("div", { class: "small" }, `${i === region ? "📍" : "·"} ${r}`))));
   }
 
@@ -461,6 +516,25 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         }
         continue;
       }
+      if (e.kind === "town") {
+        const s = getSettlement(floorN, Number(e.ref ?? 0));
+        const types = s.size === "village" ? ["cottage", "tent", "cottage"] : s.size === "town" ? ["stonehouse", "market", "cottage"] : ["manor", "apartment", "stonehouse"];
+        const offs = [[-1.2, -0.6], [0.9, -0.9], [-0.1, 0.1]];
+        types.forEach((t, k) => {
+          const cv = buildingCanvas(t, 1);
+          const bw = cv.width / 16, bh = cv.height / 16;
+          const sc = 0.62;
+          view.img(cv, e.x + offs[k][0] - (bw * sc - 1) / 2, e.y + offs[k][1] - (bh * sc - 1) + 0.4, { w: bw * sc, h: bh * sc, alpha: seen ? 1 : 0.7 });
+        });
+        c.font = `bold ${Math.round(view.tile * 0.3)}px sans-serif`;
+        c.fillStyle = "#fff";
+        c.strokeStyle = "#000";
+        c.lineWidth = 3;
+        const tw = c.measureText(s.name).width;
+        c.strokeText(s.name, view.sx(e.x) + view.tile / 2 - tw / 2, view.sy(e.y) + view.tile * 1.25);
+        c.fillText(s.name, view.sx(e.x) + view.tile / 2 - tw / 2, view.sy(e.y) + view.tile * 1.25);
+        continue;
+      }
       const sprite = e.kind === "guardian" ? "marker" : e.sprite;
       const scale = e.kind === "stairs" || e.kind === "portal" ? 1 : 0.9;
       const bounce = e.kind === "event" || e.kind === "random" || e.kind === "guardian" ? Math.abs(Math.sin(t / 300 + e.x)) * -0.18 : 0;
@@ -491,7 +565,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
       c.ellipse(view.sx(pos.x) + view.tile / 2, view.sy(pos.y) + view.tile * 0.92, view.tile * 0.28, view.tile * 0.09, 0, 0, Math.PI * 2);
       c.fill();
       const moving = i === 0 && Math.abs(player.px - player.x) + Math.abs(player.py - player.y) > 0.05;
-      view.img(spriteCanvas(ch.sprite), pos.x, pos.y, { flip: player.flip, dy: moving ? -Math.abs(Math.sin(t / 70)) * 0.08 : 0, alpha: ch.hp <= 0 ? 0.4 : 1, scale: i === 0 ? 1 : 0.85 });
+      view.img(spriteCanvas(ch.sprite, ch.pal), pos.x, pos.y, { flip: player.flip, dy: moving ? -Math.abs(Math.sin(t / 70)) * 0.08 : 0, alpha: ch.hp <= 0 ? 0.4 : 1, scale: i === 0 ? 1 : 0.85 });
     }
 
     // lighting
@@ -510,6 +584,33 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
       c.fillRect(0, 0, view.w, view.h);
     }
   };
+  setFieldSpecial((it) => {
+    const sp = it.use?.special;
+    if (busy) return false;
+    if (sp === "revealMap") {
+      for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) if (Math.hypot(x - player.x, y - player.y) < 22) fog[idx(x, y)] = 1;
+      toast("🗺️ Bản đồ vùng xung quanh hiện ra rõ ràng.", "good");
+      savePos();
+      return true;
+    }
+    if (sp === "repel") { ex.repel = 120; toast("✨ Quái vật sẽ tránh xa bạn trong 120 bước.", "good"); return true; }
+    if (sp === "lure") { ex.repel = -60; toast("🎺 Mùi hương dụ quái vật tới gần trong 60 bước!", "info"); return true; }
+    if (sp === "returnHome") {
+      setTimeout(() => {
+        savePos();
+        const lines = bagLines();
+        g.expedition = null;
+        g.meal = null;
+        g.flags.tired = true;
+        logMsg(g, `Dùng cuộn phép trở về từ tầng ${floorN}.`);
+        app.dirty(true);
+        hooks.toSafeZone();
+        showLoot("📜 Dịch chuyển về Thánh Địa", lines.length ? lines : ["Chuyến đi này không nhặt được gì."]);
+      }, 50);
+      return true;
+    }
+    return false;
+  });
   view.start();
   reveal();
   checkRegion();
@@ -524,6 +625,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   return {
     destroy: () => {
       destroyed = true;
+      setFieldSpecial(null);
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keyup", onKey);
       view.destroy();

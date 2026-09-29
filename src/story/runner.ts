@@ -171,7 +171,7 @@ export function applyEffect(e: Effect, ctx: StoryCtx): string[] {
     if (fs) fs.cleared = true;
     g.flags[`f${ctx.floor}_cleared`] = true;
     g.maxFloor = Math.max(g.maxFloor, Math.min(100, ctx.floor + 1));
-    logMsg(g, `Đánh bại kẻ canh giữ tầng ${ctx.floor}.`);
+    logMsg(g, `Đánh bại Boss Canh Cửa tầng ${ctx.floor}.`);
     return [`🔓 Mở đường xuống tầng ${ctx.floor + 1}`];
   }
   if ("setClass" in e) {
