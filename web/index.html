@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>FantasyLand</title>
+  <meta name="description" content="FantasyLand – trò chơi hành động nhỏ chạy trên trình duyệt.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚔️</text></svg>">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main id="wrap">
+    <canvas id="game" aria-label="FantasyLand game"></canvas>
+
+    <section id="menu" class="overlay">
+      <h1>FantasyLand</h1>
+      <p class="tagline">Bảo vệ khu rừng khỏi lũ quái vật!</p>
+      <button id="btn-play" class="btn primary">▶ Chơi</button>
+      <p class="help">
+        <b>WASD / ←↑↓→</b> di chuyển · <b>Chuột / Space</b> chém ·
+        <b>P</b> tạm dừng · <b>M</b> tắt tiếng<br>
+        Điện thoại: kéo nửa trái màn hình để đi, bấm ⚔ để chém.
+      </p>
+      <p class="rotate-hint">📱 Xoay ngang điện thoại để chơi thoải mái hơn.</p>
+      <div class="board">
+        <h2>🏆 Bảng xếp hạng</h2>
+        <ol id="board-menu"></ol>
+        <p class="board-status"></p>
+      </div>
+    </section>
+
+    <section id="pause" class="overlay hidden">
+      <h1>Tạm dừng</h1>
+      <button id="btn-resume" class="btn primary">Tiếp tục</button>
+      <button id="btn-quit" class="btn">Về menu</button>
+    </section>
+
+    <section id="gameover" class="overlay hidden">
+      <h1>Game Over</h1>
+      <p id="final" class="final"></p>
+      <form id="submit-form" class="submit">
+        <input id="name" maxlength="16" placeholder="Tên của bạn" autocomplete="nickname" required>
+        <button id="btn-submit" class="btn primary" type="submit">Lưu điểm</button>
+      </form>
+      <p id="submit-msg" class="msg"></p>
+      <div class="board">
+        <h2>🏆 Bảng xếp hạng</h2>
+        <ol id="board-over"></ol>
+        <p class="board-status"></p>
+      </div>
+      <div class="row">
+        <button id="btn-again" class="btn primary">↻ Chơi lại</button>
+        <button id="btn-menu" class="btn">Menu</button>
+      </div>
+    </section>
+
+    <button id="btn-attack" class="hidden" aria-label="Chém">⚔</button>
+    <button id="btn-mute" class="icon-btn" aria-label="Bật/tắt tiếng">🔊</button>
+  </main>
+
+  <script src="js/config.js"></script>
+  <script src="js/leaderboard.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
