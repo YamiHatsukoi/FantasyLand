@@ -15,7 +15,7 @@ export const GENERIC_GUARDIAN: StoryEvent = {
       ],
     },
     win: {
-      text: "Kẻ canh giữ gục ngã. Bạn rút chiếc Gai Đen ra — nó ấm nóng và đập chậm rãi, hoà cùng nhịp với những chiếc khác trong túi.\n\nCầu thang xuống tầng tiếp theo đã mở.",
+      text: "Boss Canh Cửa gục ngã. Bạn rút chiếc Gai Đen ra — nó ấm nóng và đập chậm rãi, hoà cùng nhịp với những chiếc khác trong túi.\n\nCầu thang xuống tầng tiếp theo đã mở.",
       fx: [{ give: { black_thorn: 1 } }, { clearFloor: true }, { xpF: 12 }, { goldF: 60 }],
     },
     done: { text: "Nơi này giờ im lặng. Cầu thang xuống tầng dưới ở ngay gần đây.", keep: true },
@@ -93,7 +93,7 @@ export const RANDOM_EVENTS: StoryEvent[] = [
       saved: {
         speaker: "Nhà thám hiểm",
         portrait: "villager",
-        text: "Cảm ơn... Tôi tưởng mình tiêu rồi. Nghe này — kẻ canh giữ tầng này sợ những đòn đánh vào điểm yếu nguyên tố của nó. Và đừng bao giờ ngủ gần một chiếc Gai Đen.\n\nCầm lấy cái này, coi như trả ơn.",
+        text: "Cảm ơn... Tôi tưởng mình tiêu rồi. Nghe này — Boss Canh Cửa tầng này sợ những đòn đánh vào điểm yếu nguyên tố của nó. Và đừng bao giờ ngủ gần một chiếc Gai Đen.\n\nCầm lấy cái này, coi như trả ơn.",
         fx: [{ goldF: 30 }, { loot: 2 }, { xpF: 4 }],
       },
     },

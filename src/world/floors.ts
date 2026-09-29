@@ -127,3 +127,10 @@ export function getFloor(n: number): FloorDef {
   cache.set(n, def);
   return def;
 }
+
+/** How many settlements (villages, towns, cities) a floor has. */
+export function settlementCount(n: number): number {
+  if (n <= 1) return 1;
+  if (n < 5) return 2;
+  return 2 + (n % 3 === 0 ? 1 : 0) + (n >= 20 && n % 2 === 0 ? 1 : 0);
+}

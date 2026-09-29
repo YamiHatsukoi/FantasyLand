@@ -6,15 +6,21 @@ import { unitFromCharacter, unitFromEnemy } from "../combat/factory";
 import { ELEMENTS, STATUSES } from "../combat/statuses";
 import type { BattleEvent, Eff, Skill, Unit } from "../combat/types";
 import { Rng } from "../core/rng";
-import { charStats, giveXp, logMsg } from "../core/state";
+import { charStats, giveXp, logMsg, partyBuffs } from "../core/state";
 import { ENEMIES } from "../data/enemies";
-import { getItem, type ItemDef } from "../data/items";
+import { BIOME_MATS, ESSENCES, ITEM_LIST, LEGENDARY_BY_BIOME, getItem, metalTierForFloor, type ItemDef } from "../data/items";
+import { iconURL } from "../render/icons";
 import { getSkill } from "../data/skills";
 import { spriteURL } from "../render/pixel";
 import { T, tileSet } from "../render/tiles";
 import { giveToGame } from "../story/runner";
 import { BIOMES } from "../world/biomes";
 import { bar, h, nn, sleep, toast } from "../ui/dom";
+
+const ENEMY_EL: Record<string, string> = {
+  forest: "earth", desert: "fire", swamp: "water", tundra: "ice", fungal: "poison", volcano: "fire", reef: "water", bamboo: "wind",
+  crystal: "arcane", autumn: "earth", ruins: "dark", sakura: "wind", bonewaste: "dark", jungle: "poison", glacier: "ice",
+};
 
 export interface BattleSetup {
   enemies: { id: string; level: number }[];
@@ -65,7 +71,8 @@ function groundURL(biomeId: string): string {
 export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   const g = app.game;
   const rng = new Rng(Date.now() & 0xffffffff);
-  const allies = g.party.map((id) => g.chars[id]).filter(Boolean).map(unitFromCharacter);
+  const buffs = partyBuffs(g);
+  const allies = g.party.map((id) => g.chars[id]).filter(Boolean).map((ch) => unitFromCharacter(ch, buffs));
   const enemies = setup.enemies.map((e, i) => unitFromEnemy(e.id, e.level, i));
   const battle = new Battle(allies, enemies, rng.int(1, 1e9));
   for (const e of setup.enemyFx ?? []) for (const u of enemies) battle.addStatus(u, e.s, e.t ?? 2, e.st ?? 1, 0);
@@ -103,7 +110,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     views.set(u.uid, { root, img, hp, st });
   }
   for (const u of allies) {
-    const img = h("img", { class: "sprite", src: spriteURL(u.sprite, undefined, 4), alt: u.name, draggable: false });
+    const img = h("img", { class: "sprite", src: spriteURL(u.sprite, u.palette, 4), alt: u.name, draggable: false });
     const hp = bar(u.hp, battle.maxHp(u), "hp", "");
     const mp = bar(u.mp, battle.maxMp(u), "mp", "");
     const st = h("div", { class: "statuses" });
@@ -297,7 +304,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   }
 
   function consumables(): ItemDef[] {
-    return Object.keys(g.inventory).map(getItem).filter((it) => it.use && (g.inventory[it.id] ?? 0) > 0);
+    return Object.keys(g.inventory).map(getItem).filter((it) => it.use && it.use.target !== "none" && it.use.battle !== false && !it.use.special && (g.inventory[it.id] ?? 0) > 0);
   }
 
   function renderPanel(actor: Unit) {
@@ -322,7 +329,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
       if (!list.length) grid.append(h("div", { class: "muted small" }, "Không có vật phẩm dùng được."));
       for (const it of list) {
         const btn = h("button", { class: `skill-btn ${selected?.kind === "item" && selected.it.id === it.id ? "sel" : ""}` },
-          h("span", { class: "ico" }, it.icon),
+          h("span", { class: "ico" }, h("img", { class: "pix iicon", src: iconURL(it.shape, it.col), alt: "" })),
           h("span", null, h("div", { class: "nm" }, it.name), h("div", { class: "cs" }, `×${g.inventory[it.id]}`)));
         btn.addEventListener("click", () => selectItem(actor, it));
         grid.append(btn);
@@ -442,6 +449,18 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         for (const d of def.drops) if (rng.next() < d.ch) loot[d.item] = (loot[d.item] ?? 0) + rng.int(d.min ?? 1, d.max ?? 1);
         if (!u.boss && rng.chance(0.04 + setup.floor * 0.004)) loot.mana_crystal = (loot.mana_crystal ?? 0) + 1;
         if (u.boss) loot.monster_core = (loot.monster_core ?? 0) + 1;
+        // biome materials, essences and gear
+        const mats = BIOME_MATS[setup.biome];
+        if (mats && rng.chance(u.boss ? 1 : 0.3)) { const id = rng.pick([mats.hide, mats.fiber, mats.herb, mats.gem]); loot[id] = (loot[id] ?? 0) + (u.boss ? 3 : 1); }
+        const el = ENEMY_EL[setup.biome];
+        if (el && ESSENCES[el] && rng.chance(u.boss ? 1 : 0.05)) loot[ESSENCES[el]] = (loot[ESSENCES[el]] ?? 0) + (u.boss ? 2 : 1);
+        if (rng.chance(u.boss ? 0.8 : 0.025)) {
+          const t = Math.min(12, metalTierForFloor(setup.floor) + (u.boss ? 1 : 0));
+          const pool = ITEM_LIST.filter((i) => i.equip && i.tier === t && !i.tags?.includes("legendary"));
+          if (pool.length) { const id = rng.pick(pool).id; loot[id] = (loot[id] ?? 0) + 1; }
+        }
+        const legs = LEGENDARY_BY_BIOME[setup.biome];
+        if (u.boss && legs?.length && rng.chance(0.35)) { const id = rng.pick(legs); loot[id] = (loot[id] ?? 0) + 1; }
       }
       g.stats.kills += enemies.length;
       g.gold += gold;

@@ -1,9 +1,9 @@
 import { Rng, makeNoise } from "../core/rng";
 import { PASSABLE, T, VARIANTS } from "../render/tiles";
 import { BIOMES } from "./biomes";
-import type { FloorDef } from "./floors";
+import { settlementCount, type FloorDef } from "./floors";
 
-export type EntityKind = "monster" | "node" | "event" | "random" | "chest" | "camp" | "stairs" | "portal" | "guardian";
+export type EntityKind = "monster" | "node" | "event" | "random" | "chest" | "camp" | "stairs" | "portal" | "guardian" | "town";
 
 export interface MapEntity {
   id: string;
@@ -217,6 +217,22 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
     if (!p) continue;
     const group = rng.pick(def.groups);
     place({ kind: "monster", x: p.x, y: p.y, sprite: "", group, level: levelAt(p.x, p.y) });
+  }
+
+  // Settlements are placed last (with their own RNG) so older saves keep the same entity ids.
+  const trng = new Rng(seed ^ 0x70a7);
+  const nTown = settlementCount(def.n);
+  for (let i = 0; i < nTown; i++) {
+    const c = centers[(i * 2 + 1) % centers.length];
+    let spot: { x: number; y: number } | null = null;
+    for (let tries = 0; tries < 300 && !spot; tries++) {
+      const r = 2 + Math.floor(tries / 25);
+      const x = c.x + trng.int(-r, r), y = c.y + trng.int(-r, r);
+      if (x > 4 && y > 4 && x < w - 5 && y < h - 5 && free(x, y, 2) && free(x, y + 1, 0)) spot = { x, y };
+    }
+    if (!spot) continue;
+    place({ kind: "town", x: spot.x, y: spot.y, sprite: "town", ref: String(i) });
+    occupied.add(idx(spot.x, spot.y + 1));
   }
 
   return { w, h, tiles, variant, region, regionCenters: centers, entities, start, stairs };

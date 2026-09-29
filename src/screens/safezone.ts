@@ -1,7 +1,8 @@
 import { app, type Screen } from "../app";
 import { hashString } from "../core/rng";
 import { buildingCost, canAfford, logMsg, pay, type PlacedBuilding } from "../core/state";
-import { BUILDINGS } from "../data/buildings";
+import { BUILDINGS, BUILDING_LIST, RANK_NAMES, type BuildingCategory } from "../data/buildings";
+import { SEASON_ICONS, SEASON_NAMES, seasonOf } from "../data/items";
 import { buildingCanvas, cropCanvas } from "../render/buildings";
 import { MapView } from "../render/mapview";
 import { spriteCanvas } from "../render/pixel";
@@ -10,18 +11,26 @@ import { BIOMES } from "../world/biomes";
 import { findPath } from "../world/mapgen";
 import { SPROUT, SZ_H, SZ_W, buildLimitReason, buildingAt, canPlace, inTerritory, territory } from "../world/sanctuary";
 import { h, openModal, toast, topModalOpen } from "../ui/dom";
-import { cropStage, costView, doSleep, openBuilding, setMoveHook } from "./buildingPanels";
+import { costView, openBuilding, setMoveHook, showReport } from "./buildingPanels";
+import { WEATHER, advanceDay, cropStage, ensureSlots, housing, isReady, population, rankName, rankOf } from "../world/town";
 import { openHelp, openJournal, openMenu, partyMini, saveDot, showBanner } from "./common";
 import { openInventory } from "./inventory";
 import { openParty } from "./party";
 
 const SPROUT_TIPS = [
   "Cậu đã gieo hạt chưa? Ngủ một giấc là cây lớn thêm một ngày đó!",
+  "Tưới nước mỗi ngày thì cây 'chăm sóc hoàn hảo' — lúc thu hoạch được gấp rưỡi! Ngày mưa thì trời tưới giùm.",
+  "Mỗi mùa kéo dài 7 ngày. Cây trồng trái mùa lớn rất chậm, trừ khi trồng trong Nhà Kính.",
+  "Bón phân làm đất màu mỡ hơn. Hố Ủ Phân biến cỏ rác và xương thành phân bón.",
+  "Trồng hai loại cây bố mẹ cạnh một ô trống... biết đâu có giống lai mọc lên đấy!",
+  "Dân cư sẽ dọn tới khi có chỗ ở và đủ lương thực. Họ làm việc ở Trại Đốn Gỗ, Mỏ Đá, Hầm Mỏ...",
+  "Thăng hạng Thánh Địa từ Trại lên Xóm, Làng, Thị Trấn, Thành Phố rồi Kinh Đô để mở khoá công trình lớn.",
+  "Ở Quán Rượu và các làng dưới Vực Sâu có rất nhiều người có thể chiêu mộ. Đội chỉ mang theo 3 người cùng cậu thôi.",
+  "Mỗi tầng có một Boss Canh Cửa. Đã hạ nó thì Cổng Vực Sâu có thể đưa cậu thẳng tới tầng đó.",
   "Bếp Lửa biến lúa thành bánh mì — món ăn hồi máu rất tốt khi xuống Vực Sâu.",
   "Phòng Giả Kim có thể làm Bình Nước Thánh. Tạt nước lên kẻ địch rồi dùng phép sét... Bùm! Điện Giật!",
   "Thư Viện Phép giúp cậu học kỹ năng mới bằng Tinh Thể Ma Lực. Kỹ năng ngoài sở trường thì đắt gấp đôi.",
-  "Nâng cấp Nhà Chính để có thêm chỗ trong đội. Một mình dưới đó nguy hiểm lắm!",
-  "Mỗi tầng Vực Sâu đều có một kẻ canh giữ. Đánh bại nó thì cầu thang mới mở.",
+  "Mỗi tầng Vực Sâu đều có một Boss Canh Cửa. Đánh bại nó thì cầu thang mới mở.",
   "Nếu cậu gục ngã dưới đó, tớ sẽ kéo cậu về... nhưng một nửa chiến lợi phẩm sẽ rơi mất.",
   "Tớ thích khi Thánh Địa rộng ra. Cảm giác như... được lớn lên vậy. Hì hì.",
 ];
@@ -35,7 +44,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   const tiles = tileSet(biome);
 
   // hero position
-  const hero = { x: 18, y: 20, px: 18, py: 20, path: [] as { x: number; y: number }[], t: 0, flip: false };
+  const hero = { x: 35, y: 37, px: 35, py: 37, path: [] as { x: number; y: number }[], t: 0, flip: false };
   view.camX = hero.x;
   view.camY = hero.y;
   let placing: { type: string; moving?: PlacedBuilding; x: number; y: number } | null = null;
@@ -45,7 +54,10 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   const gold = h("div", { class: "chip" });
   const party = partyMini();
   const updateHud = () => {
-    (title.lastChild as HTMLElement).textContent = `Ngày ${app.game.day} · Lãnh địa ${territory(app.game.territory).x1 - territory(app.game.territory).x0}×${territory(app.game.territory).x1 - territory(app.game.territory).x0}`;
+    const gg = app.game;
+    const s = seasonOf(gg.day);
+    (title.firstChild as Text).textContent = `${rankName(gg)} Thánh Địa`;
+    (title.lastChild as HTMLElement).textContent = `Ngày ${gg.day} · ${SEASON_ICONS[s]} ${SEASON_NAMES[s]} · ${WEATHER[gg.weather].icon} · 👥 ${population(gg)}/${Math.max(1, housing(gg))}`;
     gold.replaceChildren("💰 ", h("b", null, String(app.game.gold)), "  🖤 ", h("b", null, String(app.game.inventory.black_thorn ?? 0)), "  ", saveDot());
     party.update();
   };
@@ -74,10 +86,10 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   const openB = (b: PlacedBuilding) => openBuilding(b, {
     refresh: updateHud,
     sleep: () => {
-      const msgs = doSleep();
+      const rep = advanceDay(app.game);
       app.dirty(true);
       showBanner(el, `Ngày ${app.game.day}`, "Cả đội đã hồi phục hoàn toàn");
-      for (const m of msgs) toast(m, "good");
+      showReport(rep.lines, rep.gains);
       updateHud();
     },
     enterDungeon: (f) => hooks.enterDungeon(f),
@@ -85,23 +97,33 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   setMoveHook((b) => startPlacing(b.type, b));
 
   // ------------------------------------------------------------ building
+  let buildCat: BuildingCategory = "farm";
+  const CAT_NAMES: Record<BuildingCategory, string> = { core: "Cốt lõi", farm: "Nông trại", production: "Sản xuất", craft: "Chế tạo", housing: "Nhà ở", service: "Dịch vụ", decor: "Trang trí" };
   function openBuildMenu() {
     const m = openModal("🔨 Xây Dựng", { wide: true });
-    const list = h("div", { class: "list" });
-    for (const def of Object.values(BUILDINGS)) {
-      if (def.fixed) continue;
-      const limit = buildLimitReason(g, def.id);
-      const cost = buildingCost(def.id, 0);
-      const ok = !limit && canAfford(g, cost);
-      list.append(h("div", { class: `item-row ${limit ? "locked" : ""}` },
-        h("span", { class: "ico" }, def.icon),
-        h("div", { class: "meta" },
-          h("div", { class: "name" }, def.name, h("span", { class: "tag" }, `${def.size[0]}×${def.size[1]}`)),
-          h("div", { class: "desc" }, limit ?? def.desc),
-          limit ? null : costView(cost)),
-        h("button", { class: "btn small primary", disabled: !ok, onclick: () => { m.close(); startPlacing(def.id); } }, "Chọn")));
-    }
-    m.body.append(h("p", { class: "muted small", style: "margin-top:0" }, "Chọn công trình rồi chạm vào vị trí muốn đặt trên bản đồ. Kéo để di chuyển camera."), list);
+    const render = () => {
+      const rank = rankOf(g);
+      const list = h("div", { class: "list" });
+      for (const def of BUILDING_LIST.filter((d) => d.category === buildCat && !d.fixed)) {
+        const limit = buildLimitReason(g, def.id);
+        const cost = buildingCost(def.id, 0);
+        const ok = !limit && canAfford(g, cost);
+        const n = g.buildings.filter((b) => b.type === def.id).length;
+        list.append(h("div", { class: `item-row ${limit ? "locked" : ""}` },
+          h("span", { class: "ico" }, def.icon),
+          h("div", { class: "meta" },
+            h("div", { class: "name" }, def.name, h("span", { class: "tag" }, `${def.size[0]}×${def.size[1]}`), def.rank > 1 ? h("span", { class: "tag" }, RANK_NAMES[def.rank]) : null, n ? h("span", { class: "tag" }, `đã có ${n}`) : null),
+            h("div", { class: "desc" }, def.desc),
+            limit ? h("div", { class: "desc bad" }, limit) : costView(cost)),
+          h("button", { class: "btn small primary", disabled: !ok, onclick: () => { m.close(); startPlacing(def.id); } }, "Chọn")));
+      }
+      m.body.replaceChildren(
+        h("p", { class: "muted small", style: "margin-top:0" }, `Hạng hiện tại: ${RANK_NAMES[rank]}. Chọn công trình rồi chạm vào vị trí muốn đặt trên bản đồ.`),
+        h("div", { class: "cat-list" }, (Object.keys(CAT_NAMES) as BuildingCategory[]).filter((c) => c !== "core").map((c) =>
+          h("button", { class: c === buildCat ? "on" : "", onclick: () => { buildCat = c; render(); } }, CAT_NAMES[c]))),
+        list);
+    };
+    render();
   }
 
   function startPlacing(type: string, moving?: PlacedBuilding) {
@@ -136,7 +158,10 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
       const limit = buildLimitReason(g, p.type);
       if (limit) { toast(limit, "bad"); return stopPlacing(); }
       if (!pay(g, buildingCost(p.type, 0))) { toast("Không đủ nguyên liệu.", "bad"); return stopPlacing(); }
-      g.buildings.push({ id: `b_${Date.now().toString(36)}`, type: p.type, x: p.x, y: p.y, level: 1 });
+      const nb: PlacedBuilding = { id: `b_${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`, type: p.type, x: p.x, y: p.y, level: 1 };
+      if (p.type === "farm") nb.plot = { soil: 0, watered: false };
+      if (p.type === "greenhouse") ensureSlots(nb);
+      g.buildings.push(nb);
       logMsg(g, `Xây ${BUILDINGS[p.type].name}.`);
       toast(`Đã xây ${BUILDINGS[p.type].name}!`, "good");
     }
@@ -254,10 +279,14 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
       if (placing?.moving === b) continue;
       draw.push({ y: b.y + bh, fn: () => {
         view.img(buildingCanvas(b.type, b.level), b.x, b.y - 1, { w: bw, h: bh + 1 });
-        if (b.type === "farm" && b.crop) {
-          const st = cropStage(b);
-          view.img(cropCanvas(b.crop.id, st), b.x, b.y);
-          if (st === 3) { c.font = `${Math.round(view.tile * 0.4)}px sans-serif`; c.fillText("✨", view.sx(b.x) + view.tile * 0.55, view.sy(b.y) + view.tile * 0.3 + Math.sin(t / 300) * 3); }
+        if (b.type === "farm" && b.plot?.watered) {
+          c.fillStyle = "rgba(20,30,60,0.28)";
+          c.fillRect(view.sx(b.x) + view.tile * 0.06, view.sy(b.y) + view.tile * 0.06, view.tile * 0.88, view.tile * 0.88);
+        }
+        if (b.type === "farm" && b.plot?.crop) {
+          const st = cropStage(b.plot.crop);
+          view.img(cropCanvas(b.plot.crop.id, st), b.x, b.y);
+          if (st === 3 && isReady(b.plot.crop)) { c.font = `${Math.round(view.tile * 0.4)}px sans-serif`; c.fillText("✨", view.sx(b.x) + view.tile * 0.55, view.sy(b.y) + view.tile * 0.3 + Math.sin(t / 300) * 3); }
         }
         if (b.type === "gate") {
           c.fillStyle = `rgba(176,138,255,${0.18 + Math.sin(t / 400) * 0.08})`;
