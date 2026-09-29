@@ -1,0 +1,12 @@
+import { getFloor } from "../src/world/floors";
+import { generateFloor } from "../src/world/mapgen";
+const n = Number(process.argv[2] ?? 1);
+const m = generateFloor(getFloor(n), 12345 + n);
+const ch = [".", ",", "'", "T", "~", "-", "#"];
+const grid = [...Array(m.h)].map((_, y) => [...Array(m.w)].map((_, x) => ch[m.tiles[y * m.w + x]]));
+const mk: Record<string, string> = { monster: "M", node: "n", event: "!", random: "?", chest: "$", camp: "C", stairs: ">", portal: "P", guardian: "G" };
+for (const e of m.entities) grid[e.y][e.x] = mk[e.kind];
+console.log(grid.map((r) => r.join("")).join("\n"));
+const counts: Record<string, number> = {};
+for (const t of m.tiles) counts[ch[t]] = (counts[ch[t]] ?? 0) + 1;
+console.log(counts, m.entities.length);

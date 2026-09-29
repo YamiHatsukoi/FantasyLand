@@ -1,0 +1,140 @@
+import { describe, expect, it } from "vitest";
+import { chooseAction } from "../src/combat/ai";
+import { describeSkill } from "../src/combat/describe";
+import { Battle } from "../src/combat/engine";
+import { unitFromCharacter, unitFromEnemy } from "../src/combat/factory";
+import { STATUSES } from "../src/combat/statuses";
+import type { Unit } from "../src/combat/types";
+import { makeCharacter } from "../src/core/state";
+import { ENEMIES } from "../src/data/enemies";
+import { PASSIVES } from "../src/data/passives";
+import { PLAYER_SKILLS, SKILLS } from "../src/data/skills";
+
+function dummy(side: "ally" | "enemy", uid: string, over: Partial<Unit> = {}): Unit {
+  return {
+    uid, side, name: uid, sprite: "slime", level: 1,
+    base: { hp: 1000, mp: 100, atk: 50, mag: 50, def: 0, res: 0, spd: 100, crit: 0, eva: 0 },
+    hp: 1000, mp: 100, statuses: [], skills: [], passives: [], cooldowns: {}, av: 0, tags: [], resist: {},
+    ...over,
+  };
+}
+
+describe("data integrity", () => {
+  it("has hundreds of skills and valid references", () => {
+    expect(Object.keys(SKILLS).length).toBeGreaterThanOrEqual(180);
+    expect(PLAYER_SKILLS.length).toBeGreaterThanOrEqual(140);
+    for (const sk of Object.values(SKILLS)) {
+      for (const e of [...(sk.fx ?? []), ...(sk.self ?? [])]) expect(STATUSES[e.s], `${sk.id}:${e.s}`).toBeTruthy();
+      expect(describeSkill(sk).length, sk.id).toBeGreaterThan(0);
+    }
+    for (const en of Object.values(ENEMIES)) {
+      for (const s of en.skills) expect(SKILLS[s], `${en.id}:${s}`).toBeTruthy();
+      for (const p of en.passives) expect(PASSIVES[p], `${en.id}:${p}`).toBeTruthy();
+    }
+  });
+});
+
+describe("elemental reactions", () => {
+  it("lightning on a wet target electrocutes (bonus damage + stun)", () => {
+    const a = dummy("ally", "a", { skills: ["spark"] });
+    const e = dummy("enemy", "e");
+    const b = new Battle([a], [e], 1);
+    b.addStatus(e, "wet", 2, 1, 0, a);
+    b.act(a, { skill: "spark", target: "e" });
+    const ev = b.drainEvents();
+    expect(ev.some((x) => x.t === "reaction" && x.name === "Điện Giật")).toBe(true);
+    expect(b.has(e, "stun")).toBeTruthy();
+    expect(b.has(e, "wet")).toBeFalsy();
+  });
+
+  it("three chill stacks freeze, physical hits shatter", () => {
+    const a = dummy("ally", "a");
+    const e = dummy("enemy", "e");
+    const b = new Battle([a], [e], 2);
+    b.addStatus(e, "chill", 3, 3, 0, a);
+    expect(b.has(e, "frozen")).toBeTruthy();
+    const before = e.hp;
+    b.act(a, { skill: "attack", target: "e" });
+    const shattered = before - e.hp;
+    expect(b.has(e, "frozen")).toBeFalsy();
+    const e2 = dummy("enemy", "e2");
+    const b2 = new Battle([dummy("ally", "a2")], [e2], 2);
+    b2.act(b2.allies[0], { skill: "attack", target: "e2" });
+    expect(shattered).toBeGreaterThan((1000 - e2.hp) * 1.6);
+  });
+
+  it("fire on oil explodes and splashes", () => {
+    const a = dummy("ally", "a");
+    const e1 = dummy("enemy", "e1"), e2 = dummy("enemy", "e2");
+    const b = new Battle([a], [e1, e2], 3);
+    b.addStatus(e1, "oil", 3, 1, 0, a);
+    b.act(a, { skill: "fire_bolt", target: "e1" });
+    expect(e2.hp).toBeLessThan(1000);
+    expect(b.drainEvents().some((x) => x.t === "reaction" && x.name === "Nổ Dầu")).toBe(true);
+  });
+
+  it("consume skills detonate stacks", () => {
+    const a = dummy("ally", "a");
+    const e = dummy("enemy", "e");
+    const b = new Battle([a], [e], 4);
+    b.addStatus(e, "bleed", 3, 5, 10, a);
+    b.act(a, { skill: "hemorrhage", target: "e" });
+    expect(b.has(e, "bleed")).toBeFalsy();
+    expect(1000 - e.hp).toBeGreaterThan(100);
+  });
+
+  it("stun skips the turn and expires", () => {
+    const a = dummy("ally", "a", { base: { hp: 1000, mp: 100, atk: 50, mag: 50, def: 0, res: 0, spd: 200, crit: 0, eva: 0 } });
+    const e = dummy("enemy", "e");
+    const b = new Battle([a], [e], 5);
+    b.addStatus(e, "stun", 1, 1, 0, a);
+    const seen: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      const u = b.nextTurn();
+      if (!u) break;
+      seen.push(u.uid);
+      b.act(u, { skill: "defend" });
+    }
+    expect(b.drainEvents().some((x) => x.t === "skip" && x.uid === "e")).toBe(true);
+    expect(b.has(e, "stun")).toBeFalsy();
+  });
+});
+
+function simulate(allies: () => Unit[], enemies: () => Unit[], runs = 60): number {
+  let wins = 0;
+  for (let r = 0; r < runs; r++) {
+    const b = new Battle(allies(), enemies(), 1000 + r);
+    for (let i = 0; i < 400; i++) {
+      const u = b.nextTurn();
+      if (!u) break;
+      b.act(u, chooseAction(b, u));
+    }
+    if (b.outcome() === "win") wins++;
+  }
+  return wins / runs;
+}
+
+describe("balance smoke tests", () => {
+  it("a level 1 hero beats a pair of floor-1 monsters most of the time", () => {
+    for (const cls of ["warrior", "mage", "ranger", "rogue", "cleric", "guardian"]) {
+      const rate = simulate(
+        () => [unitFromCharacter(makeCharacter("hero", "H", cls, "hero", 1))],
+        () => [unitFromEnemy("moss_slime", 1, 0), unitFromEnemy("forest_wolf", 1, 1)],
+      );
+      expect(rate, cls).toBeGreaterThan(0.6);
+    }
+  });
+
+  it("floor-1 guardian is beatable but not trivial for a level 5 party of three", () => {
+    const rate = simulate(
+      () => [
+        unitFromCharacter(makeCharacter("hero", "H", "warrior", "hero", 5)),
+        unitFromCharacter(makeCharacter("lyra", "L", "ranger", "lyra", 5)),
+        unitFromCharacter(makeCharacter("bram", "B", "guardian", "bram", 5)),
+      ],
+      () => [unitFromEnemy("ancient_treant", 5, 0), unitFromEnemy("sapling", 4, 1), unitFromEnemy("sapling", 4, 2)],
+    );
+    expect(rate).toBeGreaterThan(0.35);
+    expect(rate).toBeLessThan(0.98);
+  });
+});
