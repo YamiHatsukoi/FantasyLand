@@ -1,5 +1,5 @@
 /**
- * Thin client for the Supabase RPC functions defined in supabase/schema.sql.
+ * Thin client for the Supabase RPC functions defined in supabase/0*.sql.
  * Without configuration the game runs in offline mode (saves in localStorage).
  */
 const URL = ((import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? "").replace(/\/+$/, "");
