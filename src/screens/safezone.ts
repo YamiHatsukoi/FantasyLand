@@ -1,0 +1,315 @@
+import { app, type Screen } from "../app";
+import { hashString } from "../core/rng";
+import { buildingCost, canAfford, logMsg, pay, type PlacedBuilding } from "../core/state";
+import { BUILDINGS } from "../data/buildings";
+import { buildingCanvas, cropCanvas } from "../render/buildings";
+import { MapView } from "../render/mapview";
+import { spriteCanvas } from "../render/pixel";
+import { T, tileSet } from "../render/tiles";
+import { BIOMES } from "../world/biomes";
+import { findPath } from "../world/mapgen";
+import { SPROUT, SZ_H, SZ_W, buildLimitReason, buildingAt, canPlace, inTerritory, territory } from "../world/sanctuary";
+import { h, openModal, toast, topModalOpen } from "../ui/dom";
+import { cropStage, costView, doSleep, openBuilding, setMoveHook } from "./buildingPanels";
+import { openHelp, openJournal, openMenu, partyMini, saveDot, showBanner } from "./common";
+import { openInventory } from "./inventory";
+import { openParty } from "./party";
+
+const SPROUT_TIPS = [
+  "Cậu đã gieo hạt chưa? Ngủ một giấc là cây lớn thêm một ngày đó!",
+  "Bếp Lửa biến lúa thành bánh mì — món ăn hồi máu rất tốt khi xuống Vực Sâu.",
+  "Phòng Giả Kim có thể làm Bình Nước Thánh. Tạt nước lên kẻ địch rồi dùng phép sét... Bùm! Điện Giật!",
+  "Thư Viện Phép giúp cậu học kỹ năng mới bằng Tinh Thể Ma Lực. Kỹ năng ngoài sở trường thì đắt gấp đôi.",
+  "Nâng cấp Nhà Chính để có thêm chỗ trong đội. Một mình dưới đó nguy hiểm lắm!",
+  "Mỗi tầng Vực Sâu đều có một kẻ canh giữ. Đánh bại nó thì cầu thang mới mở.",
+  "Nếu cậu gục ngã dưới đó, tớ sẽ kéo cậu về... nhưng một nửa chiến lợi phẩm sẽ rơi mất.",
+  "Tớ thích khi Thánh Địa rộng ra. Cảm giác như... được lớn lên vậy. Hì hì.",
+];
+
+export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: number) => void }): Screen {
+  const g = app.game;
+  const el = h("div", { class: "screen" });
+  root.append(el);
+  const view = new MapView(el);
+  const biome = BIOMES.forest;
+  const tiles = tileSet(biome);
+
+  // hero position
+  const hero = { x: 18, y: 20, px: 18, py: 20, path: [] as { x: number; y: number }[], t: 0, flip: false };
+  view.camX = hero.x;
+  view.camY = hero.y;
+  let placing: { type: string; moving?: PlacedBuilding; x: number; y: number } | null = null;
+
+  // ------------------------------------------------------------ HUD
+  const title = h("div", { class: "chip title" }, "Thánh Địa", h("small", null, ""));
+  const gold = h("div", { class: "chip" });
+  const party = partyMini();
+  const updateHud = () => {
+    (title.lastChild as HTMLElement).textContent = `Ngày ${app.game.day} · Lãnh địa ${territory(app.game.territory).x1 - territory(app.game.territory).x0}×${territory(app.game.territory).x1 - territory(app.game.territory).x0}`;
+    gold.replaceChildren("💰 ", h("b", null, String(app.game.gold)), "  🖤 ", h("b", null, String(app.game.inventory.black_thorn ?? 0)), "  ", saveDot());
+    party.update();
+  };
+  el.append(h("div", { class: "hud-top" }, h("div", { class: "col", style: "gap:6px" }, title, party.el), h("div", { class: "hud-right" }, gold)));
+  el.append(h("div", { class: "zoom" },
+    h("button", { class: "icon-btn", onclick: () => view.zoom(1) }, "＋"),
+    h("button", { class: "icon-btn", onclick: () => view.zoom(-1) }, "－"),
+    h("button", { class: "icon-btn", title: "Về chỗ nhân vật", onclick: () => { view.camX = hero.px; view.camY = hero.py; } }, "◎")));
+  const dock = h("div", { class: "dock" },
+    dockBtn("🔨", "Xây", () => openBuildMenu()),
+    dockBtn("👥", "Đội", () => openParty({ inDungeon: false, onChange: updateHud })),
+    dockBtn("🎒", "Túi", () => openInventory({ canSell: true, onChange: updateHud })),
+    dockBtn("🌀", "Vực Sâu", () => { const gate = app.game.buildings.find((b) => b.type === "gate"); if (gate) openB(gate); }),
+    dockBtn("📜", "Nhật ký", () => openJournal()),
+    dockBtn("⚙️", "Menu", () => openMenu()),
+  );
+  el.append(dock);
+  const placeBar = h("div", { class: "place-bar hidden" });
+  el.append(placeBar);
+  updateHud();
+
+  function dockBtn(icon: string, label: string, fn: () => void) {
+    return h("button", { onclick: fn }, h("span", null, icon), h("span", null, label));
+  }
+
+  const openB = (b: PlacedBuilding) => openBuilding(b, {
+    refresh: updateHud,
+    sleep: () => {
+      const msgs = doSleep();
+      app.dirty(true);
+      showBanner(el, `Ngày ${app.game.day}`, "Cả đội đã hồi phục hoàn toàn");
+      for (const m of msgs) toast(m, "good");
+      updateHud();
+    },
+    enterDungeon: (f) => hooks.enterDungeon(f),
+  });
+  setMoveHook((b) => startPlacing(b.type, b));
+
+  // ------------------------------------------------------------ building
+  function openBuildMenu() {
+    const m = openModal("🔨 Xây Dựng", { wide: true });
+    const list = h("div", { class: "list" });
+    for (const def of Object.values(BUILDINGS)) {
+      if (def.fixed) continue;
+      const limit = buildLimitReason(g, def.id);
+      const cost = buildingCost(def.id, 0);
+      const ok = !limit && canAfford(g, cost);
+      list.append(h("div", { class: `item-row ${limit ? "locked" : ""}` },
+        h("span", { class: "ico" }, def.icon),
+        h("div", { class: "meta" },
+          h("div", { class: "name" }, def.name, h("span", { class: "tag" }, `${def.size[0]}×${def.size[1]}`)),
+          h("div", { class: "desc" }, limit ?? def.desc),
+          limit ? null : costView(cost)),
+        h("button", { class: "btn small primary", disabled: !ok, onclick: () => { m.close(); startPlacing(def.id); } }, "Chọn")));
+    }
+    m.body.append(h("p", { class: "muted small", style: "margin-top:0" }, "Chọn công trình rồi chạm vào vị trí muốn đặt trên bản đồ. Kéo để di chuyển camera."), list);
+  }
+
+  function startPlacing(type: string, moving?: PlacedBuilding) {
+    const t = territory(g.territory);
+    placing = { type, moving, x: moving?.x ?? Math.round(view.camX), y: moving?.y ?? Math.round(view.camY) };
+    placing.x = Math.max(t.x0, Math.min(t.x1 - BUILDINGS[type].size[0], placing.x));
+    placing.y = Math.max(t.y0, Math.min(t.y1 - BUILDINGS[type].size[1], placing.y));
+    view.pannable = true;
+    dock.classList.add("hidden");
+    renderPlaceBar();
+  }
+
+  function renderPlaceBar() {
+    if (!placing) { placeBar.classList.add("hidden"); return; }
+    const p = placing;
+    const reason = canPlace(g, p.type, p.x, p.y, p.moving);
+    placeBar.classList.remove("hidden");
+    placeBar.replaceChildren(
+      h("div", { class: "chip" }, reason ? `❌ ${reason}` : `✅ ${BUILDINGS[p.type].name} — chạm để chọn chỗ`),
+      h("button", { class: "btn primary", disabled: !!reason, onclick: confirmPlace }, "✓ Đặt"),
+      h("button", { class: "btn", onclick: stopPlacing }, "✕ Huỷ"));
+  }
+
+  function confirmPlace() {
+    if (!placing) return;
+    const p = placing;
+    if (canPlace(g, p.type, p.x, p.y, p.moving)) return;
+    if (p.moving) {
+      p.moving.x = p.x;
+      p.moving.y = p.y;
+    } else {
+      const limit = buildLimitReason(g, p.type);
+      if (limit) { toast(limit, "bad"); return stopPlacing(); }
+      if (!pay(g, buildingCost(p.type, 0))) { toast("Không đủ nguyên liệu.", "bad"); return stopPlacing(); }
+      g.buildings.push({ id: `b_${Date.now().toString(36)}`, type: p.type, x: p.x, y: p.y, level: 1 });
+      logMsg(g, `Xây ${BUILDINGS[p.type].name}.`);
+      toast(`Đã xây ${BUILDINGS[p.type].name}!`, "good");
+    }
+    app.dirty();
+    const again = !p.moving && p.type === "farm" && !buildLimitReason(g, "farm") && canAfford(g, buildingCost("farm", 0));
+    if (again) { placing = { type: "farm", x: p.x + 1, y: p.y }; renderPlaceBar(); updateHud(); return; }
+    stopPlacing();
+  }
+
+  function stopPlacing() {
+    placing = null;
+    view.pannable = false;
+    dock.classList.remove("hidden");
+    renderPlaceBar();
+    updateHud();
+  }
+
+  // ------------------------------------------------------------ input
+  const walkable = (x: number, y: number) => inTerritory(g, x, y) && !buildingAt(g, x, y) && !(x === SPROUT.x && y === SPROUT.y);
+
+  view.onTap = (tx, ty) => {
+    if (placing) {
+      placing.x = tx;
+      placing.y = ty;
+      renderPlaceBar();
+      return;
+    }
+    if (tx === SPROUT.x && ty === SPROUT.y) return talkToSprout();
+    const b = buildingAt(g, tx, ty);
+    if (b) return openB(b);
+    if (!walkable(tx, ty)) return;
+    const path = findPath({ w: SZ_W, h: SZ_H }, walkable, hero.x, hero.y, tx, ty, 3000);
+    if (path) hero.path = path;
+  };
+
+  function talkToSprout() {
+    const tip = SPROUT_TIPS[(g.day + hashString(String(Date.now() >> 12))) % SPROUT_TIPS.length];
+    const m = openModal("🌱 Mầm");
+    m.body.append(
+      h("div", { class: "row", style: "align-items:flex-start;gap:12px" },
+        h("img", { class: "sprite big-portrait", src: spriteCanvas("sprout").toDataURL() }),
+        h("p", { style: "margin:0;line-height:1.6" }, tip)),
+      h("div", { class: "row end", style: "margin-top:10px" },
+        h("button", { class: "btn", onclick: () => { m.close(); openHelp(); } }, "❓ Hướng dẫn"),
+        h("button", { class: "btn primary", onclick: () => m.close() }, "Cảm ơn Mầm!")));
+  }
+
+  const keys = new Set<string>();
+  const onKey = (e: KeyboardEvent) => {
+    if (topModalOpen() || e.target instanceof HTMLInputElement) return;
+    const map: Record<string, [number, number]> = { ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1], ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] };
+    if (map[e.code]) { e.preventDefault(); if (e.type === "keydown") keys.add(e.code); else keys.delete(e.code); }
+  };
+  window.addEventListener("keydown", onKey);
+  window.addEventListener("keyup", onKey);
+
+  // ------------------------------------------------------------ render
+  let last = performance.now();
+  view.onDraw = (t) => {
+    const dt = Math.min(0.05, (t - last) / 1000);
+    last = t;
+    // movement
+    hero.t += dt;
+    if (hero.t >= 0.13) {
+      hero.t = 0;
+      let next = hero.path.shift();
+      if (!next && keys.size && !topModalOpen()) {
+        const code = [...keys].pop()!;
+        const d = ({ ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1], ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] } as Record<string, number[]>)[code];
+        if (d && walkable(hero.x + d[0], hero.y + d[1])) next = { x: hero.x + d[0], y: hero.y + d[1] };
+      }
+      if (next) {
+        if (next.x !== hero.x) hero.flip = next.x < hero.x;
+        hero.x = next.x;
+        hero.y = next.y;
+      }
+    }
+    hero.px += (hero.x - hero.px) * Math.min(1, dt * 12);
+    hero.py += (hero.y - hero.py) * Math.min(1, dt * 12);
+    if (!view.pannable) {
+      view.camX += (hero.px - view.camX) * Math.min(1, dt * 5);
+      view.camY += (hero.py - view.camY) * Math.min(1, dt * 5);
+    }
+
+    const c = view.ctx;
+    c.fillStyle = "#050807";
+    c.fillRect(0, 0, view.w, view.h);
+    const vr = view.visible();
+    const terr = territory(g.territory);
+    for (let y = vr.y0; y <= vr.y1; y++) {
+      for (let x = vr.x0; x <= vr.x1; x++) {
+        if (x < 0 || y < 0 || x >= SZ_W || y >= SZ_H) continue;
+        const hsh = hashString(`${x},${y}`);
+        const inside = x >= terr.x0 && y >= terr.y0 && x < terr.x1 && y < terr.y1;
+        const type = inside ? (hsh % 9 === 0 ? T.DECOR : T.GROUND) : (hsh % 3 === 0 ? T.GROUND : T.OBSTACLE);
+        view.img(tiles.tiles[type][hsh % 4], x, y);
+        if (!inside) {
+          const d = Math.max(terr.x0 - x, x - terr.x1 + 1, terr.y0 - y, y - terr.y1 + 1);
+          c.fillStyle = `rgba(3,6,5,${Math.min(0.92, 0.35 + d * 0.14)})`;
+          c.fillRect(view.sx(x), view.sy(y), view.tile, view.tile);
+        }
+      }
+    }
+    // territory border
+    c.strokeStyle = "rgba(242,197,66,0.35)";
+    c.setLineDash([view.tile / 4, view.tile / 4]);
+    c.lineWidth = 2;
+    c.strokeRect(view.sx(terr.x0), view.sy(terr.y0), (terr.x1 - terr.x0) * view.tile, (terr.y1 - terr.y0) * view.tile);
+    c.setLineDash([]);
+
+    // drawables sorted by bottom row
+    const draw: { y: number; fn: () => void }[] = [];
+    for (const b of g.buildings) {
+      const [bw, bh] = BUILDINGS[b.type].size;
+      if (placing?.moving === b) continue;
+      draw.push({ y: b.y + bh, fn: () => {
+        view.img(buildingCanvas(b.type, b.level), b.x, b.y - 1, { w: bw, h: bh + 1 });
+        if (b.type === "farm" && b.crop) {
+          const st = cropStage(b);
+          view.img(cropCanvas(b.crop.id, st), b.x, b.y);
+          if (st === 3) { c.font = `${Math.round(view.tile * 0.4)}px sans-serif`; c.fillText("✨", view.sx(b.x) + view.tile * 0.55, view.sy(b.y) + view.tile * 0.3 + Math.sin(t / 300) * 3); }
+        }
+        if (b.type === "gate") {
+          c.fillStyle = `rgba(176,138,255,${0.18 + Math.sin(t / 400) * 0.08})`;
+          c.fillRect(view.sx(b.x) + view.tile * 0.35, view.sy(b.y) - view.tile * 0.3, view.tile * 1.3, view.tile * 2.1);
+        }
+      } });
+    }
+    const bob = Math.sin(t / 250) * view.tile * 0.03;
+    draw.push({ y: SPROUT.y + 1, fn: () => view.img(spriteCanvas("sprout"), SPROUT.x, SPROUT.y, { dy: -0.05 + bob / view.tile }) });
+    draw.push({ y: hero.py + 1.01, fn: () => {
+      const ch = g.chars[g.heroId];
+      c.fillStyle = "rgba(0,0,0,0.3)";
+      c.beginPath();
+      c.ellipse(view.sx(hero.px) + view.tile / 2, view.sy(hero.py) + view.tile * 0.92, view.tile * 0.3, view.tile * 0.1, 0, 0, Math.PI * 2);
+      c.fill();
+      const moving = Math.abs(hero.px - hero.x) + Math.abs(hero.py - hero.y) > 0.05;
+      view.img(spriteCanvas(ch.sprite), hero.px, hero.py, { flip: hero.flip, dy: moving ? -Math.abs(Math.sin(t / 70)) * 0.08 : 0 });
+    } });
+    draw.sort((a, b) => a.y - b.y);
+    for (const d of draw) d.fn();
+
+    // placement ghost
+    if (placing) {
+      const [bw, bh] = BUILDINGS[placing.type].size;
+      const ok = !canPlace(g, placing.type, placing.x, placing.y, placing.moving);
+      c.fillStyle = ok ? "rgba(90,220,110,0.35)" : "rgba(230,70,70,0.4)";
+      c.fillRect(view.sx(placing.x), view.sy(placing.y), bw * view.tile, bh * view.tile);
+      view.img(buildingCanvas(placing.type, placing.moving?.level ?? 1), placing.x, placing.y - 1, { w: bw, h: bh + 1, alpha: 0.75 });
+    }
+
+    // vignette
+    const grd = c.createRadialGradient(view.w / 2, view.h / 2, Math.min(view.w, view.h) * 0.35, view.w / 2, view.h / 2, Math.max(view.w, view.h) * 0.75);
+    grd.addColorStop(0, "rgba(0,0,0,0)");
+    grd.addColorStop(1, "rgba(0,0,0,0.55)");
+    c.fillStyle = grd;
+    c.fillRect(0, 0, view.w, view.h);
+  };
+  view.start();
+  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__sz = { view, openB };
+
+  // first-visit hint
+  if (!g.flags.sz_hint) {
+    g.flags.sz_hint = true;
+    setTimeout(() => toast("Chạm vào Mầm 🌱 để nghe gợi ý, chạm vào công trình để sử dụng.", "info", 5000), 800);
+  }
+
+  return {
+    destroy: () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKey);
+      view.destroy();
+      el.remove();
+    },
+  };
+}
