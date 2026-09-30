@@ -1,5 +1,5 @@
 import { app } from "../app";
-import { describeSkill, skillCostText } from "../combat/describe";
+import { describeSkill, skillCostText, passiveText } from "../combat/describe";
 import { GEAR_KEYS, POINTS_PER_LEVEL, POINT_CAP, POINT_VALUE, addItem, allocPoint, resetCost, resetPoints, dismiss, charPassives, charStats, dualWielding, equipGear, fitsGear, isTwoHanded, syncLook, partySize, passiveSlots, removeItem, skillSlots, type Character } from "../core/state";
 import { CLASSES, COMPANIONS, xpForLevel } from "../data/classes";
 import { enhLevel, getItem, type GearKey, type ItemDef } from "../data/items";
@@ -169,7 +169,7 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
         h("span", { class: "ico" }, itemImg(it.id)),
         h("div", { class: "meta" }, h("div", { class: "name" }, it.name, h("span", { class: "qty" }, ` ×${g.inventory[it.id]}`)),
           h("div", { class: "desc" }, `${teach.icon} ${it.skill ? "Kỹ năng" : "Nội tại"}: ${teach.name}`),
-          h("div", { class: "desc muted" }, it.skill ? describeSkill(getSkill(it.skill)).join(" ") : getPassive(it.passive!).desc)),
+          h("div", { class: "desc muted" }, it.skill ? describeSkill(getSkill(it.skill)).join(" ") : passiveText(getPassive(it.passive!).desc))),
         h("button", {
           class: "btn small primary", disabled: known,
           onclick: () => {
@@ -191,7 +191,7 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
       const on = ch.equippedPassives.includes(id);
       return passiveTip(h("div", { class: `item-row ${on ? "sel" : ""}` },
         h("span", { class: "ico" }, p.icon),
-        h("div", { class: "meta" }, h("div", { class: "name" }, p.name), h("div", { class: "desc" }, p.desc)),
+        h("div", { class: "meta" }, h("div", { class: "name" }, p.name), h("div", { class: "desc" }, passiveText(p.desc))),
         h("button", {
           class: `btn small ${on ? "" : "primary"}`,
           onclick: () => {
@@ -203,7 +203,7 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
         }, on ? "Bỏ" : "Dùng")), id);
     }));
     body = [passiveList, gearPassives.length ? h("div", { class: "section-title" }, "✦ Từ trang bị") : null,
-      gearPassives.length ? h("div", { class: "list" }, gearPassives.map((id) => { const p = getPassive(id); return h("div", { class: "item-row" }, h("span", { class: "ico" }, p.icon), h("div", { class: "meta" }, h("div", { class: "name" }, p.name), h("div", { class: "desc" }, p.desc))); })) : null];
+      gearPassives.length ? h("div", { class: "list" }, gearPassives.map((id) => { const p = getPassive(id); return h("div", { class: "item-row" }, h("span", { class: "ico" }, p.icon), h("div", { class: "meta" }, h("div", { class: "name" }, p.name), h("div", { class: "desc" }, passiveText(p.desc)))); })) : null];
   }
 
   m.body.replaceChildren(...nn(tabs, header, secTabs, ...body));

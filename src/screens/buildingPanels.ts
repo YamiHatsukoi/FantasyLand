@@ -1,5 +1,5 @@
 import { app } from "../app";
-import { describeSkill } from "../combat/describe";
+import { describeSkill, passiveText } from "../combat/describe";
 import { Rng } from "../core/rng";
 import { addItem, canAfford, count, giveXp, logMsg, pay, removeItem, type PlacedBuilding, type PlotState } from "../core/state";
 import { BUILDINGS, FLOOR_REQ, POP_REQ, RANK_NAMES, TERRITORY_SIZES, costFor, expansionCost } from "../data/buildings";
@@ -515,7 +515,7 @@ function libraryBody(m: ModalHandle, b: PlacedBuilding, render: () => void) {
       const cost = researchCost(p.tier, true, off);
       list.append(h("div", { class: "item-row" },
         h("span", { class: "ico" }, p.icon),
-        h("div", { class: "meta" }, h("div", { class: "name" }, p.name, h("span", { class: "tag" }, `Bậc ${p.tier}`), off ? h("span", { class: "tag" }, "ngoài sở trường") : null), h("div", { class: "desc" }, p.desc), costView(cost)),
+        h("div", { class: "meta" }, h("div", { class: "name" }, p.name, h("span", { class: "tag" }, `Bậc ${p.tier}`), off ? h("span", { class: "tag" }, "ngoài sở trường") : null), h("div", { class: "desc" }, passiveText(p.desc)), costView(cost)),
         h("button", {
           class: "btn small primary", disabled: !canAfford(g, cost),
           onclick: () => { if (!pay(g, cost)) return; ch.passives.push(p.id); if (ch.equippedPassives.length < 2) ch.equippedPassives.push(p.id); toast(`${ch.name} lĩnh hội ${p.name}!`, "good"); app.dirty(); render(); },
