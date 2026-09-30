@@ -98,7 +98,7 @@ const HAIR = ["#2a1a12", "#6b3f22", "#c8a060", "#e8e0d0", "#b04a2a", "#3a3a4a", 
 const CLOTH = ["#3b6fd6", "#7b4bc4", "#3e8a3a", "#a33a3a", "#d8c090", "#2a4a3a", "#b0763a", "#5a8ac0", "#c870a0", "#6a6a72", "#e0a040", "#2f7a4a"];
 const SKIN = ["#f5d6b8", "#e8b890", "#c68a5a", "#8a5a3a", "#efe0c0", "#b8d8b0", "#c8c8e8"];
 
-const TASTE: Record<Job, { shapes: string[]; likes: ItemType[] }> = {
+export const TASTE: Record<Job, { shapes: string[]; likes: ItemType[] }> = {
   merchant: { shapes: ["gem", "coin", "ring", "pearl", "amulet"], likes: ["material", "equip"] },
   farmer: { shapes: ["seed", "grain", "root", "fruit", "berry", "gourd"], likes: ["crop", "seed", "fertilizer"] },
   guard: { shapes: ["meat", "bread", "skewer", "shield"], likes: ["food", "potion"] },
@@ -115,7 +115,7 @@ const TASTE: Record<Job, { shapes: string[]; likes: ItemType[] }> = {
   herbalist: { shapes: ["herb", "flower", "mushroom", "vial"], likes: ["herb", "crop", "potion"] },
   fisher: { shapes: ["fish", "shell", "pearl", "rope"], likes: ["animal", "food"] },
 };
-const GROSS = ["gel", "bone", "sac", "dust", "thorn", "compost", "wax", "claw"];
+export const GROSS = ["gel", "bone", "sac", "dust", "thorn", "compost", "wax", "claw"];
 
 const JOB_WEIGHTS: [Job, number][] = [
   ["merchant", 2], ["farmer", 3], ["guard", 3], ["hunter", 3], ["scholar", 2], ["priest", 2], ["adventurer", 4], ["blacksmith", 1],
@@ -126,7 +126,7 @@ const PERSONA_LIST = Object.keys(PERSONAS) as Persona[];
 const npcCache = new Map<string, NpcDef>();
 const itemPool = new Map<string, ItemDef[]>();
 
-function itemsWithShapes(shapes: string[], maxValue: number): ItemDef[] {
+export function itemsWithShapes(shapes: string[], maxValue: number): ItemDef[] {
   const k = `${shapes.join(",")}|${maxValue}`;
   let hit = itemPool.get(k);
   if (!hit) {

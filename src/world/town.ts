@@ -3,6 +3,7 @@ import { addItem, charStats, giveXp, healParty, logMsg, removeItem, type CropSta
 import { BUILDINGS, MAX_TERRITORY_FOR_RANK, RANK_NAMES } from "../data/buildings";
 import { BIOME_MATS, CROPS, CROP_LIST, METALS, getItem, metalTierForFloor, seasonOf, type CropDef } from "../data/items";
 import { getFloor } from "../world/floors";
+import { residentsNewDay } from "./residents";
 
 // ------------------------------------------------------------ settlement stats
 export const rankOf = (g: GameState) => g.buildings.find((b) => b.type === "house")?.level ?? 1;
@@ -292,6 +293,7 @@ export function advanceDay(g: GameState): DayReport {
   if (grown === 0 && allPlots(g).length) lines.push("🌱 Ruộng đang trống — hãy gieo hạt!");
   if (eff < 1 && workersNeeded(g) > 0) lines.push(`👷 Thiếu công nhân: các công trình chỉ chạy ${Math.round(eff * 100)}% công suất.`);
   if (seasonOf(g.day) !== season) lines.unshift(`🍃 Chuyển mùa: bắt đầu mùa ${["Xuân", "Hạ", "Thu", "Đông"][seasonOf(g.day)]}!`);
+  lines.push(...residentsNewDay(g));
   logMsg(g, "Một ngày mới ở Thánh Địa.");
   g.report = lines;
   return { lines, gains };

@@ -26,3 +26,5 @@ I("false_thorn", "Gai Giả Của Brakka", "key", 0, "Một chiếc gai đen th�
 I("hana_notebook", "Sổ Tay Của Hana", "key", 0, "Cuốn sổ dày cộp của Hana: bản đồ sao, những trang Sổ Tay đã ghép, và dòng chữ cuối cùng bị bỏ dở.", "book", ["#c83a3a", "#e8e0d0", "#1a1a2a"], { icon: "📓" });
 I("kaito_seed", "Hạt Giống Của Kaito", "key", 0, "Một quả nhỏ vỏ cứng như gỗ. Kaito dặn: tới đáy rồi hãy trồng.", "seed", ["#6a4a2a", "#8ad86a", "#ffe8a0"], { icon: "🌰" });
 I("black_thorn", "Gai Đen", "key", 0, "Chiếc gai đen rút ra từ Boss Canh Cửa. Nó vẫn còn ấm, và dường như đang đập.", "thorn", ["#2a1a2a", "#5a2a5a", "#ff3a6a"], { icon: "🖤" });
+I("bouquet", "Bó Hoa Tỏ Tình", "key", 0, "Tặng người trong lòng để ngỏ lời hẹn hò. Mầm bán ở Thánh Địa.", "flower", ["#ff6a9a", "#4f9a45", "#fff0f5"], { icon: "💐", tags: ["romance"] });
+I("promise_ring", "Nhẫn Đính Ước", "key", 0, "Trao cho người đang hẹn hò để cầu hôn. Cần Nhà Chính cấp 2.", "ring", ["#f2c542", "#ffffff", "#ff80b0"], { icon: "💍", tags: ["romance"] });

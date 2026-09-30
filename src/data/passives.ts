@@ -73,6 +73,12 @@ P("e_enrage", "Nổi Điên", "💢", "monster", 1, "Dưới 40% máu: +40% côn
 export const PASSIVES: Record<string, Passive> = Object.fromEntries(list.map((p) => [p.id, p]));
 export const PLAYER_PASSIVES = list.filter((p) => !p.enemy);
 
+// ---- bond passives: granted by relationships in the sanctuary, never learned from books
+for (const p of [
+  { id: "p_kindred", name: "Tri Kỷ", icon: "🤝", school: "song" as const, tier: 3, desc: "Tình bạn mười tim: +6% công, phép, thủ và kháng.", hooks: [{ on: "stat" as const, mods: { atk: 0.06, mag: 0.06, def: 0.06, res: 0.06 } }] },
+  { id: "p_beloved", name: "Người Thương", icon: "💞", school: "song" as const, tier: 3, desc: "Đã kết hôn: +10% máu, công, phép và thủ.", hooks: [{ on: "stat" as const, mods: { hp: 0.1, atk: 0.1, mag: 0.1, def: 0.1 } }] },
+]) PASSIVES[p.id] = p;
+
 export function getPassive(id: string): Passive {
   const p = PASSIVES[id];
   if (!p) throw new Error(`Unknown passive ${id}`);

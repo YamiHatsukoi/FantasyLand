@@ -17,6 +17,10 @@ import { WEATHER, advanceDay, cropStage, ensureSlots, housing, isReady, populati
 import { openHelp, openJournal, openMenu, partyMini, saveDot, showBanner } from "./common";
 import { openInventory } from "./inventory";
 import { openParty } from "./party";
+import { openResidentList } from "./residentList";
+import { openResident } from "./residentTalk";
+import { ResidentSim } from "../world/residentSim";
+import { sceneReady } from "../world/residents";
 
 const SPROUT_TIPS = [
   "Cậu đã gieo hạt chưa? Ngủ một giấc là cây lớn thêm một ngày đó!",
@@ -34,6 +38,10 @@ const SPROUT_TIPS = [
   "Mỗi tầng Vực Sâu đều có một Boss Canh Cửa. Đánh bại nó thì cầu thang mới mở.",
   "Nếu cậu gục ngã dưới đó, tớ sẽ kéo cậu về... nhưng một nửa chiến lợi phẩm sẽ rơi mất.",
   "Tớ thích khi Thánh Địa rộng ra. Cảm giác như... được lớn lên vậy. Hì hì.",
+  "Mỗi người ở Thánh Địa thích nói về những chuyện khác nhau. Trò chuyện nhiều rồi cậu sẽ biết ai mê câu cá, ai ghét phép thuật!",
+  "Thấy dấu ❗ trên đầu ai đó là họ có chuyện muốn kể riêng với cậu đó.",
+  "Tớ có bán Bó Hoa Tỏ Tình và Nhẫn Đính Ước ở mục 💞 Cư dân. Hì hì, cậu để ý ai rồi hả?",
+  "Nhớ sinh nhật mọi người nha. Quà sinh nhật được quý gấp ba đấy!",
 ];
 
 export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: number) => void }): Screen {
@@ -49,6 +57,44 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   view.camX = hero.x;
   view.camY = hero.y;
   let placing: { type: string; moving?: PlacedBuilding; x: number; y: number } | null = null;
+  const sim = new ResidentSim(g);
+  let ground: HTMLCanvasElement | null = null;
+  let groundSig = "";
+  const renderGround = (terr: ReturnType<typeof territory>) => {
+    const cv = document.createElement("canvas");
+    cv.width = SZ_W * 16;
+    cv.height = SZ_H * 16;
+    const gc = cv.getContext("2d")!;
+    gc.imageSmoothingEnabled = false;
+    const trees: [number, number, HTMLCanvasElement][] = [];
+    for (let y = 0; y < SZ_H; y++) {
+      for (let x = 0; x < SZ_W; x++) {
+        const hsh = hashString(`${x},${y}`);
+        const inside = x >= terr.x0 && y >= terr.y0 && x < terr.x1 && y < terr.y1;
+        const type = inside ? (hsh % 9 === 0 ? T.DECOR : T.GROUND) : (hsh % 3 === 0 ? T.GROUND : T.OBSTACLE);
+        gc.drawImage(tiles.tiles[type === T.OBSTACLE ? T.GROUND : type][hsh % 4], x * 16, y * 16);
+        if (type === T.OBSTACLE && (x + y) % 2 === 0) trees.push([x, y, tiles.tall[hsh % tiles.tall.length]]);
+        if (!inside) {
+          const d = Math.max(terr.x0 - x, x - terr.x1 + 1, terr.y0 - y, y - terr.y1 + 1);
+          gc.fillStyle = `rgba(3,6,5,${Math.min(0.92, 0.35 + d * 0.14)})`;
+          gc.fillRect(x * 16, y * 16, 16, 16);
+        }
+      }
+    }
+    for (const [x, y, tall] of trees) gc.drawImage(tall, (x - 0.5) * 16, (y - 2) * 16, 32, 48);
+    return cv;
+  };
+  let talkingTo: string | null = null;
+  const marks = new Map<string, boolean>(); // "!" markers, refreshed every few seconds
+  let markT = 0;
+  const talkTo = (id: string) => {
+    const ch = app.game.chars[id];
+    if (!ch) return;
+    talkingTo = id;
+    const a = sim.get(id);
+    if (a) { a.dir = 2; a.flip = hero.px < a.px; }
+    openResident(ch, () => { talkingTo = null; marks.set(id, sceneReady(app.game, ch)); updateHud(); });
+  };
 
   // ------------------------------------------------------------ HUD
   const title = h("div", { class: "chip title" }, "Thánh Địa", h("small", null, ""));
@@ -71,6 +117,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     dockBtn("🔨", "Xây", () => openBuildMenu()),
     dockBtn("👥", "Đội", () => openParty({ inDungeon: false, onChange: updateHud })),
     dockBtn("🎒", "Túi", () => openInventory({ canSell: true, onChange: updateHud })),
+    dockBtn("💞", "Cư dân", () => openResidentList({ find: (id) => { const a = sim.get(id); if (a) { const path = findPath({ w: SZ_W, h: SZ_H }, walkable, hero.x, hero.y, a.x, a.y, 5000); if (path) { hero.path = path.slice(0, -1); toast(`Đang tới chỗ ${app.game.chars[id].name.split(" ")[0]}…`); } } }, onClose: updateHud })),
     dockBtn("🌀", "Vực Sâu", () => { const gate = app.game.buildings.find((b) => b.type === "gate"); if (gate) openB(gate); }),
     dockBtn("📜", "Nhật ký", () => openJournal()),
     dockBtn("⚙️", "Menu", () => openMenu()),
@@ -191,6 +238,8 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
       return;
     }
     if (tx === SPROUT.x && ty === SPROUT.y) return talkToSprout();
+    const agent = sim.agentAt(tx, ty);
+    if (agent) return talkTo(agent.id);
     const b = buildingAt(g, tx, ty);
     if (b) return openB(b);
     if (!walkable(tx, ty)) return;
@@ -253,24 +302,12 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     c.fillRect(0, 0, view.w, view.h);
     const vr = view.visible();
     const terr = territory(g.territory);
-    const outsideTrees: { y: number; fn: () => void }[] = [];
-    for (let y = vr.y0; y <= vr.y1; y++) {
-      for (let x = vr.x0; x <= vr.x1; x++) {
-        if (x < 0 || y < 0 || x >= SZ_W || y >= SZ_H) continue;
-        const hsh = hashString(`${x},${y}`);
-        const inside = x >= terr.x0 && y >= terr.y0 && x < terr.x1 && y < terr.y1;
-        const type = inside ? (hsh % 9 === 0 ? T.DECOR : T.GROUND) : (hsh % 3 === 0 ? T.GROUND : T.OBSTACLE);
-        view.img(tiles.tiles[type === T.OBSTACLE ? T.GROUND : type][hsh % 4], x, y);
-        if (type === T.OBSTACLE && (x + y) % 2 === 0) {
-          const tall = tiles.tall[hsh % tiles.tall.length];
-          outsideTrees.push({ y: y + 0.99, fn: () => view.img(tall, x - 0.5, y - 2, { w: 2, h: 3 }) });
-        }
-        if (!inside) {
-          const d = Math.max(terr.x0 - x, x - terr.x1 + 1, terr.y0 - y, y - terr.y1 + 1);
-          c.fillStyle = `rgba(3,6,5,${Math.min(0.92, 0.35 + d * 0.14)})`;
-          c.fillRect(view.sx(x), view.sy(y), view.tile, view.tile);
-        }
-      }
+    // static ground (tiles, trees, darkness outside the territory) is pre-rendered once
+    const gsig = `${g.territory}`;
+    if (gsig !== groundSig) { ground = renderGround(terr); groundSig = gsig; }
+    {
+      const sx0 = (view.camX + 0.5 - view.w / 2 / view.tile) * 16, sy0 = (view.camY + 0.5 - view.h / 2 / view.tile) * 16;
+      c.drawImage(ground!, sx0, sy0, (view.w / view.tile) * 16, (view.h / view.tile) * 16, 0, 0, view.w, view.h);
     }
     // territory border
     c.strokeStyle = "rgba(242,197,66,0.35)";
@@ -301,6 +338,28 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
         }
       } });
     }
+    // residents
+    sim.update(dt, t, vr, talkingTo);
+    markT -= dt;
+    const refreshMarks = markT <= 0;
+    if (refreshMarks) markT = 3;
+    const bubbles: (() => void)[] = [];
+    for (const a of sim.agents) {
+      if (a.px < vr.x0 - 1 || a.px > vr.x1 + 1 || a.py < vr.y0 - 1 || a.py > vr.y1 + 2) continue;
+      const rch = g.chars[a.id];
+      if (!rch) continue;
+      if (refreshMarks) marks.set(a.id, sceneReady(g, rch));
+      draw.push({ y: a.py + 1.005, fn: () => {
+        c.drawImage(sim.sprite(a, rch, t), view.sx(a.px), view.sy(a.py - 1), view.tile, view.tile * 2);
+      } });
+      if (marks.get(a.id)) bubbles.push(() => {
+        c.font = `${Math.round(view.tile * 0.45)}px sans-serif`;
+        c.textAlign = "center";
+        c.fillText("❗", view.sx(a.px) + view.tile / 2, view.sy(a.py) - view.tile * 1.05 + Math.sin(t / 200) * 2);
+        c.textAlign = "left";
+      });
+      else if (a.bubble && a.bubble.until > t) bubbles.push(() => speech(a.bubble!.text, view.sx(a.px) + view.tile / 2, view.sy(a.py) - view.tile * 1.1));
+    }
     const bob = Math.sin(t / 250) * view.tile * 0.03;
     draw.push({ y: SPROUT.y + 1, fn: () => view.img(spriteCanvas("sprout"), SPROUT.x, SPROUT.y, { dy: -0.05 + bob / view.tile }) });
     draw.push({ y: hero.py + 1.01, fn: () => {
@@ -314,9 +373,9 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
       if (isPerson(ch.sprite)) view.img(personCanvas(ch.sprite, ch.pal, hero.dir, frame), hero.px, hero.py - 1, { h: 2, flip: hero.dir === 2 && hero.flip });
       else view.img(spriteCanvas(ch.sprite, ch.pal), hero.px, hero.py, { flip: hero.flip });
     } });
-    draw.push(...outsideTrees);
     draw.sort((a, b) => a.y - b.y);
     for (const d of draw) d.fn();
+    for (const b of bubbles) b();
 
     // placement ghost
     if (placing) {
@@ -327,6 +386,24 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
       view.img(buildingCanvas(placing.type, placing.moving?.level ?? 1), placing.x, placing.y - 1, { w: bw, h: bh + 1, alpha: 0.75 });
     }
 
+    function speech(text: string, x: number, y: number) {
+      const fs = Math.max(11, Math.round(view.tile * 0.22));
+      c.font = `${fs}px "Be Vietnam Pro", sans-serif`;
+      const w = Math.min(view.tile * 5, c.measureText(text).width + fs);
+      const bh = fs * 1.7;
+      c.fillStyle = "rgba(255,250,235,0.94)";
+      c.strokeStyle = "rgba(60,40,20,0.8)";
+      c.lineWidth = 1.5;
+      c.beginPath();
+      c.roundRect(x - w / 2, y - bh, w, bh, 6);
+      c.moveTo(x - 4, y); c.lineTo(x, y + 6); c.lineTo(x + 4, y);
+      c.fill(); c.stroke();
+      c.fillStyle = "#3a2a1a";
+      c.textAlign = "center";
+      c.fillText(text, x, y - bh / 2 + fs * 0.35, w - fs * 0.6);
+      c.textAlign = "left";
+    }
+
     // vignette
     const grd = c.createRadialGradient(view.w / 2, view.h / 2, Math.min(view.w, view.h) * 0.35, view.w / 2, view.h / 2, Math.max(view.w, view.h) * 0.75);
     grd.addColorStop(0, "rgba(0,0,0,0)");
@@ -335,7 +412,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     c.fillRect(0, 0, view.w, view.h);
   };
   view.start();
-  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__sz = { view, openB };
+  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__sz = { view, openB, sim };
 
   // first-visit hint
   if (!g.flags.sz_hint) {
