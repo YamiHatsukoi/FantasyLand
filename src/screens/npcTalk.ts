@@ -85,7 +85,7 @@ export function openNpc(npc: NpcDef, onClose?: () => void) {
           if (!again.ok) {
             say(recruitText(npc, false));
             sys(again.reason);
-            if (npc.persona === "proud") memOf(g, npc.id).aff -= 1;
+            if (npc.persona === "proud" && again.reason.startsWith("Cần thiện cảm")) memOf(g, npc.id).aff -= 1;
           } else {
             const ch = doRecruit(g, npc);
             say(recruitText(npc, true));

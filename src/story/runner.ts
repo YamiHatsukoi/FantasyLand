@@ -1,3 +1,4 @@
+import { makeRoom } from "../world/town";
 import { Rng } from "../core/rng";
 import { XP_RATE, addItem, charStats, giveXp, logMsg, makeCharacter, recruit, removeItem, syncLook, type GameState } from "../core/state";
 import { CLASSES, COMPANIONS } from "../data/classes";
@@ -149,7 +150,9 @@ export function applyEffect(e: Effect, ctx: StoryCtx): string[] {
     if (g.chars[e.recruit]) return [];
     const ch = recruit(g, e.recruit);
     logMsg(g, `${ch.name} gia nhập.`);
-    return [`🤝 ${ch.name} gia nhập${g.party.includes(e.recruit) ? " đội" : " (đợi ở Thánh Địa)"}`];
+    // story companions always come along; ordinary settlers make way if the beds are full
+    const moved = makeRoom(g);
+    return [`🤝 ${ch.name} gia nhập${g.party.includes(e.recruit) ? " đội" : " (đợi ở Thánh Địa)"}`, ...(moved ? [moved] : [])];
   }
   if ("learn" in e) {
     const ch = g.chars[e.to ?? g.heroId];

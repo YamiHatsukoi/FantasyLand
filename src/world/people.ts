@@ -12,7 +12,7 @@ import {
 import { PLAYER_PASSIVES } from "../data/passives";
 import { getFloor, settlementCount } from "./floors";
 import { SPECS } from "./floorSpec";
-import { WEATHER } from "./town";
+import { WEATHER, makeRoom, noRoomReason } from "./town";
 
 // ============================================================ settlements
 export type SettlementSize = "village" | "town" | "city";
@@ -474,6 +474,8 @@ export function recruitCheck(g: GameState, npc: NpcDef): { ok: boolean; reason: 
   const need = PERSONAS[npc.persona].recruitAff;
   if (m.aff < need) return { ok: false, reason: `Cần thiện cảm ${need} (hiện ${m.aff}).`, wage: npc.wage };
   if (npc.wage && g.gold < npc.wage) return { ok: false, reason: `Cần ${npc.wage} vàng tiền công.`, wage: npc.wage };
+  const room = noRoomReason(g);
+  if (room) return { ok: false, reason: room, wage: npc.wage };
   return { ok: true, reason: "", wage: npc.wage };
 }
 
@@ -505,6 +507,8 @@ export function doRecruit(g: GameState, npc: NpcDef): Character | null {
   if (g.party.length < 4) g.party.push(ch.id);
   memOf(g, npc.id).recruited = true;
   logMsg(g, `${ch.name} gia nhập đội.`);
+  const moved = makeRoom(g);
+  if (moved) logMsg(g, moved);
   return ch;
 }
 
@@ -536,7 +540,7 @@ export function tavernOffers(g: GameState): RecruitOffer[] {
 
 export function hireOffer(g: GameState, offerId: string): Character | null {
   const o = g.tavern.offers.find((x) => x.id === offerId);
-  if (!o || g.gold < o.price) return null;
+  if (!o || g.gold < o.price || noRoomReason(g)) return null;
   g.gold -= o.price;
   const hat = o.classId === "mage" || o.classId === "witch";
   const ch = makeCharacter(`r_${o.id}`, o.name, o.classId, hat ? "hero_mage" : "villager", o.level);
@@ -549,6 +553,8 @@ export function hireOffer(g: GameState, offerId: string): Character | null {
   if (g.party.length < 4) g.party.push(ch.id);
   g.tavern.offers = g.tavern.offers.filter((x) => x !== o);
   logMsg(g, `Thuê ${ch.name} ở Quán Rượu.`);
+  const moved = makeRoom(g);
+  if (moved) logMsg(g, moved);
   return ch;
 }
 

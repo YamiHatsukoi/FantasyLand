@@ -89,7 +89,9 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   const alive = (e: MapEntity) => {
     if (e.kind === "monster" || e.kind === "node" || e.kind === "camp") return !ex.done.includes(e.id);
     if (e.kind === "guardian") return !fs.cleared;
-    if (e.kind === "stairs" || e.kind === "portal" || e.kind === "town" || e.kind === "building" || e.kind === "npc" || e.kind === "deco") return true;
+    // townsfolk who joined the party live in the sanctuary now, not in their village
+    if (e.kind === "npc") return !g.chars[`npc_${e.ref}`];
+    if (e.kind === "stairs" || e.kind === "portal" || e.kind === "town" || e.kind === "building" || e.kind === "deco") return true;
     return !fs.done.includes(e.id);
   };
   const ents = map.entities.map((e) => ({ ...e, px: e.x, py: e.y, stun: 0, dir: 0 as Dir, flip: false }));

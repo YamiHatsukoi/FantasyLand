@@ -117,9 +117,11 @@ describe("settlements & npcs", () => {
     expect(q.n).toBeGreaterThan(0);
   });
 
-  it("recruits are unlimited but only 3 companions travel with the hero", () => {
+  it("recruits are limited by beds, and only 3 companions travel with the hero", () => {
     const g = newGame("Minh", "warrior", 3);
     g.gold = 1e6;
+    // enough room at home for everyone
+    g.buildings.push({ id: "c1", type: "cottage", x: 20, y: 40, level: 2 }, { id: "c2", type: "cottage", x: 23, y: 40, level: 2 });
     let n = 0;
     for (let i = 0; i < 40 && n < 6; i++) {
       const npc = getNpc(`n6_0_${i % 7}`.replace("_0_", `_${i % 2}_`));
@@ -132,5 +134,38 @@ describe("settlements & npcs", () => {
     expect(offers.length).toBeGreaterThan(0);
     expect(Object.keys(g.chars).length).toBeGreaterThan(4);
     expect(g.party.length).toBeLessThanOrEqual(4);
+  });
+});
+
+describe("beds for companions", () => {
+  it("tavern hires need a free bed; story companions push settlers out; farewells free a bed", async () => {
+    const { newGame, recruit, dismiss } = await import("../src/core/state");
+    const { companionBeds, makeRoom, noRoomReason, population, housing } = await import("../src/world/town");
+    const { hireOffer } = await import("../src/world/people");
+    const g = newGame("An", "warrior", 1);
+    // main house: 2 beds -> the hero and one companion
+    expect(housing(g)).toBe(2);
+    expect(companionBeds(g)).toBe(1);
+    g.gold = 1e6;
+    g.tavern = { day: g.day, offers: [
+      { id: "o1", name: "A", classId: "mage", level: 3, price: 10, pal: {}, bio: "", passive: "" },
+      { id: "o2", name: "B", classId: "mage", level: 3, price: 10, pal: {}, bio: "", passive: "" },
+    ] };
+    expect(hireOffer(g, "o1")).toBeTruthy();
+    expect(noRoomReason(g)).toBeTruthy();
+    expect(hireOffer(g, "o2")).toBeNull();
+    // a story companion still joins; a settler gives up their bed
+    g.buildings.push({ id: "t", type: "tent", x: 30, y: 30, level: 1 });
+    g.settlers = 2;
+    recruit(g, "lyra");
+    expect(makeRoom(g)).toBeTruthy();
+    expect(population(g)).toBeLessThanOrEqual(housing(g));
+    // saying goodbye frees a bed and returns the gear
+    const hired = Object.keys(g.chars).find((id) => id.startsWith("r_"))!;
+    g.chars[hired].gear.weapon = "eq_sword_3";
+    expect(dismiss(g, hired)).toBe(true);
+    expect(g.chars[hired]).toBeUndefined();
+    expect(g.inventory.eq_sword_3).toBe(1);
+    expect(dismiss(g, "lyra")).toBe(false);
   });
 });

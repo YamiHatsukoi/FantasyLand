@@ -43,8 +43,8 @@ describe("compact saves", () => {
 describe("compact floors", () => {
   it("cleared lists survive packing", () => {
     const g = newGame("An", "warrior", 1);
-    g.floors[3] = { seed: 1, done: ["event_1", "chest_9"], fog: "" };
-    g.floors[4] = { seed: 2, done: [], fog: "" };
+    g.floors[3] = { seed: 1, done: ["event_1", "chest_9"], fog: "", cleared: false };
+    g.floors[4] = { seed: 2, done: [], fog: "", cleared: false };
     const back = migrate(JSON.parse(JSON.stringify(packSave(g))));
     expect(back.floors[3].done).toEqual(["event_1", "chest_9"]);
     expect(back.floors[4].done).toEqual([]);
