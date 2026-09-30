@@ -1,3 +1,4 @@
+import { fromOldLevel, power } from "../core/levels";
 import type { School, Stats } from "../combat/types";
 
 export interface ClassDef {
@@ -211,8 +212,9 @@ export const CLASSES: Record<string, ClassDef> = {
 };
 
 /** Stats at a given level (without gear). */
-export function classStats(classId: string, level: number): Stats {
+export function classStats(classId: string, lvl: number): Stats {
   const b = CLASSES[classId].base;
+  const level = power(lvl);
   const g = 1 + 0.1 * (level - 1);
   return {
     hp: Math.round(b.hp * g),
@@ -227,7 +229,10 @@ export function classStats(classId: string, level: number): Stats {
   };
 }
 
-export const xpForLevel = (level: number) => Math.round(30 * Math.pow(level, 1.55));
+/** Experience for the next level: two levels together cost what one did on the old 1–99 scale. */
+export const xpForLevel = (level: number) => Math.round(15 * Math.pow(power(level), 1.55));
+/** The level a class learns a skill at (learnsets are written on the old scale). */
+export const learnLevel = (oldLevel: number | string) => fromOldLevel(Number(oldLevel));
 
 export interface CompanionDef {
   id: string;

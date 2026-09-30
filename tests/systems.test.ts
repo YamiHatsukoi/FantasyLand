@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addItem, migrate, newGame } from "../src/core/state";
+import { SAVE_VERSION, addItem, migrate, newGame } from "../src/core/state";
 import { BUILDING_LIST, MAX_MATERIAL, costFor, expansionCost } from "../src/data/buildings";
 import { CROP_LIST, ITEMS, ITEM_LIST } from "../src/data/items";
 import { RECIPES } from "../src/data/recipes";
@@ -76,7 +76,7 @@ describe("farming & town", () => {
     const b = (g.buildings as { x: number; y: number; type: string; crop?: unknown; plot?: unknown }[]);
     for (const x of b) { x.x -= 18; x.y -= 18; delete x.plot; if (x.type === "farm") x.crop = { id: "wheat", planted: 1 }; }
     const m = migrate(g);
-    expect(m.v).toBe(3);
+    expect(m.v).toBe(SAVE_VERSION);
     expect(m.buildings.find((x) => x.type === "house")!.x).toBe(34);
     expect(m.buildings.find((x) => x.type === "farm")!.plot!.crop!.id).toBe("wheat");
   });

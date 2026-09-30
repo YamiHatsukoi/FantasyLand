@@ -41,7 +41,7 @@ const HANDWRITTEN: Omit<FloorDef, "family" | "el" | "biomeName">[] = [
     randomEvents: 5,
   },
   {
-    n: 2, name: "Biển Cát Hổ Phách", biome: "desert", handwritten: true, levelBase: 5,
+    n: 2, name: "Biển Cát Hổ Phách", biome: "desert", handwritten: true, levelBase: 3,
     intro: "Cầu thang đá mở ra một sa mạc vô tận dưới 'mặt trời' là một khối hổ phách khổng lồ treo lơ lửng. Ánh sáng vàng mật khiến mọi thứ trông như đã bị đông cứng từ ngàn năm trước. Dưới những cồn cát, thứ gì đó đang hát.",
     regions: ["Cồn Cát Hát", "Ốc Đảo Gương", "Cổng Thành Zahr", "Thung Lũng Hổ Phách", "Nghĩa Địa Lữ Hành", "Mắt Bão"],
     enemies: ["amber_scorpion", "sand_lizard", "mummy", "vulture", "dust_djinn", "cactus_ghoul"],
@@ -55,7 +55,7 @@ const HANDWRITTEN: Omit<FloorDef, "family" | "el" | "biomeName">[] = [
     randomEvents: 5,
   },
   {
-    n: 3, name: "Đầm Lầy Đèn Ma", biome: "swamp", handwritten: true, levelBase: 9,
+    n: 3, name: "Đầm Lầy Đèn Ma", biome: "swamp", handwritten: true, levelBase: 5,
     intro: "Nước đen phẳng lặng như gương, phản chiếu hàng vạn chiếc đèn lồng lơ lửng không ai thắp. Mỗi ngọn lửa nhỏ run rẩy như một hơi thở. Người ta nói, dưới làn nước này là cả một vương quốc đã tự dìm mình.",
     regions: ["Bến Đò Không Người", "Rừng Đước Tối", "Làng Người Ếch", "Tháp Chuông Chìm", "Hồ Đèn Lồng", "Cung Điện Ngập Nước"],
     enemies: ["frogman", "wisp", "drowned", "leech", "bog_crab", "lantern_ghost"],
@@ -72,9 +72,9 @@ const HANDWRITTEN: Omit<FloorDef, "family" | "el" | "biomeName">[] = [
 
 const cache = new Map<number, FloorDef>();
 
+/** Monster level at the entrance of floor n: about 2 per floor, 192 on floor 100 (its gatekeeper is 200). */
 export function levelBase(n: number) {
-  if (n <= 3) return HANDWRITTEN[n - 1].levelBase;
-  return Math.round(12 + (n - 4) * 0.86);
+  return Math.round(1 + ((Math.max(1, n) - 1) * 191) / 99);
 }
 
 export function specFor(n: number): FloorSpec {

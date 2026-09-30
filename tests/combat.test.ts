@@ -193,14 +193,15 @@ describe("balance smoke tests", () => {
     }
   });
 
-  it("floor-1 guardian is beatable but not trivial for a level 5 party of three", () => {
+  it("floor-1 guardian is beatable but not trivial for a level 9 party of three", () => {
+    // levels 9 / 7 on the 1–200 scale are levels 5 / 4 of the old 1–99 one
     const rate = simulate(
       () => [
-        unitFromCharacter(makeCharacter("hero", "H", "warrior", "hero", 5)),
-        unitFromCharacter(makeCharacter("lyra", "L", "ranger", "lyra", 5)),
-        unitFromCharacter(makeCharacter("bram", "B", "guardian", "bram", 5)),
+        unitFromCharacter(makeCharacter("hero", "H", "warrior", "hero", 9)),
+        unitFromCharacter(makeCharacter("lyra", "L", "ranger", "lyra", 9)),
+        unitFromCharacter(makeCharacter("bram", "B", "guardian", "bram", 9)),
       ],
-      () => [unitFromEnemy("ancient_treant", 5, 0), unitFromEnemy("sapling", 4, 1), unitFromEnemy("sapling", 4, 2)],
+      () => [unitFromEnemy("ancient_treant", 9, 0), unitFromEnemy("sapling", 7, 1), unitFromEnemy("sapling", 7, 2)],
     );
     expect(rate).toBeGreaterThan(0.35);
     expect(rate).toBeLessThan(0.98);

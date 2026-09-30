@@ -1,3 +1,4 @@
+import { LEVEL_STEP } from "../core/levels";
 import { chooseAction } from "./ai";
 import { MECH } from "./bossMech";
 import { critChance, dodgeChance } from "./rates";
@@ -716,7 +717,7 @@ export class Battle {
   /** A boss calls in one of its floor's monsters (never more than 4 enemies standing). */
   spawnMinion(boss: Unit) {
     if (!this.spawner || !boss.minion || this.alive(boss.side).length >= 4) return;
-    const m = this.spawner(boss.minion, Math.max(1, boss.level - 2), 50 + this.spawned++);
+    const m = this.spawner(boss.minion, Math.max(1, boss.level - 2 * LEVEL_STEP), 50 + this.spawned++);
     m.minionOf = boss.uid;
     this.announce(boss, "Gọi Tay Sai!");
     this.addUnit(m);

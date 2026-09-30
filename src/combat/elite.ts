@@ -1,3 +1,4 @@
+import { LEVEL_STEP } from "../core/levels";
 import { hashString } from "../core/rng";
 import type { Battle } from "./engine";
 import type { Unit } from "./types";
@@ -48,7 +49,7 @@ export function makeElite(b: Battle, u: Unit, floor: number, seed: number) {
   }
   u.elite = picks.map((a) => a.id);
   u.name = `★ ${u.name}`;
-  u.level += 2;
+  u.level += 2 * LEVEL_STEP;
   u.base = { ...u.base, hp: Math.round(u.base.hp * 2.4), atk: Math.round(u.base.atk * 1.2), mag: Math.round(u.base.mag * 1.2), def: Math.round(u.base.def * 1.1) };
   u.hp = u.base.hp;
   u.shieldMax = (u.shieldMax ?? 2) + 1;
