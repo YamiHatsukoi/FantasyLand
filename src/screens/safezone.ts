@@ -3,7 +3,7 @@ import { hashString } from "../core/rng";
 import { buildingCost, canAfford, logMsg, pay, type PlacedBuilding } from "../core/state";
 import { BUILDINGS, BUILDING_LIST, RANK_NAMES, type BuildingCategory } from "../data/buildings";
 import { SEASON_ICONS, SEASON_NAMES, seasonOf } from "../data/items";
-import { buildingCanvas, cropCanvas } from "../render/buildings";
+import { CROP_LIFT, buildingCanvas, cropCanvas } from "../render/buildings";
 import { MapView } from "../render/mapview";
 import { spriteCanvas } from "../render/pixel";
 import { isPerson, personCanvas, type Dir } from "../render/people";
@@ -379,7 +379,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
         }
         if (b.type === "farm" && b.plot?.crop) {
           const st = cropStage(b.plot.crop);
-          view.img(cropCanvas(b.plot.crop.id, st), b.x, b.y);
+          view.img(cropCanvas(b.plot.crop.id, st), b.x, b.y - CROP_LIFT);
           if (st === 3 && isReady(b.plot.crop)) { c.font = `${Math.round(view.tile * 0.4)}px sans-serif`; c.fillText("✨", view.sx(b.x) + view.tile * 0.55, view.sy(b.y) + view.tile * 0.3 + Math.sin(t / 300) * 3); }
         }
         if (b.type === "gate") {

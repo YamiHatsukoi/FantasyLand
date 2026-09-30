@@ -928,7 +928,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   reveal();
   checkRegion();
   savePos();
-  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__dungeon = { ents, interact, player, tryStep, map, reveal, fog, updateFog };
+  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__dungeon = { ents, interact, player, tryStep, map, reveal, fog, updateFog, view };
 
   if (fresh) {
     busy = true;

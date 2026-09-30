@@ -1,10 +1,10 @@
 import { app } from "../app";
 import { chooseAction } from "../combat/ai";
 import { describeSkill, skillCostText } from "../combat/describe";
-import { Battle } from "../combat/engine";
+import { Battle, CHARGE_MULT, MAX_BOOST, MAX_BP } from "../combat/engine";
 import { unitFromCharacter, unitFromEnemy } from "../combat/factory";
 import { ELEMENTS, STATUSES } from "../combat/statuses";
-import type { BattleEvent, Eff, Skill, Unit } from "../combat/types";
+import type { BattleEvent, Eff, Element, Skill, Unit } from "../combat/types";
 import { Rng } from "../core/rng";
 import { XP_RATE, charStats, giveXp, logMsg, partyBuffs } from "../core/state";
 import { ENEMIES } from "../data/enemies";
@@ -16,7 +16,7 @@ import { T, TS, tileSet } from "../render/tiles";
 import { giveToGame } from "../story/runner";
 import { BIOMES } from "../world/biomes";
 import { getFloor } from "../world/floors";
-import { bar, h, nn, sleep, toast } from "../ui/dom";
+import { bar, h, nn, openModal, sleep, toast } from "../ui/dom";
 
 const ENEMY_EL: Record<string, string> = {
   forest: "earth", desert: "fire", swamp: "water", tundra: "ice", fungal: "poison", volcano: "fire", reef: "water", bamboo: "wind",
@@ -39,6 +39,9 @@ interface UnitView {
   hp: HTMLElement;
   mp?: HTMLElement;
   st: HTMLElement;
+  intent?: HTMLElement;
+  shield?: HTMLElement;
+  bp?: HTMLElement;
 }
 
 type PlayerChoice =
@@ -86,18 +89,29 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   const delay = (ms: number) => sleep(fast ? ms * 0.45 : ms);
 
   // ------------------------------------------------------------ DOM
+  // leftover map hints must not cover the battle
+  document.querySelectorAll(".toasts .toast").forEach((t) => t.remove());
+  const known = (g.scan ??= {});
+  const isKnown = (u: Unit, el: string) => !!u.enemyId && (known[u.enemyId] ?? []).includes(el);
+  const weakEls = (u: Unit) => (Object.entries(u.resist) as [Element, number][]).filter(([, v]) => v > 1).map(([k]) => k);
+
   const timeline = h("div", { class: "timeline" });
-  const autoBtn = h("button", { class: `btn small ${auto ? "primary" : ""}`, onclick: () => setAuto(!auto) }, "⚙️ Tự động");
+  const autoBtn = h("button", { class: `btn small ${auto ? "primary" : ""}`, title: "Để cả đội tự đánh (không dùng Dũng Khí, không né đòn Tụ Lực)", onclick: () => setAuto(!auto) }, "⚙️ Tự động");
   const fastBtn = h("button", { class: `btn small ${fast ? "primary" : ""}`, onclick: () => { fast = !fast; pref.fast = fast; fastBtn.classList.toggle("primary", fast); } }, "⏩ x2");
+  const helpBtn = h("button", { class: "btn small", title: "Cách chơi", onclick: () => combatHelp() }, "❓");
+  const banner = h("div", { class: "cb-banner" });
   const fieldE = h("div", { class: "field-enemies" });
+  const stage = h("div", { class: "cb-stage" }, fieldE, banner);
   const fieldA = h("div", { class: "field-allies" });
+  const actorBox = h("div", { class: "cb-actor" });
+  const bpBox = h("div", { class: "bp-ctl" });
   const info = h("div", { class: "cb-info" }, "…");
-  const tabs = h("div", { class: "tabs" });
+  const tabs = h("div", { class: "tabs cb-tabs" });
   const grid = h("div", { class: "skill-grid" });
   const logLine = h("div", { class: "cb-log" });
-  const panel = h("div", { class: "cb-panel" }, info, tabs, grid, logLine);
+  const panel = h("div", { class: "cb-panel" }, h("div", { class: "cb-head" }, actorBox, bpBox), info, tabs, grid, logLine);
   const el = h("div", { class: "combat", style: `--cb1:${biome.bg[0]};--cb2:${biome.bg[1]};--ground:url(${groundURL(setup.biome)})` },
-    h("div", { class: "cb-top" }, timeline, autoBtn, fastBtn), fieldE, fieldA, panel);
+    h("div", { class: "cb-top" }, h("span", { class: "tl-label" }, "Lượt"), timeline, helpBtn, autoBtn, fastBtn), stage, fieldA, panel);
   document.body.append(el);
 
   const views = new Map<string, UnitView>();
@@ -105,20 +119,23 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     const img = h("img", { class: "sprite", src: spriteURL(u.sprite, u.palette, 8), alt: u.name, draggable: false });
     const hp = bar(u.hp, battle.maxHp(u), "hp");
     const st = h("div", { class: "statuses" });
-    const root = h("div", { class: `unit enemy ${u.boss ? "boss" : ""}` }, st, img, h("div", { class: "uname" }, `${u.name} · Lv${u.level}`), hp);
+    const intent = h("div", { class: "intent" });
+    const shield = h("div", { class: "shieldrow" });
+    const root = h("div", { class: `unit enemy ${u.boss ? "boss" : ""}` }, intent, st, img, h("div", { class: "uname" }, `${u.name} · Lv${u.level}`), hp, shield);
     root.addEventListener("click", () => onUnitClick(u));
     fieldE.append(root);
-    views.set(u.uid, { root, img, hp, st });
+    views.set(u.uid, { root, img, hp, st, intent, shield });
   }
   for (const u of allies) {
     const img = h("img", { class: "sprite", src: spriteURL(u.sprite, u.palette, 4), alt: u.name, draggable: false });
     const hp = bar(u.hp, battle.maxHp(u), "hp", "");
     const mp = bar(u.mp, battle.maxMp(u), "mp", "");
     const st = h("div", { class: "statuses" });
-    const root = h("div", { class: "unit ally-card" }, img, h("div", { class: "info" }, h("div", { class: "uname" }, u.name), hp, mp, st));
+    const bp = h("div", { class: "bp-pips", title: "Dũng Khí: +1 mỗi lượt, tiêu để tăng sức đòn đánh" });
+    const root = h("div", { class: "unit ally-card" }, img, h("div", { class: "info" }, h("div", { class: "uname" }, u.name), hp, mp, h("div", { class: "row", style: "gap:4px;flex-wrap:nowrap;justify-content:space-between" }, bp, st)));
     root.addEventListener("click", () => onUnitClick(u));
     fieldA.append(root);
-    views.set(u.uid, { root, img, hp, mp, st });
+    views.set(u.uid, { root, img, hp, mp, st, bp });
   }
 
   function setAuto(v: boolean) {
@@ -131,6 +148,17 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
       pending = null;
       res({ kind: "skill", ...chooseAction(battle, actor) });
     }
+  }
+
+  function combatHelp() {
+    const m = openModal("⚔️ Cách Đánh");
+    m.body.append(
+      h("div", { class: "cb-help" },
+        h("div", null, h("b", null, "🛡️ Khiên & Phá Khiên"), h("p", null, "Mỗi kẻ địch có một số điểm Khiên và những ô điểm yếu (❔ = chưa biết). Đánh trúng hệ nó yếu sẽ trừ 1 điểm Khiên; về 0 là PHÁ KHIÊN: nó mất lượt kế tiếp và chịu thêm 50% sát thương cho tới khi hồi lại. Thử các hệ khác nhau để lộ điểm yếu — trò chơi sẽ nhớ cho lần sau.")),
+        h("div", null, h("b", null, "🔥 Dũng Khí"), h("p", null, "Mỗi lượt mỗi người được +1 Dũng Khí (tối đa 5). Tiêu 1–3 điểm trước khi ra đòn: Tấn công thường đánh thêm 1 nhát mỗi điểm (rất hợp để phá khiên), kỹ năng và hồi máu mạnh thêm 50% mỗi điểm. Lượt nào đã tiêu thì lượt sau không được cộng.")),
+        h("div", null, h("b", null, "👁️ Ý đồ của địch"), h("p", null, "Bong bóng trên đầu kẻ địch cho biết lượt tới nó định làm gì và nhắm vào ai. Boss đôi khi ⚠️ Tụ Lực: đòn kế tiếp mạnh gấp đôi — Phòng thủ để đỡ, hoặc Phá Khiên nó để huỷ luôn đòn đó.")),
+        h("div", null, h("b", null, "🏆 Phần thưởng"), h("p", null, "Mỗi lần Phá Khiên được thêm 10% vàng và kinh nghiệm cuối trận (tối đa +50%). Chế độ Tự động vẫn dùng được, nhưng không biết tận dụng Dũng Khí hay né đòn Tụ Lực."))),
+      h("div", { class: "row end" }, h("button", { class: "btn primary", onclick: () => m.close() }, "Hiểu rồi!")));
   }
 
   function refresh(u: Unit) {
@@ -152,13 +180,40 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
       span.addEventListener("click", (e) => { e.stopPropagation(); toast(`${d.icon} ${d.name} (${s.turns} lượt${s.stacks > 1 ? `, ${s.stacks} tầng` : ""}): ${d.desc}`); });
       return span;
     }));
+    if (v.bp) v.bp.replaceChildren(...Array.from({ length: MAX_BP }, (_, i) => h("i", { class: i < (u.bp ?? 0) ? "on" : "" })));
+    if (v.shield) {
+      const weak = weakEls(u);
+      v.shield.replaceChildren(
+        h("span", { class: `shield-badge ${u.broken ? "broken" : ""}`, title: u.broken ? "Vỡ khiên! Mất lượt kế tiếp, chịu thêm 50% sát thương" : `Khiên: còn ${u.shield} lần trúng điểm yếu nữa là vỡ` }, u.broken ? "💥" : `🛡️${u.shield ?? 0}`),
+        ...weak.map((e) => h("span", { class: `weak ${isKnown(u, e) ? "known" : ""}`, title: isKnown(u, e) ? `Yếu ${ELEMENTS[e].name}` : "Điểm yếu chưa rõ — thử các hệ khác nhau" }, isKnown(u, e) ? ELEMENTS[e].icon : "❔")));
+    }
+    if (v.intent) renderIntent(u, v.intent);
+    v.root.classList.toggle("broken", !!u.broken);
+    v.root.classList.toggle("charged", !!u.charged);
     v.root.classList.toggle("dead", u.hp <= 0);
+  }
+
+  function renderIntent(u: Unit, box: HTMLElement) {
+    const it = u.intent;
+    if (u.hp <= 0 || !it) { box.replaceChildren(); box.className = "intent"; return; }
+    if (it.charge) {
+      box.className = "intent warn";
+      box.replaceChildren("⚠️ Tụ lực");
+      box.title = "Lượt tới nó sẽ tụ lực, rồi tung đòn mạnh gấp đôi";
+      return;
+    }
+    const sk = getSkill(it.skill);
+    const t = it.target ? battle.unit(it.target) : undefined;
+    const who = sk.target === "enemies" ? "cả đội" : sk.target === "allies" ? "đồng bọn" : sk.target === "self" ? "bản thân" : t ? t.name.split(" ")[0] : "?";
+    box.className = `intent ${u.charged ? "danger" : ""}`;
+    box.replaceChildren(`${u.charged ? "💢" : ""}${sk.icon} ${sk.name}`, h("small", null, ` → ${who}`));
+    box.title = u.charged ? `Đòn tụ lực ×${CHARGE_MULT}! Phòng thủ hoặc phá khiên để huỷ.` : describeSkill(sk).join(" ");
   }
 
   function refreshAll() {
     for (const u of battle.units) refresh(u);
     timeline.replaceChildren(...battle.timeline(9).map((u) =>
-      h("img", { class: `tl sprite ${u.side}`, src: spriteURL(u.sprite, u.palette, 2), title: u.name })));
+      h("img", { class: `tl sprite ${u.side} ${u.broken ? "broken" : ""}`, src: spriteURL(u.sprite, u.palette, 2), title: u.name })));
   }
 
   function floaty(u: Unit, text: string, cls: string) {
@@ -167,6 +222,18 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     const f = h("div", { class: `floaty ${cls}` }, text);
     v.root.append(f);
     setTimeout(() => f.remove(), 1200);
+  }
+
+  function announce(text: string, cls: string, ms = 900) {
+    const b = h("div", { class: `cb-announce ${cls}` }, text);
+    banner.append(b);
+    setTimeout(() => b.remove(), ms);
+  }
+
+  function shake(strong = false) {
+    stage.classList.remove("quake", "quake2");
+    void stage.offsetWidth;
+    stage.classList.add(strong ? "quake2" : "quake");
   }
 
   function setActive(u: Unit | null) {
@@ -191,7 +258,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         if (!u) break;
         const name = ev.skill.startsWith("item:") ? getItem(ev.skill.slice(5)).name : getSkill(ev.skill).name;
         const icon = ev.skill.startsWith("item:") ? getItem(ev.skill.slice(5)).icon : getSkill(ev.skill).icon;
-        logLine.textContent = `${u.name} dùng ${icon} ${name}`;
+        log(`${u.name} dùng ${icon} ${name}`);
         if (ev.skill !== "attack") floaty(u, `${icon} ${name}`, "react");
         await delay(ev.skill === "attack" ? 220 : 480);
         break;
@@ -205,9 +272,11 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
           void v.root.offsetWidth;
           v.root.classList.add("hit", "flash");
           setTimeout(() => v.root.classList.remove("flash"), 120);
+          if (ev.crit || u.broken) shake(false);
         }
         const col = ELEMENTS[ev.el]?.color ?? "#fff";
-        const f = h("div", { class: `floaty ${ev.crit ? "crit" : ""}`, style: `color:${col}` }, `${ev.crit ? "💥" : ""}${ev.amount}${ev.absorbed ? ` (🔰${ev.absorbed})` : ""}`);
+        const weak = u.side === "enemy" && battle.isWeak(u, ev.el) && !ev.dot;
+        const f = h("div", { class: `floaty ${ev.crit ? "crit" : ""} ${weak ? "weakhit" : ""}`, style: `color:${col}` }, `${ev.crit ? "💥" : ""}${ev.amount}${ev.absorbed ? ` (🔰${ev.absorbed})` : ""}`);
         v?.root.append(f);
         setTimeout(() => f.remove(), 1200);
         refresh(u);
@@ -231,7 +300,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
       case "reaction": {
         const u = battle.unit(ev.uid);
         if (u) floaty(u, `✦ ${ev.name} ✦`, "react");
-        logLine.textContent = `Phản ứng: ${ev.name}!`;
+        log(`Phản ứng: ${ev.name}!`);
         await delay(420);
         break;
       }
@@ -246,9 +315,60 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         if (u) refresh(u);
         break;
       }
+      case "scan": {
+        const u = battle.unit(ev.uid);
+        if (!u?.enemyId) break;
+        const list = (known[u.enemyId] ??= []);
+        if (!list.includes(ev.el)) {
+          list.push(ev.el);
+          if (battle.isWeak(u, ev.el)) { floaty(u, `${ELEMENTS[ev.el].icon} Điểm yếu!`, "react"); log(`Phát hiện: ${u.name} yếu ${ELEMENTS[ev.el].name}!`); }
+          refresh(u);
+        }
+        break;
+      }
+      case "shield": {
+        const u = battle.unit(ev.uid);
+        if (!u) break;
+        refresh(u);
+        const v = views.get(u.uid);
+        const sb = v?.shield?.querySelector(".shield-badge");
+        sb?.classList.remove("pop"); void (sb as HTMLElement | undefined)?.offsetWidth; sb?.classList.add("pop");
+        break;
+      }
+      case "break": {
+        const u = battle.unit(ev.uid);
+        if (!u) break;
+        refresh(u);
+        announce("💥 PHÁ KHIÊN!", "break", 1100);
+        shake(true);
+        log(`${u.name} bị phá khiên! Mất lượt kế tiếp và chịu thêm sát thương.`);
+        await delay(650);
+        break;
+      }
+      case "recover": {
+        const u = battle.unit(ev.uid);
+        if (u) { refresh(u); floaty(u, "🛡️ Hồi khiên", "mp"); }
+        await delay(250);
+        break;
+      }
+      case "boost": {
+        const u = battle.unit(ev.uid);
+        if (u) floaty(u, `🔥 Dũng Khí ×${ev.n}`, "react");
+        await delay(300);
+        break;
+      }
+      case "charge": {
+        const u = battle.unit(ev.uid);
+        if (!u) break;
+        refresh(u);
+        announce(`⚠️ ${u.name} đang tụ lực!`, "warn", 1300);
+        log(`${u.name} tụ lực — đòn kế tiếp cực mạnh! Phòng thủ hoặc phá khiên để huỷ.`);
+        await delay(700);
+        break;
+      }
       case "death": {
         const u = battle.unit(ev.uid);
-        if (u) { refresh(u); logLine.textContent = `${u.name} đã gục ngã!`; }
+        if (u) { refresh(u); log(`${u.name} đã gục ngã!`); }
         await delay(300);
         break;
       }
@@ -263,13 +383,21 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     }
   }
 
+  const logLines: string[] = [];
+  function log(text: string) {
+    logLines.push(text);
+    if (logLines.length > 3) logLines.shift();
+    logLine.replaceChildren(...logLines.map((l, i) => h("div", { class: i === logLines.length - 1 ? "" : "old" }, l)));
+  }
+
   // ------------------------------------------------------------ player input
   let pending: { actor: Unit; resolve: (c: PlayerChoice) => void } | null = null;
   let selected: { kind: "skill"; sk: Skill } | { kind: "item"; it: ItemDef } | null = null;
   let tab: "skills" | "items" = "skills";
+  let boost = 0;
 
   function clearTargets() {
-    for (const v of views.values()) v.root.classList.remove("targetable");
+    for (const v of views.values()) v.root.classList.remove("targetable", "weak-hit");
   }
 
   function targetsFor(actor: Unit): Unit[] {
@@ -299,29 +427,50 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   }
 
   function weaknessText(u: Unit) {
-    const weak = Object.entries(u.resist).filter(([, v]) => (v ?? 1) > 1).map(([k]) => ELEMENTS[k as keyof typeof ELEMENTS].icon);
-    const strong = Object.entries(u.resist).filter(([, v]) => (v ?? 1) < 1).map(([k]) => ELEMENTS[k as keyof typeof ELEMENTS].icon);
-    return `Yếu: ${weak.join(" ") || "—"}   Kháng: ${strong.join(" ") || "—"}`;
+    const tried = u.enemyId ? known[u.enemyId] ?? [] : [];
+    const weak = weakEls(u).map((e) => (tried.includes(e) ? `${ELEMENTS[e].icon} ${ELEMENTS[e].name}` : "❔"));
+    const strong = (Object.entries(u.resist) as [Element, number][]).filter(([k, v]) => v < 1 && tried.includes(k)).map(([k]) => ELEMENTS[k].icon);
+    return `🛡️ Khiên ${u.broken ? "đã vỡ" : `${u.shield}/${u.shieldMax}`} · Yếu: ${weak.join(" ") || "—"} · Kháng (đã biết): ${strong.join(" ") || "—"}${u.intent ? "" : ""}`;
   }
 
   function consumables(): ItemDef[] {
     return Object.keys(g.inventory).map(getItem).filter((it) => it.use && it.use.target !== "none" && it.use.battle !== false && !it.use.special && (g.inventory[it.id] ?? 0) > 0);
   }
 
+  /** A known weakness of some enemy on the field can be hit with this element. */
+  const hitsKnownWeak = (el: Element) => battle.alive("enemy").some((e) => !e.broken && battle.isWeak(e, el) && isKnown(e, el));
+
+  function renderBoost(actor: Unit) {
+    const max = Math.min(MAX_BOOST, actor.bp ?? 0);
+    boost = Math.min(boost, max);
+    bpBox.replaceChildren(...nn(
+      h("span", { class: "muted small" }, "🔥 Dũng Khí"),
+      h("button", { class: "icon-btn bp-btn", disabled: boost <= 0, onclick: () => { boost--; renderBoost(actor); } }, "−"),
+      h("span", { class: "bp-pips big" }, Array.from({ length: MAX_BP }, (_, i) => h("i", { class: `${i < (actor.bp ?? 0) ? "on" : ""} ${i < boost ? "use" : ""}` }))),
+      h("button", { class: "icon-btn bp-btn", disabled: boost >= max, onclick: () => { boost++; renderBoost(actor); } }, "+"),
+      boost ? h("span", { class: "gold small" }, `Tấn công +${boost} nhát · kỹ năng +${boost * 50}%`) : null));
+  }
+
   function renderPanel(actor: Unit) {
+    actorBox.replaceChildren(h("img", { class: "sprite", src: spriteURL(actor.sprite, actor.palette, 2), alt: "" }), h("b", null, `Lượt của ${actor.name}`));
+    renderBoost(actor);
     tabs.replaceChildren(...nn(
       h("button", { class: tab === "skills" ? "on" : "", onclick: () => { tab = "skills"; selected = null; clearTargets(); renderPanel(actor); } }, "⚔️ Kỹ năng"),
       h("button", { class: tab === "items" ? "on" : "", onclick: () => { tab = "items"; selected = null; clearTargets(); renderPanel(actor); } }, `🎒 Vật phẩm (${consumables().length})`),
-      setup.noFlee ? null : h("button", { onclick: () => { if (pending) { const p = pending; pending = null; clearTargets(); p.resolve({ kind: "flee" }); } } }, "🏃 Bỏ chạy"),
+      setup.noFlee ? null : h("button", { onclick: () => { if (pending) { const p = pending; pending = null; clearTargets(); p.resolve({ kind: "flee" }); } } }, `🏃 Bỏ chạy (${Math.round(fleeChance() * 100)}%)`),
     ));
     grid.replaceChildren();
     if (tab === "skills") {
       for (const id of ["attack", "defend", ...actor.skills]) {
         const sk = getSkill(id);
         const can = battle.canUse(actor, sk);
-        const btn = h("button", { class: `skill-btn ${selected?.kind === "skill" && selected.sk.id === id ? "sel" : ""}`, disabled: !can.ok },
+        const el = sk.kind === "physical" && sk.el === "physical" ? (actor.statuses.map((s) => STATUSES[s.id].imbue).find(Boolean) ?? "physical") : sk.el;
+        const weak = (sk.power ?? 0) > 0 && hitsKnownWeak(el as Element);
+        const btn = h("button", { class: `skill-btn ${selected?.kind === "skill" && selected.sk.id === id ? "sel" : ""} ${weak ? "weak" : ""}`, disabled: !can.ok, style: `--elc:${ELEMENTS[el as Element]?.color ?? "#888"}` },
           h("span", { class: "ico" }, sk.icon),
-          h("span", null, h("div", { class: "nm" }, sk.name), h("div", { class: "cs" }, can.ok ? skillCostText(sk) : can.reason)));
+          h("span", { class: "grow" }, h("div", { class: "nm" }, sk.name), h("div", { class: "cs" }, can.ok ? skillCostText(sk) : can.reason)),
+          (sk.power ?? 0) > 0 ? h("span", { class: "el", title: ELEMENTS[el as Element]?.name }, ELEMENTS[el as Element]?.icon ?? "") : null,
+          weak ? h("span", { class: "weak-tag" }, "YẾU") : null);
         btn.addEventListener("click", () => selectSkill(actor, sk));
         grid.append(btn);
       }
@@ -336,7 +485,12 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         grid.append(btn);
       }
     }
-    if (!selected) info.replaceChildren(h("b", null, `Lượt của ${actor.name}.`), " Chọn kỹ năng hoặc vật phẩm. Chạm vào kẻ địch để xem điểm yếu.");
+    if (!selected) {
+      const threat = battle.alive("enemy").find((e) => e.charged || e.intent?.charge);
+      info.replaceChildren(...nn(
+        threat ? h("div", { class: "bad" }, threat.charged ? `⚠️ ${threat.name} đã tụ lực — đòn tới cực mạnh! Phòng thủ, hoặc phá khiên nó để huỷ.` : `⚠️ ${threat.name} sắp tụ lực.`) : null,
+        h("span", null, "Chọn hành động. Nút ", h("span", { class: "weak-tag" }, "YẾU"), " = đánh trúng điểm yếu đã biết. Chạm kẻ địch để xem chi tiết.")));
+    }
   }
 
   function selectSkill(actor: Unit, sk: Skill) {
@@ -352,7 +506,13 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     const needs = battle.needsTarget(sk);
     info.replaceChildren(h("b", null, `${sk.icon} ${sk.name}`), ` (${skillCostText(sk)}) — ${lines.join(" ")}`, " ",
       needs ? h("span", { class: "gold" }, "👉 Chạm vào mục tiêu.") : h("button", { class: "btn small primary", onclick: () => selectSkill(actor, sk) }, "Dùng ▸"));
-    if (needs) for (const t of battle.validTargets(actor, sk)) views.get(t.uid)?.root.classList.add("targetable");
+    if (needs) {
+      for (const t of battle.validTargets(actor, sk)) {
+        const v = views.get(t.uid);
+        v?.root.classList.add("targetable");
+        if (t.side === "enemy" && (sk.power ?? 0) > 0 && battle.isWeak(t, sk.el) && isKnown(t, sk.el)) v?.root.classList.add("weak-hit");
+      }
+    }
   }
 
   function selectItem(actor: Unit, it: ItemDef) {
@@ -374,6 +534,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   function waitForPlayer(actor: Unit): Promise<PlayerChoice> {
     selected = null;
     tab = "skills";
+    boost = 0;
     renderPanel(actor);
     return new Promise((resolve) => { pending = { actor, resolve }; });
   }
@@ -386,17 +547,18 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   // ------------------------------------------------------------ main loop
   const loop = async (): Promise<BattleOutcome> => {
     refreshAll();
+    if (!g.flags.cb_help2) { g.flags.cb_help2 = true; combatHelp(); }
     await delay(300);
     for (let guard = 0; guard < 2000; guard++) {
       const actor = battle.nextTurn();
       await playEvents();
       if (!actor) break;
       if (actor.side === "ally" && !auto && !battle.has(actor, "confuse")) {
-        panel.style.visibility = "visible";
+        panel.classList.remove("idle");
         const c = await waitForPlayer(actor);
         if (c.kind === "flee") {
           if (rng.next() < fleeChance()) {
-            logLine.textContent = "Bỏ chạy thành công!";
+            log("Bỏ chạy thành công!");
             await delay(400);
             return "flee";
           }
@@ -411,14 +573,18 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
             battle.useItem(actor, it.use, c.target, setup.floor, it.id);
           }
         } else {
-          battle.act(actor, { skill: c.skill, target: c.target });
+          battle.act(actor, { skill: c.skill, target: c.target, boost });
         }
       } else {
-        info.replaceChildren(h("b", null, actor.name), actor.side === "ally" ? " (tự động)…" : " đang hành động…");
+        panel.classList.add("idle");
+        actorBox.replaceChildren(h("img", { class: "sprite", src: spriteURL(actor.sprite, actor.palette, 2), alt: "" }), h("b", null, actor.name), actor.side === "ally" ? " (tự động)…" : " đang hành động…");
+        bpBox.replaceChildren();
+        info.replaceChildren();
         grid.replaceChildren();
         tabs.replaceChildren();
         await delay(actor.side === "enemy" ? 250 : 120);
-        battle.act(actor, chooseAction(battle, actor));
+        if (actor.side === "enemy") battle.enemyAct(actor);
+        else battle.act(actor, { ...chooseAction(battle, actor), boost: (actor.bp ?? 0) >= MAX_BP ? 1 : 0 });
       }
       await playEvents();
     }
@@ -442,6 +608,8 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     panel.replaceChildren(result);
     if (outcome === "win") {
       let xp = 0, gold = 0;
+      // breaking shields pays: +10% per break, up to +50%
+      const bonus = Math.min(0.5, battle.breaks * 0.1);
       const loot: Record<string, number> = {};
       for (const u of enemies) {
         const def = ENEMIES[u.enemyId!];
@@ -467,6 +635,8 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         const legs = LEGENDARY_BY_BIOME[fam];
         if (u.boss && legs?.length && rng.chance(0.35)) { const id = rng.pick(legs); loot[id] = (loot[id] ?? 0) + 1; }
       }
+      xp = Math.round(xp * (1 + bonus));
+      gold = Math.round(gold * (1 + bonus));
       g.stats.kills += enemies.length;
       g.gold += gold;
       if (g.expedition) g.expedition.bagGold += gold;
@@ -480,6 +650,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
       result.append(...nn(
         h("h3", null, "Chiến Thắng!"),
         h("div", null, `+${xp} kinh nghiệm · +${gold} vàng`),
+        battle.breaks ? h("div", { class: "gold small" }, `💥 Phá khiên ×${battle.breaks}: thưởng +${Math.round(bonus * 100)}%`) : null,
         h("div", { class: "loot" }, lootLines.map((l) => h("span", null, l))),
         lvl.length ? h("div", { class: "gold" }, lvl.join(" ")) : null,
       ));

@@ -388,6 +388,9 @@ export function buildingCanvas(type: string, level: number): HTMLCanvasElement {
 }
 
 // ------------------------------------------------------------ crops (16x16 overlay on a farm plot)
+/** Crop sprites stand on the bottom rows of their canvas; lift them so they grow from the middle of the plot. */
+export const CROP_LIFT = 0.3;
+
 export function cropCanvas(cropId: string, stage: number): HTMLCanvasElement {
   const key = `crop:${cropId}:${stage}`;
   const hit = cache.get(key);

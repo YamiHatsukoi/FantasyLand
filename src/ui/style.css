@@ -457,3 +457,74 @@ img.iicon.lg { width: 48px; height: 48px; }
 .mm-legend span { display: inline-flex; align-items: center; gap: 4px; }
 .mm-legend img { width: 18px; height: 18px; }
 @media (max-width: 520px) { .mm-pin { width: 16px; height: 16px; } .mm-pin.big { width: 22px; height: 22px; } .mm-pin.hero { width: 20px; height: 20px; } .mm-label { font-size: 9px; } }
+
+/* ---------------------------------------------------------------- combat 2.0 */
+.cb-top .tl-label { font-family: var(--pixel); font-size: 11px; color: var(--muted); }
+.timeline .tl.broken { filter: grayscale(1) brightness(0.7); }
+.cb-stage { flex: 1; min-height: 0; display: flex; position: relative; }
+.cb-stage .field-enemies { flex: 1; }
+.cb-stage.quake { animation: quake 0.28s; }
+.cb-stage.quake2 { animation: quake 0.5s; }
+@keyframes quake { 15% { transform: translate(-6px, 2px); } 30% { transform: translate(6px, -2px); } 45% { transform: translate(-4px, 1px); } 60% { transform: translate(4px, 0); } 80% { transform: translate(-2px, 0); } }
+.cb-banner { position: absolute; inset: 0; pointer-events: none; display: flex; align-items: center; justify-content: center; z-index: 5; }
+.cb-announce {
+  position: absolute; font-family: var(--pixel); font-size: clamp(28px, 8vw, 64px); letter-spacing: 2px; white-space: nowrap;
+  text-shadow: 0 3px 0 #000, 0 0 18px rgba(0,0,0,.8); animation: announce 1.1s ease-out forwards;
+}
+.cb-announce.break { color: #ffd23a; -webkit-text-stroke: 1px #7a2a00; }
+.cb-announce.warn { color: #ff5a4a; font-size: clamp(18px, 5vw, 36px); }
+@keyframes announce { 0% { opacity: 0; transform: scale(2.2) rotate(-6deg); } 18% { opacity: 1; transform: scale(1) rotate(-3deg); } 80% { opacity: 1; transform: scale(1.04) rotate(-3deg); } 100% { opacity: 0; transform: scale(0.9) translateY(-20px) rotate(-3deg); } }
+
+.unit.enemy .intent {
+  font-size: 11px; line-height: 1.25; padding: 3px 7px; border-radius: 9px; white-space: nowrap; max-width: 150%; overflow: hidden; text-overflow: ellipsis;
+  background: rgba(12, 16, 14, 0.88); border: 1px solid rgba(255,255,255,.18); position: relative; min-height: 1.3em;
+}
+.unit.enemy .intent:empty { visibility: hidden; }
+.unit.enemy .intent::after { content: ""; position: absolute; left: 50%; bottom: -5px; transform: translateX(-50%); border: 5px solid transparent; border-bottom: 0; border-top-color: rgba(12, 16, 14, 0.88); }
+.unit.enemy .intent small { color: var(--muted); font-size: 10px; }
+.unit.enemy .intent.warn { border-color: #ffb03a; color: #ffd08a; animation: pulse-warn 1s infinite; }
+.unit.enemy .intent.danger { border-color: #ff4a3a; color: #ffb0a8; background: rgba(80, 10, 10, 0.92); animation: pulse-warn 0.6s infinite; }
+@keyframes pulse-warn { 50% { box-shadow: 0 0 12px #ff4a3a; } }
+.shieldrow { display: flex; gap: 3px; align-items: center; justify-content: center; flex-wrap: wrap; min-height: 20px; }
+.shield-badge { font: 700 12px/1 var(--pixel); padding: 3px 6px; border-radius: 7px; background: #2a3a5a; border: 1px solid #7ab0ff; color: #e8f0ff; }
+.shield-badge.broken { background: #6a2a10; border-color: #ffb03a; color: #ffe0a0; animation: pulse-warn 0.8s infinite; }
+.shield-badge.pop { animation: shield-pop 0.35s; }
+@keyframes shield-pop { 40% { transform: scale(1.5); background: #ffd23a; color: #3a2000; } }
+.shieldrow .weak { font-size: 12px; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; background: rgba(0,0,0,.5); border: 1px dashed rgba(255,255,255,.3); }
+.shieldrow .weak.known { border: 1px solid #ffd23a; background: rgba(90, 70, 10, .55); }
+.unit.enemy.broken img { filter: grayscale(0.6) brightness(0.8) drop-shadow(0 0 10px #ffb03a); transform: rotate(-8deg) translateY(6px); transition: transform .3s; }
+.unit.enemy.charged img { filter: drop-shadow(0 0 14px #ff3a2a) saturate(1.4); animation: charge-glow 0.7s infinite; }
+@keyframes charge-glow { 50% { filter: drop-shadow(0 0 26px #ff3a2a) saturate(1.8) brightness(1.15); } }
+.unit.weak-hit::before { content: "YẾU!"; position: absolute; top: 34%; left: 50%; transform: translateX(-50%); z-index: 4; font: 700 13px/1 var(--pixel); color: #3a2000; background: #ffd23a; padding: 3px 6px; border-radius: 6px; animation: bob 0.6s infinite; }
+.floaty.weakhit { font-size: 32px; }
+.floaty.weakhit::after { content: " ✦"; font-size: 18px; color: #ffd23a; }
+
+.bp-pips { display: inline-flex; gap: 2px; align-items: center; }
+.bp-pips i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.15); display: inline-block; }
+.bp-pips i.on { background: #ff9a2a; box-shadow: 0 0 4px #ff7a1a; }
+.bp-pips.big i { width: 12px; height: 12px; }
+.bp-pips i.use { background: #fff0a0; box-shadow: 0 0 8px #ffd23a; transform: scale(1.2); }
+.cb-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.cb-actor { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.cb-actor img { width: 28px; height: 28px; }
+.bp-ctl { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.bp-ctl .bp-btn { width: 30px; height: 30px; font-size: 16px; }
+.cb-panel.idle .cb-info, .cb-panel.idle .skill-grid { opacity: .5; }
+.cb-tabs button { font-size: 13px; }
+.skill-btn { border-left: 3px solid var(--elc, var(--line)); position: relative; }
+.skill-btn .grow { min-width: 0; }
+.skill-btn .el { font-size: 12px; opacity: .85; }
+.skill-btn.weak { background: linear-gradient(90deg, rgba(255, 210, 58, .16), var(--panel-2) 70%); border-color: #ffd23a88; }
+.weak-tag { font: 700 10px/1 var(--pixel); background: #ffd23a; color: #3a2000; padding: 2px 4px; border-radius: 4px; }
+.skill-btn .weak-tag { position: absolute; top: -6px; right: -4px; }
+.cb-log { height: auto; min-height: 1.4em; white-space: normal; }
+.cb-log div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cb-log .old { opacity: .5; font-size: 11px; }
+.cb-help p { margin: 4px 0 12px; line-height: 1.55; font-size: 14px; color: var(--text); }
+@media (max-width: 520px) {
+  .unit.enemy .intent { font-size: 10px; padding: 2px 5px; }
+  .cb-actor { font-size: 13px; }
+  .skill-grid { grid-template-columns: repeat(2, 1fr); }
+}
+.cb-panel { min-height: 206px; }
+@media (max-width: 520px) { .cb-panel { min-height: 236px; } }
