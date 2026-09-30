@@ -1,7 +1,7 @@
 import { Rng } from "../core/rng";
 import { addItem, charStats, giveXp, logMsg, makeCharacter, recruit, removeItem, syncLook, type GameState } from "../core/state";
 import { CLASSES, COMPANIONS } from "../data/classes";
-import { getItem } from "../data/items";
+import { gearForFloor, getItem } from "../data/items";
 import { SKILLS } from "../data/skills";
 import { BIOMES } from "../world/biomes";
 import { getFloor, levelBase } from "../world/floors";
@@ -87,6 +87,10 @@ export function randomLoot(ctx: StoryCtx, n: number): Record<string, number> {
   for (let i = 0; i < n; i++) {
     const node = ctx.rng.weighted(biome.nodes, (x) => x.w);
     out[node.item] = (out[node.item] ?? 0) + ctx.rng.int(1, 2);
+  }
+  if (n >= 3 && ctx.rng.chance(0.3)) {
+    const id = gearForFloor(Math.max(1, ctx.floor), (xs) => ctx.rng.pick(xs)).id;
+    out[id] = (out[id] ?? 0) + 1;
   }
   if (ctx.rng.chance(0.25)) {
     const potion = ctx.rng.pick(["potion_hp", "potion_mp", "bread", "antidote"]);

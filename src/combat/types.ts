@@ -131,6 +131,8 @@ export interface StatusInstance {
 export type Side = "ally" | "enemy";
 
 export interface Unit {
+  /** Holds a weapon in each hand: basic attacks strike again with the off hand. */
+  dual?: boolean;
   uid: string;
   side: Side;
   name: string;

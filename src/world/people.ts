@@ -558,13 +558,16 @@ export function shopStock(g: GameState, s: Settlement, kind: ShopKind): StockEnt
   const season = seasonOf(g.day);
   let pool: ItemDef[] = [];
   const by = (f: (i: ItemDef) => boolean) => ITEM_LIST.filter(f);
+  // generated gear from around this depth (cities stock a little deeper)
+  const lo = Math.max(1, floor - 3), hi = Math.min(100, floor + (s.size === "city" ? 3 : s.size === "town" ? 2 : 1));
+  const gear = (kinds: string[]) => by((i) => !!i.equip?.floor && i.equip.floor >= lo && i.equip.floor <= hi && kinds.includes(i.equip.kind ?? ""));
   switch (kind) {
     case "general":
       pool = by((i) => (i.type === "potion" || i.type === "food" || i.type === "scroll") && i.value <= Math.min(maxV, 90))
         .concat(by((i) => ["rope", "charcoal", "nails", "paper", "potion_hp", "antidote", "scroll_return"].includes(i.id)));
       break;
     case "smith":
-      pool = by((i) => !!i.equip && (i.equip.slot === "weapon" || i.equip.kind === "mail" || i.equip.kind === "plate" || i.equip.kind === "shield") && (i.tier ?? 1) <= T && (i.tier ?? 1) >= T - 1)
+      pool = gear(["sword", "dagger", "axe", "mace", "greatsword", "greataxe", "hammer", "spear", "scythe", "fist", "katana", "shield", "mail", "plate", "helm", "gauntlets", "greaves", "sabatons"])
         .concat(by((i) => i.id.endsWith("_ingot") && (i.tier ?? 1) <= T));
       break;
     case "apothecary":
@@ -575,14 +578,15 @@ export function shopStock(g: GameState, s: Settlement, kind: ShopKind): StockEnt
         .concat(by((i) => i.type === "fertilizer" && i.value <= maxV));
       break;
     case "tailor":
-      pool = by((i) => !!i.equip && (i.equip.kind === "robe" || i.equip.kind === "leather" || i.equip.kind === "boots") && (i.tier ?? 1) <= T && (i.tier ?? 1) >= T - 1)
+      pool = gear(["robe", "leather", "hat", "cap", "gloves", "bracers", "pants", "leggings", "shoes", "boots", "whip", "bow", "crossbow"])
         .concat(by((i) => i.id.startsWith("cloth_") || i.id.startsWith("leather_")).filter((i) => (i.tier ?? 1) <= T + 1));
       break;
     case "arcane":
-      pool = by((i) => (i.type === "scroll" || i.id === "mana_crystal" || i.id.startsWith("essence_") || (!!i.equip && ["staff", "wand", "tome"].includes(i.equip.kind ?? ""))) && (i.tier ?? 1) <= T && i.value <= maxV * 3);
+      pool = by((i) => (i.type === "scroll" || i.id === "mana_crystal" || i.id.startsWith("essence_") || false) && (i.tier ?? 1) <= T && i.value <= maxV * 3)
+        .concat(gear(["staff", "wand", "tome", "orb", "lute"]));
       break;
     case "jeweler":
-      pool = by((i) => (!!i.equip && i.equip.slot === "accessory" && (i.tier ?? 1) <= T && (i.tier ?? 1) >= T - 2) || (i.shape === "gem" && i.value <= maxV * 2));
+      pool = gear(["amulet", "charm", "ring", "earring"]).concat(by((i) => i.shape === "gem" && !i.equip && i.value <= maxV * 2));
       break;
     case "market":
       pool = by((i) => (i.type === "crop" || i.type === "animal") && i.value <= maxV);

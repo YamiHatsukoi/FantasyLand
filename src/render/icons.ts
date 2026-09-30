@@ -162,6 +162,86 @@ const D: Record<string, Drawer> = {
   earring: (p) => {
     p.disc(8, 3, 1, p.c); p.line(8, 4, 8, 7, p.c); p.ball(8, 10, 3, p.a); p.px(8, 10, p.e); p.px(7, 13, p.e); p.px(9, 13, p.e);
   },
+  // ------------------------------------------------------------ more weapons
+  mace: (p) => {
+    p.line(3, 14, 9, 7, p.c, 2); p.px(2, 15, p.e);
+    p.ball(11, 5, 3, p.a); for (const [x, y] of [[11, 1], [15, 5], [11, 9], [7, 5], [14, 2], [8, 2]]) p.px(x, y, p.al);
+  },
+  whip: (p) => {
+    p.line(2, 14, 5, 11, p.c, 2); p.px(1, 15, p.e);
+    for (let i = 0; i < 14; i++) { const a = i / 13; p.px(5 + Math.sin(a * 5) * 3 + a * 6, 11 - a * 9, i % 3 ? p.a : p.ad); }
+  },
+  greatsword: (p) => {
+    p.line(14, 1, 5, 10, p.al, 2); p.line(13, 1, 4, 10, p.a, 2); p.line(14, 3, 6, 11, p.ad);
+    p.line(2, 8, 8, 14, p.c, 2); p.line(4, 12, 1, 15, p.cd, 2); p.px(5, 11, p.e);
+  },
+  greataxe: (p) => {
+    p.line(3, 15, 10, 2, p.c, 2);
+    p.ellipse(11, 5, 4, 5, p.a); p.ellipse(5, 5, 2, 3, p.a); p.line(15, 1, 15, 9, p.al); p.px(1, 4, p.al);
+    p.px(10, 5, p.ad); p.px(11, 1, p.e);
+  },
+  hammer: (p) => {
+    p.line(3, 15, 9, 6, p.c, 2);
+    p.rect(6, 1, 9, 6, p.a); p.rect(6, 1, 9, 1, p.al); p.rect(6, 6, 9, 1, p.ad); p.rect(9, 3, 3, 2, p.e);
+  },
+  crossbow: (p) => {
+    p.line(3, 13, 12, 4, p.c, 2);
+    for (let i = 0; i <= 10; i++) { const t = i / 10; p.px(3 + t * 10 - Math.sin(t * Math.PI) * 2, 3 + t * 10 - Math.sin(t * Math.PI) * 2 + (t < 0.5 ? 0 : 0), p.a); }
+    p.line(4, 2, 14, 12, p.a); p.line(3, 3, 13, 13, p.ad); p.line(7, 8, 13, 2, p.cl); p.px(14, 1, p.e);
+  },
+  katana: (p) => {
+    for (let i = 0; i < 11; i++) { const x = 14 - i, y = 1 + i + Math.round(Math.sin((i / 10) * Math.PI) * -0.8); p.px(x, y, p.al); p.px(x - 1, y, p.a); p.px(x, y + 1, p.ad); }
+    p.rect(3, 11, 3, 1, p.e); p.rect(4, 10, 1, 3, p.e); p.line(3, 13, 1, 15, p.c, 2);
+  },
+  lute: (p) => {
+    p.line(9, 7, 14, 1, p.c, 2); p.rect(13, 1, 2, 2, p.cd);
+    p.ellipse(6, 10, 5, 4, p.a); p.ellipse(6, 10, 3, 2, p.al); p.disc(6, 10, 1, "#2a1a10"); p.line(4, 12, 13, 2, p.e);
+  },
+  // ------------------------------------------------------------ head / hands / legs / feet
+  hat: (p) => {
+    for (let i = 0; i < 9; i++) p.rect(8 - Math.floor(i / 2), 1 + i, Math.floor(i / 2) * 2 + 1, 1, p.a);
+    p.px(9, 1, p.a); p.px(10, 1, p.al); p.rect(1, 10, 14, 2, p.ad); p.rect(3, 10, 10, 1, p.a); p.rect(4, 8, 8, 2, p.c); p.px(8, 5, p.e);
+  },
+  cap: (p) => {
+    p.ellipse(8, 8, 6, 5, p.a); p.rect(2, 8, 12, 5, p.a); p.rect(2, 11, 12, 2, p.c); p.rect(2, 12, 12, 1, p.cd);
+    p.px(5, 5, p.al); p.px(4, 6, p.al); p.px(8, 4, p.e); p.line(8, 3, 8, 10, p.ad);
+  },
+  helm: (p) => {
+    p.ellipse(8, 7, 6, 6, p.a); p.rect(2, 7, 12, 7, p.a); p.rect(4, 8, 8, 2, "#1b1b2a"); p.rect(7, 10, 2, 4, "#1b1b2a");
+    p.rect(7, 1, 2, 7, p.al); p.px(4, 4, p.al); p.rect(2, 13, 12, 1, p.ad); p.px(3, 11, p.e); p.px(12, 11, p.e);
+  },
+  gloves: (p) => {
+    p.rect(4, 6, 7, 7, p.a); for (let k = 0; k < 4; k++) p.rect(4 + k * 2, 2 + (k === 0 || k === 3 ? 1 : 0), 1, 4, k % 2 ? p.al : p.a);
+    p.rect(11, 7, 2, 3, p.a); p.rect(4, 12, 7, 2, p.c); p.px(7, 9, p.e);
+  },
+  bracers: (p) => {
+    p.rect(3, 3, 10, 10, p.a); p.rect(3, 3, 10, 1, p.al); p.rect(3, 12, 10, 1, p.ad);
+    for (const y of [5, 8, 11]) p.rect(3, y, 10, 1, p.c); p.px(8, 7, p.e); p.px(8, 10, p.e);
+  },
+  gauntlets: (p) => {
+    p.rect(3, 7, 9, 7, p.a); p.rect(3, 7, 9, 1, p.al); for (let k = 0; k < 4; k++) p.rect(3 + k * 2, 2 + (k === 0 ? 2 : 0), 2, 5, k % 2 ? p.a : p.al);
+    p.rect(12, 8, 2, 3, p.a); p.rect(3, 12, 9, 2, p.ad); p.px(7, 10, p.e); p.px(8, 10, p.e);
+  },
+  pants: (p) => {
+    p.rect(3, 2, 10, 4, p.a); p.rect(3, 6, 4, 8, p.a); p.rect(9, 6, 4, 8, p.a); p.rect(3, 2, 10, 1, p.c);
+    p.rect(3, 13, 4, 1, p.ad); p.rect(9, 13, 4, 1, p.ad); p.px(4, 7, p.al); p.px(8, 2, p.e);
+  },
+  leggings: (p) => {
+    p.rect(3, 2, 10, 4, p.a); p.rect(3, 6, 4, 8, p.a); p.rect(9, 6, 4, 8, p.a); p.rect(3, 2, 10, 2, p.c);
+    p.rect(3, 8, 4, 2, p.c); p.rect(9, 8, 4, 2, p.c); p.px(4, 11, p.al); p.px(8, 3, p.e);
+  },
+  greaves: (p) => {
+    p.rect(3, 2, 4, 12, p.a); p.rect(9, 2, 4, 12, p.a); p.rect(3, 2, 4, 1, p.al); p.rect(9, 2, 4, 1, p.al);
+    p.ellipse(5, 7, 2, 1, p.al); p.ellipse(11, 7, 2, 1, p.al); p.rect(3, 13, 4, 1, p.ad); p.rect(9, 13, 4, 1, p.ad); p.px(5, 4, p.e); p.px(11, 4, p.e);
+  },
+  shoes: (p) => {
+    p.rect(2, 8, 6, 4, p.a); p.rect(2, 11, 6, 2, p.c); p.rect(9, 6, 5, 4, p.ad); p.rect(9, 9, 6, 2, p.cd);
+    p.px(3, 8, p.al); p.px(6, 9, p.e); p.px(12, 7, p.e);
+  },
+  sabatons: (p) => {
+    p.rect(2, 4, 5, 8, p.a); p.rect(2, 10, 8, 4, p.a); p.rect(9, 3, 5, 8, p.ad); p.rect(9, 9, 6, 4, p.ad);
+    for (const y of [6, 9]) { p.rect(2, y, 5, 1, p.al); p.rect(9, y - 1, 5, 1, p.a); } p.rect(2, 13, 8, 1, p.c); p.px(4, 5, p.e);
+  },
   // ------------------------------------------------------------ materials
   log: (p) => {
     p.rect(2, 6, 12, 6, p.a); p.rect(2, 6, 12, 1, p.al); p.rect(2, 11, 12, 1, p.ad);

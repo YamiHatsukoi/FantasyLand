@@ -1,4 +1,4 @@
-import { charPassives, charStats, type Character } from "../core/state";
+import { charPassives, charStats, dualWielding, type Character } from "../core/state";
 import type { StatMods } from "./types";
 import { ENEMIES, type EnemyDef } from "../data/enemies";
 import type { Stats, Unit } from "./types";
@@ -29,6 +29,7 @@ export function unitFromCharacter(ch: Character, buffs: StatMods = {}): Unit {
     tags: [],
     resist: {},
     charId: ch.id,
+    dual: dualWielding(ch),
     ai: ch.classId === "cleric" ? "support" : "smart",
   };
 }

@@ -11,6 +11,7 @@ import { PLAYER_SKILLS, SCHOOL_NAMES } from "../data/skills";
 import { spriteImg } from "../render/pixel";
 import { confirmBox, h, nn, openModal, toast, type ModalHandle } from "../ui/dom";
 import { costView as costViewG, itemImg, lootChips } from "../ui/icon";
+import { GEAR_NAMES } from "../ui/gear";
 import { getFloor } from "../world/floors";
 import {
   SOIL_NAMES, WEATHER, allPlots, appeal, applyFertilizer, cropInfo, efficiency, ensureSlots, harvest, housing, isReady,
@@ -372,7 +373,7 @@ function greenhouseBody(m: ModalHandle, b: PlacedBuilding, render: () => void) {
 const stationState: Record<string, { cat: string; q: string; can: boolean }> = {};
 
 function recipeCategory(it: ItemDef): string {
-  if (it.equip) return it.equip.slot === "weapon" ? "Vũ khí" : it.equip.slot === "armor" ? "Giáp" : "Trang sức";
+  if (it.equip) return GEAR_NAMES[it.equip.slot].replace(" 1", "");
   return TYPE_NAMES[it.type];
 }
 

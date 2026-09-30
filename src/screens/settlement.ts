@@ -5,6 +5,7 @@ import { JOBS, PERSONAS } from "../data/npcText";
 import { spriteImg } from "../render/pixel";
 import { h, openModal, toast } from "../ui/dom";
 import { itemImg } from "../ui/icon";
+import { gearTags, rarityClass } from "../ui/gear";
 import {
   SHOP_NAMES, SIZE_NAMES, activeQuest, bought, buyPrice, getNpc, hearts, markBought, memOf, questGoal, questProgress, sellPrice, shopStock,
   type Settlement, type ShopKind,
@@ -101,11 +102,11 @@ function openShop(s: Settlement, kind: ShopKind, ownerId: string, refresh: () =>
         const it = getItem(e.id);
         const left = e.qty - (got[e.id] ?? 0);
         const price = buyPrice(g, ownerId, e.price);
-        const desc = it.equip ? statText(it.equip.stats) : it.desc;
+        const desc = it.equip ? `${gearTags(it).join(" · ")} — ${statText(it.equip.stats)}` : it.desc;
         list.append(h("div", { class: `item-row ${left <= 0 ? "locked" : ""}` },
           h("span", { class: "ico" }, itemImg(it.id)),
           h("div", { class: "meta" },
-            h("div", { class: "name" }, it.name, h("span", { class: "tag" }, TYPE_NAMES[it.type]), it.tier ? h("span", { class: "tag" }, `Bậc ${it.tier}`) : null, g.inventory[it.id] ? h("span", { class: "tag" }, `có ${g.inventory[it.id]}`) : null),
+            h("div", { class: "name" }, h("span", { class: it.equip ? rarityClass(it) : "" }, it.name), h("span", { class: "tag" }, TYPE_NAMES[it.type]), it.tier ? h("span", { class: "tag" }, `Bậc ${it.tier}`) : null, g.inventory[it.id] ? h("span", { class: "tag" }, `có ${g.inventory[it.id]}`) : null),
             h("div", { class: "desc" }, desc)),
           h("span", { class: "qty" }, left > 0 ? `×${left}` : "hết"),
           h("button", {

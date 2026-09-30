@@ -29,8 +29,11 @@ export interface Look {
   glow?: boolean; // glowing eyes
   cape?: string;
   fem?: boolean;
-  weapon?: { kind: string; c0: string; c1: string; c2: string };
+  weapon?: Held;
+  off?: Held; // off-hand item: shield, tome, orb or a second weapon
+  gloves?: string;
 }
+interface Held { kind: string; c0: string; c1: string; c2: string }
 
 const BASE_LOOK: Look = {
   skin: "#f2c8a0", hair: "#6b3f22", hairStyle: "short", eyes: "#2a3a6a", top: "#3b6fd6", accent: "#c9a227",
@@ -156,10 +159,17 @@ function applyCustom(L: Look, pal: Record<string, string>) {
     else if (kind === "leather") { L.outfit = "vest"; L.accent = col2 ?? L.accent; }
     else if (kind === "mail" || kind === "plate") { L.outfit = "armor"; L.accent = col2 ?? L.accent; if (kind === "plate") L.pants = hs(col, -0.25); }
   }
-  if (pal.w) {
-    const [kind, c0, c1, c2] = pal.w.split("|");
-    L.weapon = { kind, c0, c1, c2 };
+  const held = (v: string): Held => { const [kind, c0, c1, c2] = v.split("|"); return { kind, c0, c1, c2 }; };
+  if (pal.w) L.weapon = held(pal.w);
+  if (pal.o) L.off = held(pal.o);
+  if (pal.hg) {
+    const [kind, col] = pal.hg.split("|");
+    L.hat = ({ hat: "wizard", cap: "cap", helm: "helmet", helmet: "crown" } as Record<string, Hat>)[kind] ?? "helmet";
+    L.hatCol = col;
   }
+  if (pal.gl) L.gloves = pal.gl;
+  if (pal.lg) L.pants = pal.lg;
+  if (pal.ft) L.shoes = pal.ft;
 }
 
 // ------------------------------------------------------------ grid painter
@@ -257,70 +267,97 @@ function drawBody(g: G, L: Look, dir: Dir, frame: number) {
   // arms
   const armSwing = step ? (alt ? 1 : -1) : 0;
   if (dir === 2) {
-    g.rect(7 + armSwing, y0 + 1, 2, 6, hs(top, 0.1)); g.rect(7 + armSwing, y0 + 7, 2, 2, skin);
+    g.rect(7 + armSwing, y0 + 1, 2, 6, hs(top, 0.1)); g.rect(7 + armSwing, y0 + 7, 2, 2, L.gloves ?? skin);
   } else {
-    g.rect(2, y0 + 1 + (armSwing > 0 ? 1 : 0), 2, 6, top); g.rect(2, y0 + 7 + (armSwing > 0 ? 1 : 0), 2, 2, skin);
-    g.rect(12, y0 + 1 + (armSwing < 0 ? 1 : 0), 2, 6, td); g.rect(12, y0 + 7 + (armSwing < 0 ? 1 : 0), 2, 2, sk2);
+    g.rect(2, y0 + 1 + (armSwing > 0 ? 1 : 0), 2, 6, top); g.rect(2, y0 + 7 + (armSwing > 0 ? 1 : 0), 2, 2, L.gloves ?? skin);
+    g.rect(12, y0 + 1 + (armSwing < 0 ? 1 : 0), 2, 6, td); g.rect(12, y0 + 7 + (armSwing < 0 ? 1 : 0), 2, 2, L.gloves ? hs(L.gloves, -0.2) : sk2);
   }
   // neck
   if (dir !== 1) g.rect(7, y0 - 1, 2, 1, sk2);
 }
 
-/** Weapon held in the hand (or shield on the arm). `behind` pass draws what is hidden behind the body. */
+/** Items held in the hands. `behind` pass draws what is hidden behind the body. */
 function drawWeapon(g: G, L: Look, dir: Dir, frame: number, behind: boolean) {
-  const w = L.weapon;
-  if (!w) return;
+  if (L.weapon) drawHeld(g, L.weapon, dir, frame, behind, false);
+  if (L.off) drawHeld(g, L.off, dir, frame, behind, true);
+}
+
+function drawHeld(g: G, w: Held, dir: Dir, frame: number, behind: boolean, off: boolean) {
   const bob = frame % 2 === 1 ? 1 : 0;
   const y0 = 15 + bob;
   const metal = w.c0, grip = w.c1 || "#7a4a2a", gem = w.c2 || "#8ad8ff";
-  const hl = hs(metal, 0.35);
-  // which side: down → viewer's right hand; up → left, behind the body; side → front hand
-  const isBehind = dir === 1;
-  if (behind !== isBehind && w.kind !== "shield" && w.kind !== "bow") return;
-  const hx = dir === 0 ? 13 : dir === 1 ? 2 : 9, hy = y0 + 8;
+  const hl = hs(metal, 0.35), md = hs(metal, -0.25);
+  // main hand: viewer's right when facing down, left (behind) when facing up, front hand in profile.
+  // off hand: the other side; in profile it is the far hand, behind the body.
+  const isBehind = off ? dir !== 0 : dir === 1;
+  if (behind !== isBehind) return;
+  const hx = off ? (dir === 0 ? 2 : dir === 1 ? 13 : 5) : dir === 0 ? 13 : dir === 1 ? 2 : 9;
+  const hy = y0 + 8;
+  const side = dir === 2;
+  const blade = (len: number, width = 1) => {
+    if (side) { for (let i = 0; i < len; i++) for (let k = 0; k < width; k++) g.px(hx + 1 + Math.floor(i * 0.6) + k, hy + 1 + i, i === len - 1 ? hl : k ? md : metal); g.px(hx, hy, grip); g.px(hx + 1, hy - 1, grip); }
+    else { g.rect(hx, hy + 1, width, len, metal); if (width > 1) g.rect(hx + 1, hy + 1, 1, len, md); g.px(hx, hy + len, hl); g.rect(hx - 1, hy + 1, 2 + width, 1, grip); }
+  };
+  // long blades are carried upright, point to the sky
+  const upright = (len: number, width: number) => {
+    if (side) {
+      for (let i = 0; i < len; i++) for (let k = 0; k < width; k++) g.px(hx + 1 + Math.floor(i * 0.45) + k, hy - 1 - i, i === len - 1 ? hl : k ? md : metal);
+      g.px(hx, hy, grip); g.px(hx, hy + 1, grip); g.rect(hx - 1, hy - 1, 3, 1, gem);
+    } else {
+      g.rect(hx, hy - len, width, len, metal); if (width > 1) g.rect(hx + 1, hy - len, 1, len, md);
+      g.px(hx, hy - len, hl); g.rect(hx - 1, hy, 2 + width, 1, gem); g.rect(hx, hy + 1, width, 2, grip);
+    }
+  };
+  const pole = (len: number) => {
+    if (side) g.line(hx - 1, hy + 4, hx + 3, hy + 4 - len, grip);
+    else g.rect(hx, hy + 4 - len, 1, len, grip);
+    return side ? [hx + 3, hy + 4 - len] : [hx, hy + 4 - len];
+  };
   switch (w.kind) {
-    case "sword": case "scythe": case "dagger": {
-      const len = w.kind === "dagger" ? 4 : 8;
-      if (dir === 2) { for (let i = 0; i < len; i++) { g.px(hx + 1 + Math.floor(i * 0.6), hy + 1 + i, i === len - 1 ? hl : metal); } g.px(hx, hy, grip); g.px(hx + 1, hy - 1, grip); }
-      else { g.rect(hx, hy + 1, 1, len, metal); g.px(hx, hy + len, hl); g.rect(hx - 1, hy + 1, 3, 1, grip); if (w.kind === "scythe") g.rect(hx - 3, hy - 6, 1, 7, grip); }
+    case "sword": blade(8); break;
+    case "dagger": blade(4); break;
+    case "katana": upright(12, 1); break;
+    case "greatsword": upright(13, 2); break;
+    case "whip": {
+      g.px(hx, hy, grip); g.px(hx, hy + 1, grip);
+      for (let i = 0; i < 7; i++) g.px(hx + (side ? 1 + i : Math.round(Math.sin(i) * 1.2)), hy + 2 + (side ? Math.round(Math.sin(i) * 1.5) + 1 : i), metal);
       break;
     }
-    case "axe":
-      if (dir === 2) { g.line(hx, hy - 4, hx + 2, hy + 5, grip); g.rect(hx + 1, hy - 5, 3, 3, metal); g.px(hx + 3, hy - 5, hl); }
-      else { g.rect(hx, hy - 4, 1, 10, grip); g.rect(hx + (dir === 0 ? 1 : -2), hy - 5, 2, 4, metal); g.px(hx + (dir === 0 ? 2 : -2), hy - 5, hl); }
-      break;
-    case "spear":
-      if (dir === 2) { g.line(hx - 2, hy + 6, hx + 5, hy - 10, grip); g.rect(hx + 5, hy - 12, 1, 3, metal); }
-      else { g.rect(hx, hy - 14, 1, 20, grip); g.rect(hx, hy - 17, 1, 3, metal); g.px(hx, hy - 17, hl); }
-      break;
-    case "staff": case "wand": {
-      const len = w.kind === "wand" ? 5 : 18;
-      if (dir === 2) { g.line(hx, hy + 2, hx + 2, hy + 2 - len, grip); g.rect(hx + 1, hy + 1 - len, 2, 2, gem); }
-      else { g.rect(hx, hy + 3 - len, 1, len, grip); g.rect(hx - 1, hy + 1 - len, 3, 2, gem); g.px(hx, hy + 1 - len, "#ffffff"); }
-      break;
-    }
-    case "bow": {
-      if (!behind && dir === 1) return;
-      if (behind && dir !== 1) return;
-      const bx = dir === 0 ? 2 : dir === 1 ? 13 : 10;
-      for (let i = -5; i <= 5; i++) g.px(bx + (Math.abs(i) < 3 ? -1 : 0) * (dir === 0 ? 1 : -1), hy + i, grip);
-      for (let i = -4; i <= 4; i++) g.px(bx + (dir === 0 ? 1 : -1), hy + i, "rgba(240,240,240,0.9)");
+    case "scythe": { const [tx, ty] = pole(20); if (side) g.rect(tx - 4, ty, 5, 1, metal); else { g.rect(tx - 4, ty, 5, 1, metal); g.px(tx - 4, ty + 1, hl); } break; }
+    case "mace": { const [tx, ty] = pole(8); g.rect(tx - 1, ty - 1, 3, 3, metal); g.px(tx - 1, ty - 1, hl); g.px(tx, ty - 2, md); break; }
+    case "axe": { const [tx, ty] = pole(10); g.rect(tx + (dir === 0 || side ? 0 : -2), ty, 3, 4, metal); g.px(tx + (dir === 0 || side ? 2 : -2), ty, hl); break; }
+    case "greataxe": { const [tx, ty] = pole(19); g.rect(tx - 2, ty, 5, 5, metal); g.rect(tx - 2, ty, 5, 1, hl); g.px(tx, ty + 2, md); break; }
+    case "hammer": { const [tx, ty] = pole(18); g.rect(tx - 2, ty - 1, 5, 4, metal); g.rect(tx - 2, ty - 1, 5, 1, hl); g.px(tx, ty + 1, gem); break; }
+    case "spear": { const [tx, ty] = pole(20); g.rect(tx, ty - 3, 1, 3, metal); g.px(tx, ty - 3, hl); break; }
+    case "staff": { const [tx, ty] = pole(18); g.rect(tx - 1, ty - 1, 3, 2, gem); g.px(tx, ty - 1, "#ffffff"); break; }
+    case "wand": { const [tx, ty] = pole(6); g.rect(tx, ty - 1, 1, 2, gem); g.px(tx, ty - 1, "#ffffff"); break; }
+    case "lute": {
+      const bx = side ? hx - 1 : hx - 2;
+      g.rect(bx, hy - 2, 4, 5, metal); g.rect(bx + 1, hy - 1, 2, 3, hs(metal, 0.2)); g.px(bx + 1, hy, "#2a1a10");
+      g.rect(bx + 1, hy - 8, 1, 6, grip); g.rect(bx, hy - 9, 3, 1, gem);
       break;
     }
-    case "tome":
-      g.rect(hx - 1, hy, 3, 4, metal); g.px(hx - 1, hy, hl); g.px(hx + 1, hy + 3, gem);
+    case "bow": case "crossbow": {
+      const bx = side ? hx + 1 : hx;
+      if (w.kind === "bow") {
+        for (let i = -5; i <= 5; i++) g.px(bx + (Math.abs(i) < 3 ? -1 : 0) * (dir === 0 ? 1 : -1), hy + i, grip);
+        for (let i = -4; i <= 4; i++) g.px(bx + (dir === 0 ? 1 : -1), hy + i, "rgba(240,240,240,0.9)");
+      } else {
+        g.rect(bx - 3, hy - 1, 7, 1, metal); g.px(bx - 3, hy, metal); g.px(bx + 3, hy, metal);
+        g.rect(bx, hy - 2, 1, 5, grip); g.px(bx, hy - 3, hl);
+      }
       break;
-    case "fist":
-      if (dir !== 1) { g.rect(dir === 0 ? 2 : 7, y0 + 7, 2, 2, metal); if (dir === 0) g.rect(12, y0 + 7, 2, 2, metal); }
-      break;
+    }
+    case "tome": g.rect(hx - 1, hy, 3, 4, metal); g.px(hx - 1, hy, hl); g.px(hx, hy + 2, gem); break;
+    case "orb": g.rect(hx - 1, hy - 3, 3, 3, metal); g.px(hx - 1, hy - 3, "#ffffff"); g.px(hx + 1, hy - 1, md); break;
+    case "fist": g.rect(hx - (off ? 0 : 1), y0 + 7, 2, 2, metal); if (!off && dir === 0) g.rect(2, y0 + 7, 2, 2, metal); break;
     case "shield": {
-      if (behind !== (dir === 1)) return;
-      const sx = dir === 0 ? 2 : dir === 1 ? 12 : 5;
+      const sx = hx - (dir === 0 ? 0 : 1) - (off ? 0 : 2);
       g.rect(sx, y0 + 3, 4, 6, metal); g.rect(sx, y0 + 3, 4, 1, hl); g.rect(sx + 1, y0 + 9, 2, 1, metal);
       g.px(sx + 1, y0 + 5, gem); g.rect(sx, y0 + 3, 1, 6, hs(metal, 0.2));
       break;
     }
-    default: break;
+    default: blade(6); break;
   }
 }
 

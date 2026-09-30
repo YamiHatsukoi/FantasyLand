@@ -1,16 +1,16 @@
 import { app } from "../app";
 import { describeSkill, skillCostText } from "../combat/describe";
-import { addItem, charPassives, charStats, syncLook, partySize, passiveSlots, removeItem, skillSlots, type Character } from "../core/state";
+import { GEAR_KEYS, addItem, charPassives, charStats, dualWielding, equipGear, fitsGear, isTwoHanded, syncLook, partySize, passiveSlots, removeItem, skillSlots, type Character } from "../core/state";
 import { CLASSES, xpForLevel } from "../data/classes";
-import { getItem, type EquipSlot } from "../data/items";
+import { getItem, type GearKey, type ItemDef } from "../data/items";
 import { getPassive } from "../data/passives";
 import { SCHOOL_NAMES, getSkill } from "../data/skills";
 import { spriteImg } from "../render/pixel";
 import { bar, h, nn, openModal, toast, type ModalHandle } from "../ui/dom";
 import { itemImg } from "../ui/icon";
+import { GEAR_ICONS, GEAR_NAMES, gearTags, rarityClass, scaleStats, statDiff } from "../ui/gear";
 import { openAppearance } from "./appearance";
 
-const SLOT_NAMES: Record<EquipSlot, string> = { weapon: "Vũ khí", armor: "Giáp", accessory: "Trang sức" };
 const STAT_NAMES: Record<string, string> = { hp: "Máu", mp: "MP", atk: "Công", mag: "Phép", def: "Thủ", res: "Kháng", spd: "Tốc", crit: "Chí mạng", eva: "Né" };
 
 export function statText(stats: Record<string, number | undefined>): string {
@@ -70,14 +70,17 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
     h("div", { class: "stat" }, STAT_NAMES[k], h("b", null, `${s[k]}${k === "crit" || k === "eva" ? "%" : ""}`))));
 
   // gear
-  const gear = h("div", { class: "slot-row" }, (["weapon", "armor", "accessory"] as EquipSlot[]).map((slot) => {
-    const id = ch.gear[slot];
+  const gear = h("div", { class: "gear-grid" }, GEAR_KEYS.map((key) => {
+    const id = ch.gear[key];
     const it = id ? getItem(id) : null;
-    return h("button", { class: `slot ${it ? "filled" : ""}`, onclick: () => pickGear(ch, slot, rerender) },
-      h("div", { class: "muted small" }, SLOT_NAMES[slot]),
-      it ? h("div", { class: "row", style: "gap:6px;flex-wrap:nowrap" }, itemImg(it.id), it.name) : h("div", { class: "muted" }, "— trống —"),
-      it?.equip ? h("div", { class: "small good" }, statText(it.equip.stats), it.equip.passive ? ` · ✦ ${getPassive(it.equip.passive).name}` : "") : null);
+    const locked = key === "offhand" && !it && isTwoHanded(ch.gear.weapon);
+    return h("button", { class: `slot ${it ? "filled" : ""}`, onclick: () => pickGear(ch, key, rerender) },
+      h("div", { class: "muted small" }, `${GEAR_ICONS[key]} ${GEAR_NAMES[key]}`),
+      it ? h("div", { class: "row", style: "gap:6px;flex-wrap:nowrap" }, itemImg(it.id), h("span", { class: `gname ${rarityClass(it)}` }, it.name))
+        : h("div", { class: "muted" }, locked ? "(vũ khí hai tay)" : "— trống —"),
+      it?.equip ? h("div", { class: "small good" }, statText(key === "offhand" && it.equip.slot === "weapon" ? scaleStats(it.equip.stats, 0.5) : it.equip.stats), it.equip.passive ? ` · ✦ ${getPassive(it.equip.passive).name}` : "") : null);
   }));
+  const dualNote = dualWielding(ch) ? h("p", { class: "muted small" }, "⚔️⚔️ Song kiếm: vũ khí tay trái tính 50% chỉ số, đòn Tấn công thường chém thêm một nhát (50% sát thương).") : null;
 
   // skills
   const slots = skillSlots(g);
@@ -145,7 +148,7 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
   m.body.replaceChildren(...nn(
     tabs, header, note,
     h("div", { class: "section-title" }, "Chỉ số"), stats,
-    h("div", { class: "section-title" }, "Trang bị"), gear,
+    h("div", { class: "section-title" }, "Trang bị"), gear, dualNote,
     h("div", { class: "section-title" }, `Kỹ năng (${ch.equipped.length}/${slots} đang dùng)`),
     h("p", { class: "muted small", style: "margin:0 0 6px" }, "Chạm vào kỹ năng để xem chi tiết. Tấn công và Phòng thủ luôn có sẵn."),
     skillList,
@@ -157,33 +160,46 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
   ));
 }
 
-function pickGear(ch: Character, slot: EquipSlot, done: () => void) {
+function pickGear(ch: Character, key: GearKey, done: () => void) {
   const g = app.game;
-  const m = openModal(`${SLOT_NAMES[slot]} — ${ch.name}`);
-  const items = Object.keys(g.inventory).map(getItem).filter((it) => it.equip?.slot === slot).sort((a, b) => (b.tier ?? 0) - (a.tier ?? 0) || b.value - a.value);
-  const cur = ch.gear[slot];
+  const m = openModal(`${GEAR_NAMES[key]} — ${ch.name}`, { wide: true });
+  const cur = ch.gear[key];
+  const eff = (it: ItemDef, k: GearKey) => (k === "offhand" && it.equip!.slot === "weapon" ? scaleStats(it.equip!.stats, 0.5) : it.equip!.stats);
+  const curStats = cur ? eff(getItem(cur), key) : {};
+  const items = Object.keys(g.inventory).filter((id) => fitsGear(key, id)).map(getItem)
+    .sort((a, b) => (b.equip!.floor ?? (b.tier ?? 0) * 8) - (a.equip!.floor ?? (a.tier ?? 0) * 8) || b.value - a.value);
   const list = h("div", { class: "list" });
+  const finish = (back: string[]) => {
+    for (const x of back) addItem(g, x, 1);
+    if (back.length) toast(`Đã tháo: ${back.map((x) => getItem(x).name).join(", ")}`);
+    syncLook(ch); clampVitals(ch); m.close(); done();
+  };
   if (cur) {
-    list.append(h("button", { class: "item-row", onclick: () => { addItem(g, cur, 1); delete ch.gear[slot]; syncLook(ch); clampVitals(ch); m.close(); done(); } },
+    list.append(h("button", { class: "item-row", onclick: () => { delete ch.gear[key]; finish([cur]); } },
       h("span", { class: "ico" }, "↩️"), h("div", { class: "meta" }, h("div", { class: "name" }, `Tháo ${getItem(cur).name}`))));
   }
+  if (key === "offhand" && isTwoHanded(ch.gear.weapon)) list.append(h("p", { class: "muted small" }, `Đang cầm ${getItem(ch.gear.weapon!).name} bằng hai tay — trang bị tay phụ sẽ tháo vũ khí này.`));
+  if (key === "offhand") list.append(h("p", { class: "muted small" }, "Tay phụ nhận khiên, ma thư, quả cầu phép, hoặc một vũ khí một tay để chơi song kiếm."));
   for (const it of items) {
+    const d = statDiff(curStats, eff(it, key));
+    const diff = Object.entries(d).map(([k, v]) => h("span", { class: v! > 0 ? "diff-up" : "diff-down" }, ` ${statText({ [k]: v })}`));
+    let warn = "";
+    if (key === "weapon" && it.equip!.hands === 2 && ch.gear.offhand) warn = ` · sẽ tháo ${getItem(ch.gear.offhand).name}`;
+    if (key === "offhand" && isTwoHanded(ch.gear.weapon)) warn = ` · sẽ tháo ${getItem(ch.gear.weapon!).name}`;
     list.append(h("button", {
       class: "item-row",
       onclick: () => {
         if (!removeItem(g, it.id, 1)) return;
-        if (cur) addItem(g, cur, 1);
-        ch.gear[slot] = it.id;
-        syncLook(ch);
-        clampVitals(ch);
-        m.close();
-        done();
+        finish(equipGear(ch, key, it.id));
       },
     }, h("span", { class: "ico" }, itemImg(it.id)),
-    h("div", { class: "meta" }, h("div", { class: "name" }, it.name, it.tier ? h("span", { class: "tag" }, `Bậc ${it.tier}`) : null, h("span", { class: "qty" }, ` ×${g.inventory[it.id]}`)),
-      h("div", { class: "desc good" }, statText(it.equip!.stats), it.equip!.passive ? ` · ✦ ${getPassive(it.equip!.passive).name}: ${getPassive(it.equip!.passive).desc}` : ""))));
+    h("div", { class: "meta" },
+      h("div", { class: "name" }, h("span", { class: rarityClass(it) }, it.name), h("span", { class: "qty" }, ` ×${g.inventory[it.id]}`)),
+      h("div", { class: "desc muted" }, gearTags(it).join(" · "), warn),
+      h("div", { class: "desc good" }, statText(eff(it, key)), it.equip!.passive ? ` · ✦ ${getPassive(it.equip!.passive).name}: ${getPassive(it.equip!.passive).desc}` : ""),
+      cur && diff.length ? h("div", { class: "desc" }, "So với đang dùng:", ...diff) : null)));
   }
-  if (!items.length && !cur) list.append(h("p", { class: "muted" }, "Chưa có trang bị nào cho ô này. Hãy rèn ở Lò Rèn hoặc tìm trong Vực Sâu."));
+  if (!items.length && !cur) list.append(h("p", { class: "muted" }, "Chưa có trang bị nào cho ô này. Hãy rèn ở Lò Rèn / Xưởng May, mua ở thị trấn hoặc tìm trong Vực Sâu."));
   m.body.append(list);
 }
 

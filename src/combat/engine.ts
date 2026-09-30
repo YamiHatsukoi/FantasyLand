@@ -249,6 +249,11 @@ export class Battle {
             if (this.hit(actor, t, sk, mult).hit) hitTargets.add(t);
           }
         }
+        // dual wielding: the off-hand weapon follows up a basic attack
+        const t0 = targets[0];
+        if (sk.id === "attack" && actor.dual && t0 && t0.hp > 0 && actor.hp > 0) {
+          if (this.hit(actor, t0, sk, mult * 0.5).hit) hitTargets.add(t0);
+        }
       }
     } else {
       for (const t of targets) hitTargets.add(t);
