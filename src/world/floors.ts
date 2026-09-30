@@ -72,9 +72,12 @@ const HANDWRITTEN: Omit<FloorDef, "family" | "el" | "biomeName">[] = [
 
 const cache = new Map<number, FloorDef>();
 
-/** Monster level at the entrance of floor n: about 2 per floor, 192 on floor 100 (its gatekeeper is 200). */
+/**
+ * Monster level at the entrance of floor n: about 2 more every floor, 196 on floor 100, whose
+ * gatekeeper (+4) waits at level 200, the level cap.
+ */
 export function levelBase(n: number) {
-  return Math.round(1 + ((Math.max(1, n) - 1) * 191) / 99);
+  return Math.round(1 + ((Math.max(1, n) - 1) * 195) / 99);
 }
 
 export function specFor(n: number): FloorSpec {

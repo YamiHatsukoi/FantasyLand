@@ -1,4 +1,3 @@
-import { LEVEL_STEP, power } from "../core/levels";
 import { Rng, hashString } from "../core/rng";
 import { addItem, logMsg, makeCharacter, removeItem, syncLook, type Character, type GameState, type NpcMemory, type RecruitOffer } from "../core/state";
 import { CLASSES } from "../data/classes";
@@ -161,7 +160,7 @@ function makeNpc(rng: Rng, id: string, floor: number, s: Pick<Settlement, "id" |
   const persona = rng.pick(PERSONA_LIST);
   const jobDef = JOBS[job];
   const classId = rng.pick(jobDef.classes);
-  const level = Math.max(1, getFloor(floor).levelBase + LEVEL_STEP * (rng.int(-2, 3) + (job === "elder" ? 3 : 0)));
+  const level = Math.max(1, getFloor(floor).levelBase + rng.int(-2, 3) + (job === "elder" ? 3 : 0));
   const hat = classId === "mage" || classId === "witch";
   const race = rng.pick(RACES);
   const pal: Record<string, string> = { h: rng.pick(HAIR), c: rng.pick(CLOTH), b: rng.pick(CLOTH), p: rng.pick(CLOTH), s: rng.pick(SKIN), r: race, j: job, g: rng.chance(0.5) ? "f" : "m" };
@@ -176,7 +175,7 @@ function makeNpc(rng: Rng, id: string, floor: number, s: Pick<Settlement, "id" |
   return {
     id, name, floor, settlement: s.id, town: s.name, race, job, persona, classId, level,
     sprite: hat ? "hero_mage" : "villager", pal, recruitable: jobDef.recruit || rng.chance(0.15),
-    loves, likes: taste.likes, hates, wage: persona === "greedy" ? Math.round(120 * power(level)) : 0,
+    loves, likes: taste.likes, hates, wage: persona === "greedy" ? 120 * Math.max(1, level) : 0,
   };
 }
 
@@ -486,7 +485,7 @@ export function recruitText(npc: NpcDef, ok: boolean): string {
 
 export function characterFromNpc(g: GameState, npc: NpcDef): Character {
   const heroLv = g.chars[g.heroId].level;
-  const lv = Math.max(npc.level, heroLv - LEVEL_STEP);
+  const lv = Math.max(npc.level, heroLv - 1);
   const ch = makeCharacter(`npc_${npc.id}`, npc.name, npc.classId, npc.sprite, lv);
   ch.pal = npc.pal;
   ch.origin = npc.id;
@@ -527,10 +526,10 @@ export function tavernOffers(g: GameState): RecruitOffer[] {
     const biome = getFloor(floor).family;
     const job = rng.pick<Job>(["adventurer", "mercenary", "hunter", "scholar", "priest", "guard", "herbalist", "bard"]);
     const npc = makeNpc(rng, `t${g.day}_${i}`, floor, { id: "tavern", name: "Quán Rượu Thánh Địa", biome }, job);
-    const level = Math.max(1, heroLv + LEVEL_STEP * (tav.level - 3 + rng.int(-1, 1)));
+    const level = Math.max(1, heroLv - 3 + tav.level + rng.int(-1, 1));
     const passive = rng.pick(PLAYER_PASSIVES.filter((p) => p.tier <= 1 + tav.level && CLASSES[npc.classId].schools.includes(p.school)))?.id ?? "";
     offers.push({
-      id: npc.id, name: npc.name, classId: npc.classId, level, price: Math.round(60 * power(level) * (1 + 0.3 * tav.level) + (passive ? 80 : 0)),
+      id: npc.id, name: npc.name, classId: npc.classId, level, price: Math.round(60 * level * (1 + 0.3 * tav.level) + (passive ? 80 : 0)),
       pal: npc.pal, passive,
       bio: `${npc.race} · ${JOBS[job].name}, từng lang bạt ở tầng ${floor}. Tính cách ${PERSONAS[npc.persona].name.toLowerCase()}.`,
     });

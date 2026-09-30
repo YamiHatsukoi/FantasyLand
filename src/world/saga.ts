@@ -1,4 +1,3 @@
-import { LEVEL_STEP } from "../core/levels";
 import { Rng } from "../core/rng";
 import { T } from "../render/tiles";
 import type { FloorDef } from "./floors";
@@ -196,7 +195,7 @@ export function placeSaga(c: Ctx): SagaInfo | undefined {
       if (freeAt(x, y)) place({ kind: "deco", x, y, sprite: sprites[k % sprites.length] });
     }
   };
-  const lv = def.levelBase + 3 * LEVEL_STEP;
+  const lv = def.levelBase + 3;
   const pack = () => [...rng.pick(def.groups), rng.pick(def.enemies)].slice(0, 4);
   /** Markers spread around the district (ring or scattered). */
   const scatter = (n: number, sprite: string, ringR: number | null) => {
@@ -238,7 +237,7 @@ export function placeSaga(c: Ctx): SagaInfo | undefined {
       clearDisc(3);
       put("saga", cx, cy, sd.core!, "core");
       const a = rng.range(0, 6.28);
-      put("monster", Math.round(cx + Math.cos(a) * 7), Math.round(cy + Math.sin(a) * 5), "", undefined, { group: pack(), level: lv + 2 * LEVEL_STEP, saga: "beast" }, 3);
+      put("monster", Math.round(cx + Math.cos(a) * 7), Math.round(cy + Math.sin(a) * 5), "", undefined, { group: pack(), level: lv + 2, saga: "beast" }, 3);
       break;
     }
     case "maze": {

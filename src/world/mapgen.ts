@@ -1,4 +1,3 @@
-import { LEVEL_STEP } from "../core/levels";
 import { Rng, makeNoise } from "../core/rng";
 import { PASSABLE, T, VARIANTS } from "../render/tiles";
 import { BIOMES } from "./biomes";
@@ -204,14 +203,14 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
     }
     return null;
   };
-  const levelAt = (x: number, y: number) => def.levelBase + Math.floor((4.2 * LEVEL_STEP * dist[idx(x, y)]) / Math.max(1, maxDist));
+  const levelAt = (x: number, y: number) => def.levelBase + Math.floor((4.2 * dist[idx(x, y)]) / Math.max(1, maxDist));
 
   place({ kind: "portal", x: start.x, y: start.y, sprite: "portal" });
   occupied.add(idx(start.x + 1, start.y));
   place({ kind: "stairs", x: stairs.x, y: stairs.y, sprite: "stairs" });
   const side = rng.pick([[-2, 0], [2, 0], [0, 2], [0, -2]]);
   const gpos = near(stairs.x + side[0], stairs.y + side[1], 1, 1) ?? { x: stairs.x - 1, y: stairs.y };
-  place({ kind: "guardian", x: gpos.x, y: gpos.y, sprite: "marker", ref: def.guardian, group: def.boss, level: def.levelBase + 4 * LEVEL_STEP });
+  place({ kind: "guardian", x: gpos.x, y: gpos.y, sprite: "marker", ref: def.guardian, group: def.boss, level: def.levelBase + 4 });
   // the lair: braziers, bones and a banner, watched over by a few strong groups
   for (const deco of ["brazier", "brazier", "bone_pile", "banner", "bone_pile"]) {
     const p = near(gpos.x, gpos.y, 2, 1);
@@ -222,7 +221,7 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
     const p = near(gpos.x, gpos.y, 4, 1);
     if (!p) continue;
     const g = rng.pick(def.groups);
-    place({ kind: "monster", x: p.x, y: p.y, sprite: "", group: [...g, rng.pick(def.enemies)].slice(0, 4), level: def.levelBase + 3 * LEVEL_STEP });
+    place({ kind: "monster", x: p.x, y: p.y, sprite: "", group: [...g, rng.pick(def.enemies)].slice(0, 4), level: def.levelBase + 3 });
   }
 
   // Floor 1 teaches the basics: right past the portal lie a gathering spot, a chest, a lone
