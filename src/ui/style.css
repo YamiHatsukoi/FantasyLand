@@ -528,3 +528,88 @@ img.iicon.lg { width: 48px; height: 48px; }
 }
 .cb-panel { min-height: 206px; }
 @media (max-width: 520px) { .cb-panel { min-height: 236px; } }
+
+/* ---------------------------------------------------------------- arena: two teams face each other */
+.arena { position: relative; overflow: hidden; }
+.arena::before {
+  /* horizon glow + a soft battle line down the middle */
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 60% 22% at 50% 62%, rgba(255,255,255,.08), transparent 70%);
+}
+.arena .side { position: absolute; top: 4%; bottom: 3%; width: 50%; }
+.arena .side.left { left: 0; }
+.arena .side.right { right: 0; }
+.arena .fighter {
+  position: absolute; width: auto; transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center; gap: 2px;
+  --sz: clamp(58px, 15vh, 128px); transition: filter .2s, opacity .3s;
+}
+.arena .fighter.enemy.boss { --sz: clamp(96px, 26vh, 220px); }
+.arena .fighter .body { position: relative; display: flex; justify-content: center; align-items: flex-end; }
+.arena .fighter .body img { width: var(--sz); height: var(--sz); position: relative; z-index: 1; animation: idle 1.8s ease-in-out infinite; animation-delay: var(--d, 0s); filter: drop-shadow(0 4px 3px rgba(0,0,0,.45)); }
+.arena .fighter .body img.tall { width: calc(var(--sz) * 0.62); height: calc(var(--sz) * 1.24); }
+.arena .fighter.ally .body img { transform: scaleX(1); }
+@keyframes idle { 50% { translate: 0 -3px; } }
+.arena .fighter .plat {
+  position: absolute; bottom: calc(var(--sz) * -0.1); left: 50%; transform: translateX(-50%); z-index: 0;
+  width: calc(var(--sz) * 1.35); height: calc(var(--sz) * 0.3); border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 45%, rgba(255,255,255,.22), rgba(255,255,255,.06) 55%, rgba(0,0,0,.35) 72%, transparent 74%);
+  box-shadow: inset 0 -3px 0 rgba(0,0,0,.25);
+}
+.arena .fighter.ally .plat { background: radial-gradient(ellipse at 50% 45%, rgba(120,180,255,.28), rgba(80,140,255,.08) 55%, rgba(0,0,0,.35) 72%, transparent 74%); }
+.arena .fighter.enemy .plat { background: radial-gradient(ellipse at 50% 45%, rgba(255,140,120,.26), rgba(255,90,70,.07) 55%, rgba(0,0,0,.35) 72%, transparent 74%); }
+.arena .plate {
+  width: clamp(104px, 20vw, 170px); background: rgba(10, 14, 12, .86); border: 1px solid rgba(255,255,255,.14); border-radius: 9px;
+  padding: 4px 6px 5px; display: flex; flex-direction: column; gap: 2px; box-shadow: 0 3px 8px rgba(0,0,0,.4);
+}
+.arena .fighter.ally .plate { border-left: 3px solid #4a8fe0; }
+.arena .fighter.enemy .plate { border-right: 3px solid #e04a4a; }
+.arena .pl-name { display: flex; justify-content: space-between; gap: 4px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.arena .pl-name span { overflow: hidden; text-overflow: ellipsis; }
+.arena .pl-name small { color: var(--gold); font-weight: 600; font-size: 10px; flex: none; }
+.arena .pl-row { display: flex; justify-content: space-between; align-items: center; gap: 4px; min-height: 14px; }
+.arena .plate .bar { width: 100%; height: 8px; }
+.arena .plate .bar.mp { height: 5px; }
+.arena .plate .bar-label { font-size: 8px; line-height: 8px; }
+.arena .plate .statuses { justify-content: flex-start; min-height: 0; }
+.arena .plate .shieldrow { justify-content: flex-start; min-height: 0; }
+.arena .fighter .intent { margin-bottom: 2px; }
+.arena .fighter.active .plate { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(242,197,66,.5), 0 3px 8px rgba(0,0,0,.4); }
+.arena .fighter.active { transform: translate(-50%, -100%); }
+.arena .fighter.active::after { top: -16px; }
+.arena .fighter.dead { opacity: .18; }
+.arena .fighter.dead .plate { display: none; }
+.arena .fighter.lunge.ally .body { animation: lunge-r .4s ease-out; }
+.arena .fighter.lunge.enemy .body { animation: lunge-l .4s ease-out; }
+.arena .fighter.cast .body img { filter: drop-shadow(0 0 14px #b08aff) brightness(1.3); }
+@keyframes lunge-r { 40% { transform: translateX(46px); } }
+@keyframes lunge-l { 40% { transform: translateX(-46px); } }
+.arena .fighter.hit .body img { animation: shake .3s; }
+.arena .fighter.flash .body img { filter: brightness(3) !important; }
+.arena .fighter.targetable .body img { animation: pulse .9s infinite; }
+.arena .fighter.enemy.broken .body img { transform: rotate(-10deg) translateY(4px); }
+.arena .floaty { top: 40%; z-index: 30; }
+.arena .fighter.weak-hit::before { top: 50%; }
+@media (max-width: 520px) {
+  .arena .plate { width: 98px; padding: 3px 4px 4px; }
+  .arena .pl-name { font-size: 10px; }
+  .arena .fighter { --sz: clamp(44px, 10vh, 80px); }
+  .arena .fighter.enemy.boss { --sz: clamp(72px, 17vh, 130px); }
+  .arena .fighter .intent { font-size: 9px; max-width: 110px; }
+}
+.arena .fighter { --sz: clamp(56px, 12vh, 104px); }
+.arena .fighter.enemy.boss { --sz: clamp(90px, 22vh, 190px); }
+.arena .plate { width: clamp(104px, 13vw, 168px); }
+@media (max-width: 759px) {
+  .arena .fighter { --sz: clamp(40px, 7.5vh, 70px); }
+  .arena .fighter.enemy.boss { --sz: clamp(60px, 13vh, 110px); }
+  .arena .plate { width: 92px; padding: 2px 4px 3px; gap: 1px; }
+  .arena .pl-name { font-size: 10px; }
+  .arena .plate .bar { height: 6px; }
+  .arena .plate .bar-label { display: none; }
+  .arena .plate .bar.mp { height: 3px; }
+  .arena .shieldrow .weak { width: 16px; height: 16px; font-size: 10px; }
+  .arena .shield-badge { font-size: 10px; padding: 2px 4px; }
+  .arena .bp-pips i { width: 5px; height: 5px; }
+  .arena .plate .st { font-size: 10px; line-height: 12px; }
+  .arena .fighter .intent { font-size: 9px; padding: 1px 5px; }
+}
