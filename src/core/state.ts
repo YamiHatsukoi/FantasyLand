@@ -2,6 +2,7 @@ import type { StatMods, Stats } from "../combat/types";
 import { PARTY_SIZE, costFor, type Cost, passiveSlotsFor, skillSlotsFor } from "../data/buildings";
 import { CLASSES, COMPANIONS, classStats, xpForLevel } from "../data/classes";
 import { decodeFog, encodeFog } from "../world/fog";
+import { hashString } from "./rng";
 import { enhLevel, enhancedId, getItem, type GearKey, type MealBuff } from "../data/items";
 
 export const SAVE_VERSION = 3;
@@ -87,6 +88,8 @@ export interface RecruitOffer {
 
 export interface FloorState {
   seed: number;
+  /** The map is the same for every player (floors first visited after maps became shared). */
+  shared?: boolean;
   done: string[]; // cleared entity ids
   fog: string; // base64 bitset of explored tiles
   px?: number;
@@ -441,6 +444,24 @@ export function giveXp(ch: Character, amount: number): string[] {
     ch.mp = s.mp;
   }
   return msgs;
+}
+
+// ------------------------------------------------------------ dungeon floors
+/**
+ * Every player explores the same map on a given floor (layout, chests, secrets, the great event).
+ * Floors first visited before maps became shared keep their own seed so no progress is lost.
+ */
+export const WORLD_SEED = "fantasyland-world-1";
+export const sharedFloorSeed = (n: number) => hashString(`${WORLD_SEED}:${n}`);
+
+export function ensureFloorState(g: GameState, n: number): { fs: FloorState; fresh: boolean } {
+  let fs = g.floors[n];
+  const fresh = !fs;
+  if (!fs) {
+    fs = { seed: sharedFloorSeed(n), shared: true, done: [], fog: "", cleared: Boolean(g.flags[`f${n}_cleared`]) };
+    g.floors[n] = fs;
+  }
+  return { fs, fresh };
 }
 
 // ------------------------------------------------------------ inventory

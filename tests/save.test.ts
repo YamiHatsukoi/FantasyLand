@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { migrate, newGame, packSave } from "../src/core/state";
+import { ensureFloorState, migrate, newGame, packSave, sharedFloorSeed } from "../src/core/state";
 import { decodeFog, encodeFog } from "../src/world/fog";
 
 describe("compact saves", () => {
@@ -49,5 +49,25 @@ describe("compact floors", () => {
     expect(back.floors[3].done).toEqual(["event_1", "chest_9"]);
     expect(back.floors[4].done).toEqual([]);
     expect(g.floors[3].done).toEqual(["event_1", "chest_9"]);
+  });
+});
+
+describe("shared floor maps", () => {
+  it("gives every player the same seed on a new floor, and keeps floors already visited", () => {
+    const a = newGame("A", "warrior", 111), b = newGame("B", "mage", 999);
+    // an old floor from before maps became shared keeps its own seed and progress
+    a.floors[1] = { seed: 424242, done: ["e3"], fog: "", cleared: false };
+    expect(ensureFloorState(a, 1).fs.seed).toBe(424242);
+    expect(ensureFloorState(a, 1).fs.shared).toBeUndefined();
+    expect(ensureFloorState(b, 1).fs.seed).toBe(sharedFloorSeed(1));
+    for (const n of [2, 5, 37]) {
+      const fa = ensureFloorState(a, n), fb = ensureFloorState(b, n);
+      expect(fa.fresh && fb.fresh).toBe(true);
+      expect(fa.fs.seed).toBe(fb.fs.seed);
+      expect(fa.fs.shared).toBe(true);
+    }
+    expect(sharedFloorSeed(2)).not.toBe(sharedFloorSeed(3));
+    // the flag survives a save round trip
+    expect(migrate(JSON.parse(JSON.stringify(packSave(a)))).floors[2].shared).toBe(true);
   });
 });
