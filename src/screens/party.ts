@@ -1,7 +1,7 @@
 import { app } from "../app";
 import { describeSkill, skillCostText } from "../combat/describe";
-import { GEAR_KEYS, POINTS_PER_LEVEL, POINT_CAP, POINT_VALUE, addItem, allocPoint, resetCost, resetPoints, charPassives, charStats, dualWielding, equipGear, fitsGear, isTwoHanded, syncLook, partySize, passiveSlots, removeItem, skillSlots, type Character } from "../core/state";
-import { CLASSES, xpForLevel } from "../data/classes";
+import { GEAR_KEYS, POINTS_PER_LEVEL, POINT_CAP, POINT_VALUE, addItem, allocPoint, resetCost, resetPoints, dismiss, charPassives, charStats, dualWielding, equipGear, fitsGear, isTwoHanded, syncLook, partySize, passiveSlots, removeItem, skillSlots, type Character } from "../core/state";
+import { CLASSES, COMPANIONS, xpForLevel } from "../data/classes";
 import { enhLevel, getItem, type GearKey, type ItemDef } from "../data/items";
 import { getPassive } from "../data/passives";
 import { getSkill } from "../data/skills";
@@ -58,13 +58,22 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
       rerender();
     },
   }, inParty ? "➖ Cho nghỉ" : "➕ Vào đội");
+  // story companions stay for good; anyone else can be sent off to free a bed
+  const dismissBtn = ch.id === g.heroId || COMPANIONS[ch.id] ? null : h("button", {
+    class: "btn small danger", disabled: inDungeon, title: inDungeon ? "Không tiễn ai khi đang ở Vực Sâu" : "Rời Thánh Địa, trả lại trang bị, giải phóng một chỗ ở",
+    onclick: async () => {
+      const home = ch.origin ? " Họ sẽ về lại làng cũ, sau này có thể mời lại." : " Người này sẽ ra đi hẳn.";
+      if (!(await confirmBox("Tiễn biệt", `Tiễn ${ch.name} rời Thánh Địa? Trang bị đang mặc sẽ cất vào túi.${home}`, "Tiễn biệt"))) return;
+      if (dismiss(g, ch.id)) { toast(`${ch.name} đã lên đường. Còn trống thêm một chỗ ở.`); app.dirty(); select(g.heroId); }
+    },
+  }, "👋 Tiễn biệt");
 
   const header = h("div", { class: "party-head" },
     spriteImg(ch.sprite, ch.pal, "sprite big-portrait"),
     h("div", { class: "grow col", style: "gap:3px;min-width:0" },
       h("div", { class: "row between", style: "flex-wrap:nowrap" },
         h("div", { style: "min-width:0" }, h("b", { style: "font-size:17px" }, ch.name), h("div", { class: "muted small" }, `${cls.icon} ${cls.name} · Cấp ${ch.level}`)),
-        h("div", { class: "row", style: "flex-wrap:nowrap" }, h("button", { class: "icon-btn", title: "Ngoại hình", onclick: () => openAppearance(ch, rerender) }, "🎨"), rosterBtn)),
+        h("div", { class: "row", style: "flex-wrap:nowrap" }, h("button", { class: "icon-btn", title: "Ngoại hình", onclick: () => openAppearance(ch, rerender) }, "🎨"), rosterBtn, dismissBtn)),
       bar(ch.hp, s.hp, "hp", `${ch.hp}/${s.hp}`),
       bar(ch.mp, s.mp, "mp", `${ch.mp}/${s.mp}`),
       bar(ch.xp, xpForLevel(ch.level), "xp", `EXP ${ch.xp}/${xpForLevel(ch.level)}`),

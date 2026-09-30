@@ -18,6 +18,21 @@ export function appeal(g: GameState) {
 }
 export const residents = (g: GameState) => Object.keys(g.chars).length - 1; // recruits live in town
 export const population = (g: GameState) => g.settlers + residents(g) + 1;
+/** Beds left for companions: they come before ordinary settlers, who make way when needed. */
+export const companionBeds = (g: GameState) => Math.max(1, housing(g)) - 1 - residents(g);
+/** Why nobody new can move in right now (null when there is a bed). */
+export function noRoomReason(g: GameState): string | null {
+  if (companionBeds(g) > 0) return null;
+  return `Thánh Địa hết chỗ ở: ${residents(g) + 1}/${Math.max(1, housing(g))} giường đã có người. Dựng thêm Lều Trại, Nhà Gỗ… (mục Nhà ở), nâng cấp Nhà Chính, hoặc tiễn bớt một đồng đội.`;
+}
+/** After someone moves in: settlers over capacity leave to free their beds. Returns a report line. */
+export function makeRoom(g: GameState): string | null {
+  const over = population(g) - Math.max(1, housing(g));
+  if (over <= 0 || g.settlers <= 0) return null;
+  const leave = Math.min(over, g.settlers);
+  g.settlers -= leave;
+  return `🏠 ${leave} người dân đã nhường chỗ ở cho đồng đội mới.`;
+}
 export function workersNeeded(g: GameState) {
   return g.buildings.reduce((s, b) => s + (BUILDINGS[b.type]?.workers ?? 0) * b.level, 0);
 }

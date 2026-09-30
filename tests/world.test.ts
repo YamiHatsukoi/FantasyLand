@@ -8,7 +8,7 @@ import { PASSABLE } from "../src/render/tiles";
 import { EVENTS } from "../src/story";
 import type { Cond, Effect } from "../src/story/types";
 import { MAX_FLOOR, getFloor } from "../src/world/floors";
-import { findPath, generateFloor } from "../src/world/mapgen";
+import { LAIR_CLEAR, findPath, generateFloor } from "../src/world/mapgen";
 
 describe("floors", () => {
   it("defines all 100 floors with valid enemies", () => {
@@ -142,6 +142,23 @@ describe("save data", () => {
       expect(spots.size, `floor ${n}`).toBeGreaterThanOrEqual(3);
     }
   });
+
+  it("keeps villages well away from the boss's lair", () => {
+    let near = 0, total = 0;
+    for (let n = 1; n <= 100; n++) {
+      for (const seed of [7, 4242]) {
+        const m = generateFloor(getFloor(n), seed);
+        const gd = m.entities.find((e) => e.kind === "guardian")!;
+        for (const t of m.towns) {
+          total++;
+          const gap = Math.max(Math.max(t.x - gd.x, 0, gd.x - (t.x + t.w - 1)), Math.max(t.y - gd.y, 0, gd.y - (t.y + t.h - 1)));
+          if (gap < LAIR_CLEAR) near++;
+        }
+      }
+    }
+    expect(total).toBeGreaterThan(50);
+    expect(near, `${near}/${total} villages next to a lair`).toBe(0);
+  }, 120000);
 
   it("has fewer, smaller monster packs on the first floors", () => {
     const count = (n: number) => generateFloor(getFloor(n), 42).entities.filter((e) => e.kind === "monster");

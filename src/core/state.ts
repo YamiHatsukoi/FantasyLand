@@ -230,6 +230,22 @@ export function recruit(g: GameState, companionId: string): Character {
   return ch;
 }
 
+/**
+ * A companion leaves for good: their gear goes back to the bag and their bed is freed. Townsfolk
+ * return home (and could be asked again); story companions never leave.
+ */
+export function dismiss(g: GameState, id: string): boolean {
+  const ch = g.chars[id];
+  if (!ch || id === g.heroId || COMPANIONS[id]) return false;
+  for (const gid of Object.values(ch.gear)) if (gid) addItem(g, gid, 1);
+  g.party = g.party.filter((x) => x !== id);
+  delete g.chars[id];
+  delete g.bonds?.[id];
+  if (ch.origin && g.npcs[ch.origin]) g.npcs[ch.origin].recruited = false;
+  logMsg(g, `${ch.name} rời Thánh Địa.`);
+  return true;
+}
+
 // ------------------------------------------------------------ derived values
 export function building(g: GameState, type: string) {
   return g.buildings.find((b) => b.type === type);

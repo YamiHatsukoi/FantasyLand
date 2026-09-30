@@ -17,7 +17,7 @@ import { isPerson, personCanvas } from "../render/people";
 import { giveToGame } from "../story/runner";
 import { BIOMES } from "../world/biomes";
 import { getFloor } from "../world/floors";
-import { bar, h, nn, openModal, sleep, toast } from "../ui/dom";
+import { h, nn, openModal, sleep, toast } from "../ui/dom";
 
 const ENEMY_EL: Record<string, string> = {
   forest: "earth", desert: "fire", swamp: "water", tundra: "ice", fungal: "poison", volcano: "fire", reef: "water", bamboo: "wind",
@@ -86,6 +86,29 @@ function personURL(sprite: string, pal?: Record<string, string>): string {
   return url;
 }
 
+/** Chunky battle gauge: label, coloured fill, a pale "just lost" trail that drains after it, numbers. */
+function cbar(kind: "hp" | "mp"): HTMLElement {
+  return h("div", { class: `cbar ${kind}` },
+    h("span", { class: "cb-tag" }, kind === "hp" ? "HP" : "MP"),
+    h("div", { class: "cb-track" }, h("div", { class: "cb-ghost" }), h("div", { class: "cb-fill" }), h("span", { class: "cb-num" })));
+}
+
+function setBar(el: HTMLElement, v: number, max: number) {
+  const pct = Math.max(0, Math.min(100, (v / Math.max(1, max)) * 100));
+  const fill = el.querySelector<HTMLElement>(".cb-fill")!;
+  const ghost = el.querySelector<HTMLElement>(".cb-ghost")!;
+  const prev = parseFloat(fill.style.width || "100");
+  fill.style.width = `${pct}%`;
+  // losing: the trail waits, then drains; gaining: it snaps along
+  if (pct < prev) setTimeout(() => { ghost.style.width = `${pct}%`; }, 380);
+  else ghost.style.width = `${pct}%`;
+  el.querySelector(".cb-num")!.textContent = `${Math.max(0, Math.round(v))}/${max}`;
+  if (el.classList.contains("hp")) {
+    el.classList.toggle("mid", pct <= 50 && pct > 20);
+    el.classList.toggle("low", pct <= 20 && pct > 0);
+  }
+}
+
 export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   const g = app.game;
   const rng = new Rng(Date.now() & 0xffffffff);
@@ -141,7 +164,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   const eOrder = [...enemies].sort((a, b) => Number(!!b.boss) - Number(!!a.boss));
   eOrder.forEach((u, i) => {
     const img = h("img", { class: "sprite", src: spriteURL(u.sprite, u.palette, 8), alt: u.name, draggable: false });
-    const hp = bar(u.hp, battle.maxHp(u), "hp");
+    const hp = cbar("hp");
     const st = h("div", { class: "statuses" });
     const intent = h("div", { class: "intent" });
     const shield = h("div", { class: "shieldrow" });
@@ -157,8 +180,8 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   allies.forEach((u, i) => {
     const person = isPerson(u.sprite);
     const img = h("img", { class: `sprite ${person ? "tall" : ""}`, src: person ? personURL(u.sprite, u.palette) : spriteURL(u.sprite, u.palette, 8), alt: u.name, draggable: false });
-    const hp = bar(u.hp, battle.maxHp(u), "hp", "");
-    const mp = bar(u.mp, battle.maxMp(u), "mp", "");
+    const hp = cbar("hp");
+    const mp = cbar("mp");
     const st = h("div", { class: "statuses" });
     const bp = h("div", { class: "bp-pips", title: "Dũng Khí: +1 mỗi lượt, tiêu để tăng sức đòn đánh" });
     const root = h("div", { class: "unit fighter ally" },
@@ -207,16 +230,8 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   function refresh(u: Unit) {
     const v = views.get(u.uid);
     if (!v) return;
-    const maxHp = battle.maxHp(u);
-    (v.hp.firstChild as HTMLElement).style.width = `${(u.hp / maxHp) * 100}%`;
-    const lbl = v.hp.querySelector(".bar-label");
-    if (lbl) lbl.textContent = `${u.hp}/${maxHp}`;
-    if (v.mp) {
-      const maxMp = battle.maxMp(u);
-      (v.mp.firstChild as HTMLElement).style.width = `${(u.mp / maxMp) * 100}%`;
-      const l2 = v.mp.querySelector(".bar-label");
-      if (l2) l2.textContent = `${u.mp}/${maxMp}`;
-    }
+    setBar(v.hp, u.hp, battle.maxHp(u));
+    if (v.mp) setBar(v.mp, u.mp, battle.maxMp(u));
     v.st.replaceChildren(...u.statuses.map((s) => {
       const d = STATUSES[s.id];
       const span = h("span", { class: `st ${d.kind}`, title: `${d.name}: ${d.desc} (${s.turns} lượt)` }, d.icon, s.stacks > 1 ? h("sub", null, String(s.stacks)) : null);

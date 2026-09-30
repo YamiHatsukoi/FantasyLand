@@ -36,6 +36,8 @@ export interface FloorMap {
 }
 
 export const MAP_W = 144;
+/** Minimum distance (tiles) between a village and the boss's lair. */
+export const LAIR_CLEAR = 18;
 export const MAP_H = 112;
 
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
@@ -267,12 +269,17 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
   const towns: TownRect[] = [];
   const nTown = settlementCount(def.n);
   const important = entities.filter((e) => e.kind === "portal" || e.kind === "stairs" || e.kind === "guardian" || e.kind === "event");
+  // villages keep well away from the boss's lair (and its guards)
+  const lair = entities.find((e) => e.kind === "guardian")!;
+  const lairGap = (x0: number, y0: number, tw: number, th: number) =>
+    Math.max(Math.max(x0 - lair.x, 0, lair.x - (x0 + tw - 1)), Math.max(y0 - lair.y, 0, lair.y - (y0 + th - 1)));
   for (let i = 0; i < nTown; i++) {
     const s = getSettlement(def.n, i);
     const rows = s.size === "village" ? 1 : s.size === "town" ? 2 : 3;
     const TW = s.size === "village" ? 19 : s.size === "town" ? 23 : 29, TH = 3 + rows * 4;
     let best: { x: number; y: number; cost: number } | null = null;
-    for (let tries = 0; tries < 160 * centers.length && !(best && tries >= 160); tries++) {
+    // keep looking in other regions while the best spot so far is crowding the lair
+    for (let tries = 0; tries < 160 * centers.length && !(best && best.cost < 40 && tries >= 160); tries++) {
       // floor 1's first village sits a short walk from the portal
       const c = def.n === 1 && i === 0 && tries < 160 ? { x: start.x + 24, y: start.y } : centers[(i * 2 + 1 + Math.floor(tries / 160)) % centers.length];
       const r = 2 + Math.floor((tries % 160) / 8);
@@ -287,6 +294,9 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
         if (dist[idx(x, y)] >= 0) reach++;
       }
       if (reach < TW * TH * 0.4) continue;
+      // too close to the lair: allowed only as a last resort on cramped floors
+      const gap = lairGap(x0, y0, TW, TH);
+      if (gap < LAIR_CLEAR) cost += 40 + (LAIR_CLEAR - gap) * 25;
       if (!best || cost < best.cost) best = { x: x0, y: y0, cost };
       if (cost === 0) break;
     }
