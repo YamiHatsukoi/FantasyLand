@@ -29,6 +29,7 @@ export interface Look {
   glow?: boolean; // glowing eyes
   cape?: string;
   fem?: boolean;
+  weapon?: { kind: string; c0: string; c1: string; c2: string };
 }
 
 const BASE_LOOK: Look = {
@@ -45,6 +46,13 @@ const PRESETS: Record<string, Partial<Look>> = {
   hero_cleric: { hair: "#f0d26a", hairStyle: "long", top: "#f0eef6", accent: "#e0b03a", pants: "#b8b0d0", outfit: "robe", hat: "circlet", hatCol: "#e0b03a", fem: true },
   hero_guardian: { hair: "#b04a2a", hairStyle: "short", top: "#a8b0bc", accent: "#c83a3a", pants: "#5a5e6a", outfit: "armor", hat: "helmet", hatCol: "#a8b0bc", beard: true },
   hero_witch: { hair: "#3a5a4a", hairStyle: "long", top: "#2a4a3a", accent: "#8be04e", pants: "#1f2f2a", outfit: "robe", hat: "witch", hatCol: "#1f3a2e", fem: true },
+  hero_monk: { hair: "#2a2a34", hairStyle: "bald", top: "#e0a040", accent: "#c83a3a", pants: "#e0a040", outfit: "robe", hat: "none" },
+  hero_paladin: { hair: "#e8c870", hairStyle: "short", top: "#e8e8f0", accent: "#e0b03a", pants: "#8a8aa0", outfit: "armor", cape: "#3a5ab0", hat: "circlet", hatCol: "#e0b03a" },
+  hero_bard: { hair: "#c86a3a", hairStyle: "curly", top: "#3a8ab0", accent: "#f0d060", pants: "#5a3a2a", outfit: "vest", hat: "cap", hatCol: "#6a3a8a", cape: "#c83a5a" },
+  hero_necromancer: { skin: "#e0dcd8", hair: "#e8e8f0", hairStyle: "long", eyes: "#8ad8ff", top: "#2a2030", accent: "#8ad8ff", pants: "#1a1420", outfit: "robe", hat: "hood", hatCol: "#1a1420" },
+  hero_druid: { hair: "#6a8a3a", hairStyle: "braids", top: "#6a8a3a", accent: "#c8a060", pants: "#5a4a2a", outfit: "cloak", hat: "flower", hatCol: "#f090b8", cape: "#4a6a2a" },
+  hero_spellblade: { hair: "#3a4a8a", hairStyle: "ponytail", top: "#4a3a6a", accent: "#8ad8ff", pants: "#2a2a3a", outfit: "jacket", cape: "#6a3aa0" },
+  hero_dragoon: { hair: "#8a2a2a", hairStyle: "spiky", top: "#6a2a2a", accent: "#e0a040", pants: "#3a2a2a", outfit: "armor", hat: "helmet", hatCol: "#8a3a3a" },
   lyra: { skin: "#f5d8bc", hair: "#e4ecf2", hairStyle: "long", eyes: "#3a8a5a", top: "#2f7a4a", accent: "#9a6a3a", pants: "#2a4a32", outfit: "cloak", ears: "elf", cape: "#5a4a2a", fem: true },
   bram: { skin: "#efe0c0", hair: "#b0763a", hairStyle: "short", top: "#c8a878", accent: "#7a4a22", pants: "#6a4a2a", outfit: "tunic", hat: "mushroom", hatCol: "#d83a2a" },
   samira: { skin: "#c68a5a", hair: "#2a1a12", hairStyle: "braids", eyes: "#6a3a1a", top: "#e0a040", accent: "#b0302a", pants: "#8a5a2a", outfit: "robe", hat: "circlet", hatCol: "#e8c040", fem: true },
@@ -64,18 +72,22 @@ const EYES = ["#2a3a6a", "#3a2a1a", "#2a6a3a", "#6a3aa0", "#1a1a1a", "#3a6ab0"];
 export function lookFor(id: string, pal?: Record<string, string>): Look {
   const L: Look = { ...BASE_LOOK, ...(PRESETS[id] ?? PRESETS.villager) };
   if (!pal) return L;
-  const h = hashString(JSON.stringify(pal));
-  const r = new Rng(h);
+  const generic = id === "villager" || id === "hero_mage" && !!pal.j;
+  // randomness only depends on the identity keys, never on gear or custom choices
+  const idKeys = ["h", "c", "b", "p", "s", "t", "r", "j", "g", "k"].map((k) => pal[k] ?? "").join("|");
+  const r = new Rng(hashString(idKeys));
   if (pal.h) L.hair = pal.h;
   if (pal.c) L.top = pal.c;
   if (pal.b) L.accent = pal.b;
   if (pal.p) L.pants = pal.p;
   if (pal.s) L.skin = pal.s;
   if (pal.t) L.hatCol = pal.t;
-  L.fem = pal.g ? pal.g === "f" : r.chance(0.5);
-  L.hairStyle = L.fem ? r.pick<HairStyle>(["long", "ponytail", "bob", "bun", "braids", "curly"]) : r.pick(STYLES);
-  L.eyes = r.pick(EYES);
-  L.beard = !L.fem && r.chance(0.2);
+  if (generic || id === "villager") {
+    L.fem = pal.g ? pal.g === "f" : r.chance(0.5);
+    L.hairStyle = L.fem ? r.pick<HairStyle>(["long", "ponytail", "bob", "bun", "braids", "curly"]) : r.pick(STYLES);
+    L.eyes = r.pick(EYES);
+    L.beard = !L.fem && r.chance(0.2);
+  } else if (pal.g) L.fem = pal.g === "f";
   if (id === "villager") {
     const job = pal.j ?? "";
     const byJob: Record<string, Partial<Look>> = {
@@ -98,6 +110,20 @@ export function lookFor(id: string, pal?: Record<string, string>): Look {
     Object.assign(L, byJob[job] ?? { outfit: r.pick<Outfit>(["tunic", "vest", "dress", "apron"]) });
     if (L.outfit === "dress" && !L.fem) L.outfit = "tunic";
   }
+  const byClass: Record<string, Partial<Look>> = {
+    monk: { outfit: "robe", hairStyle: L.fem ? "bun" : "bald", hat: "none" },
+    paladin: { outfit: "armor", cape: L.accent, hat: "circlet", hatCol: "#e0b03a" },
+    bard: { outfit: "vest", hat: "cap", cape: L.accent },
+    necromancer: { outfit: "robe", hat: "hood", hatCol: "#2a2030", top: "#2a2030" },
+    druid: { outfit: "cloak", hat: "flower", hatCol: "#f090b8" },
+    spellblade: { outfit: "jacket", cape: L.accent },
+    dragoon: { outfit: "armor", hat: "helmet", hatCol: L.top },
+    guardian: { outfit: "armor", hat: "helmet", hatCol: "#a8b0bc" },
+    ranger: { outfit: "cloak", hat: "hood", hatCol: L.top },
+    rogue: { outfit: "vest", hat: "bandana", hatCol: L.accent },
+    cleric: { outfit: "robe", hat: "circlet", hatCol: "#e0b03a" },
+  };
+  if (pal.k && byClass[pal.k] && (id === "villager" && ["guard", "mercenary", "priest", "scholar", "hunter", "adventurer", "bard", "herbalist", ""].includes(pal.j ?? ""))) Object.assign(L, byClass[pal.k]);
   const race = pal.r ?? "";
   if (race === "Tiên Rừng" || race === "Bán Tinh Linh") L.ears = "elf";
   if (race === "Người Thú") L.ears = "beast";
@@ -106,7 +132,29 @@ export function lookFor(id: string, pal?: Record<string, string>): Look {
   if (race === "Tộc Thằn Lằn") { L.skin = r.pick(["#6ab04a", "#4a9a8a", "#a0b040"]); L.hairStyle = "bald"; }
   if (race === "Người Bóng") { L.skin = "#6a5a8a"; L.glow = true; L.eyes = "#ffe14a"; }
   if (race === "Người Lùn") L.beard = !L.fem;
+  applyCustom(L, pal);
   return L;
+}
+
+/** Player-chosen appearance (hs/hc/ec/sk/bd) and the visuals of equipped gear (a/w). */
+function applyCustom(L: Look, pal: Record<string, string>) {
+  if (pal.hs) L.hairStyle = pal.hs as HairStyle;
+  if (pal.hc) L.hair = pal.hc;
+  if (pal.ec) L.eyes = pal.ec;
+  if (pal.sk) L.skin = pal.sk;
+  if (pal.bd) L.beard = pal.bd === "1";
+  if (pal.ht) L.hat = pal.ht as Hat;
+  if (pal.a) {
+    const [kind, col, col2] = pal.a.split("|");
+    L.top = col;
+    if (kind === "robe") { L.outfit = "robe"; L.accent = col2 ?? L.accent; }
+    else if (kind === "leather") { L.outfit = "vest"; L.accent = col2 ?? L.accent; }
+    else if (kind === "mail" || kind === "plate") { L.outfit = "armor"; L.accent = col2 ?? L.accent; if (kind === "plate") L.pants = hs(col, -0.25); }
+  }
+  if (pal.w) {
+    const [kind, c0, c1, c2] = pal.w.split("|");
+    L.weapon = { kind, c0, c1, c2 };
+  }
 }
 
 // ------------------------------------------------------------ grid painter
@@ -117,6 +165,10 @@ class G {
   px(x: number, y: number, c: Col) { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < this.w && y < this.h) this.g[y][x] = c; }
   get(x: number, y: number) { return x >= 0 && y >= 0 && x < this.w && y < this.h ? this.g[y][x] : null; }
   rect(x: number, y: number, w: number, h: number, c: Col) { for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) this.px(xx, yy, c); }
+  line(x0: number, y0: number, x1: number, y1: number, c: Col) {
+    const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
+    for (let i = 0; i <= n; i++) this.px(x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n, c);
+  }
   /** Fill a horizontal span with left highlight / right shadow shading. */
   span(x0: number, x1: number, y: number, c: string, shade = true) {
     for (let x = x0; x <= x1; x++) this.px(x, y, !shade ? c : x === x0 ? hs(c, 0.2) : x >= x1 - 1 ? hs(c, -0.22) : c);
@@ -207,6 +259,64 @@ function drawBody(g: G, L: Look, dir: Dir, frame: number) {
   }
   // neck
   if (dir !== 1) g.rect(7, y0 - 1, 2, 1, sk2);
+}
+
+/** Weapon held in the hand (or shield on the arm). `behind` pass draws what is hidden behind the body. */
+function drawWeapon(g: G, L: Look, dir: Dir, frame: number, behind: boolean) {
+  const w = L.weapon;
+  if (!w) return;
+  const bob = frame % 2 === 1 ? 1 : 0;
+  const y0 = 15 + bob;
+  const metal = w.c0, grip = w.c1 || "#7a4a2a", gem = w.c2 || "#8ad8ff";
+  const hl = hs(metal, 0.35);
+  // which side: down → viewer's right hand; up → left, behind the body; side → front hand
+  const isBehind = dir === 1;
+  if (behind !== isBehind && w.kind !== "shield" && w.kind !== "bow") return;
+  const hx = dir === 0 ? 13 : dir === 1 ? 2 : 9, hy = y0 + 8;
+  switch (w.kind) {
+    case "sword": case "scythe": case "dagger": {
+      const len = w.kind === "dagger" ? 4 : 8;
+      if (dir === 2) { for (let i = 0; i < len; i++) { g.px(hx + 1 + Math.floor(i * 0.6), hy + 1 + i, i === len - 1 ? hl : metal); } g.px(hx, hy, grip); g.px(hx + 1, hy - 1, grip); }
+      else { g.rect(hx, hy + 1, 1, len, metal); g.px(hx, hy + len, hl); g.rect(hx - 1, hy + 1, 3, 1, grip); if (w.kind === "scythe") g.rect(hx - 3, hy - 6, 1, 7, grip); }
+      break;
+    }
+    case "axe":
+      if (dir === 2) { g.line(hx, hy - 4, hx + 2, hy + 5, grip); g.rect(hx + 1, hy - 5, 3, 3, metal); g.px(hx + 3, hy - 5, hl); }
+      else { g.rect(hx, hy - 4, 1, 10, grip); g.rect(hx + (dir === 0 ? 1 : -2), hy - 5, 2, 4, metal); g.px(hx + (dir === 0 ? 2 : -2), hy - 5, hl); }
+      break;
+    case "spear":
+      if (dir === 2) { g.line(hx - 2, hy + 6, hx + 5, hy - 10, grip); g.rect(hx + 5, hy - 12, 1, 3, metal); }
+      else { g.rect(hx, hy - 14, 1, 20, grip); g.rect(hx, hy - 17, 1, 3, metal); g.px(hx, hy - 17, hl); }
+      break;
+    case "staff": case "wand": {
+      const len = w.kind === "wand" ? 5 : 18;
+      if (dir === 2) { g.line(hx, hy + 2, hx + 2, hy + 2 - len, grip); g.rect(hx + 1, hy + 1 - len, 2, 2, gem); }
+      else { g.rect(hx, hy + 3 - len, 1, len, grip); g.rect(hx - 1, hy + 1 - len, 3, 2, gem); g.px(hx, hy + 1 - len, "#ffffff"); }
+      break;
+    }
+    case "bow": {
+      if (!behind && dir === 1) return;
+      if (behind && dir !== 1) return;
+      const bx = dir === 0 ? 2 : dir === 1 ? 13 : 10;
+      for (let i = -5; i <= 5; i++) g.px(bx + (Math.abs(i) < 3 ? -1 : 0) * (dir === 0 ? 1 : -1), hy + i, grip);
+      for (let i = -4; i <= 4; i++) g.px(bx + (dir === 0 ? 1 : -1), hy + i, "rgba(240,240,240,0.9)");
+      break;
+    }
+    case "tome":
+      g.rect(hx - 1, hy, 3, 4, metal); g.px(hx - 1, hy, hl); g.px(hx + 1, hy + 3, gem);
+      break;
+    case "fist":
+      if (dir !== 1) { g.rect(dir === 0 ? 2 : 7, y0 + 7, 2, 2, metal); if (dir === 0) g.rect(12, y0 + 7, 2, 2, metal); }
+      break;
+    case "shield": {
+      if (behind !== (dir === 1)) return;
+      const sx = dir === 0 ? 2 : dir === 1 ? 12 : 5;
+      g.rect(sx, y0 + 3, 4, 6, metal); g.rect(sx, y0 + 3, 4, 1, hl); g.rect(sx + 1, y0 + 9, 2, 1, metal);
+      g.px(sx + 1, y0 + 5, gem); g.rect(sx, y0 + 3, 1, 6, hs(metal, 0.2));
+      break;
+    }
+    default: break;
+  }
 }
 
 function drawHead(g: G, L: Look, dir: Dir, bob: number) {
@@ -320,8 +430,10 @@ export function personCanvas(id: string, pal: Record<string, string> | undefined
   const L = lookFor(id, pal);
   const g = new G(16, 32);
   const bob = frame % 2 === 1 ? 1 : 0;
+  drawWeapon(g, L, dir, frame, true);
   drawBody(g, L, dir, frame);
   drawHead(g, L, dir, bob);
+  drawWeapon(g, L, dir, frame, false);
   const c = g.toCanvas();
   cache.set(key, c);
   return c;

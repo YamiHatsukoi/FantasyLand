@@ -163,6 +163,7 @@ function makeNpc(rng: Rng, id: string, floor: number, s: Pick<Settlement, "id" |
   const race = rng.pick(RACES);
   const pal: Record<string, string> = { h: rng.pick(HAIR), c: rng.pick(CLOTH), b: rng.pick(CLOTH), p: rng.pick(CLOTH), s: rng.pick(SKIN), r: race, j: job, g: rng.chance(0.5) ? "f" : "m" };
   if (hat) pal.t = rng.pick(CLOTH);
+  pal.k = classId;
   const maxV = 40 + floor * 25;
   const taste = TASTE[job];
   const lovePool = itemsWithShapes(taste.shapes, maxV);

@@ -201,6 +201,17 @@ S("holy_bash", "Thánh Khiên Kích", "✨", "shield", "light", "physical", "ene
 S("last_stand", "Tử Thủ", "🏳️", "shield", "physical", "support", "self", 4, 10, 6, { self: fx({ s: "immune", t: 2 }, { s: "defUp", t: 3 }, { s: "regen", t: 3, p: 0.4 }) });
 S("aegis", "Khiên Bất Diệt", "🌐", "shield", "light", "support", "allies", 5, 35, 6, { fx: fx({ s: "barrier", t: 3 }, { s: "shield", t: 3, p: 1.2 }, { s: "immune", t: 1 }), sp: sp({ k: "useDef" }) });
 
+// ------------------------------------------------------------------ class signatures (monk, paladin, bard, necromancer, spellblade)
+S("dragon_fist", "Long Quyền", "🐲", "fist", "fire", "physical", "enemy", 4, 18, 2, { power: 2, fx: fx({ s: "burn", ch: 0.5, t: 3 }), flavor: "Một cú đấm bọc lửa rồng." });
+S("nirvana_palm", "Niết Bàn Chưởng", "☸️", "fist", "light", "physical", "enemies", 5, 40, 5, { power: 1.3, fx: fx({ s: "stun", ch: 0.25, t: 1 }), self: fx({ s: "regen", t: 3, p: 0.3 }, { s: "haste", t: 2 }) });
+S("holy_crusade", "Thánh Chiến", "⚜️", "sword", "light", "physical", "enemies", 4, 26, 3, { power: 1.1, fx: fx({ s: "blind", ch: 0.3, t: 2 }), self: fx({ s: "shield", t: 2, p: 0.6 }) });
+S("discord", "Nốt Lạc Điệu", "🎶", "song", "arcane", "magical", "enemy", 1, 6, 1, { power: 0.9, fx: fx({ s: "confuse", ch: 0.3, t: 1 }) });
+S("grand_finale", "Khúc Vĩ Thanh", "🎼", "song", "arcane", "magical", "enemies", 5, 45, 6, { power: 1.5, sp: sp({ k: "scaleDebuffs", per: 0.15 }) });
+S("bone_spear", "Giáo Xương", "🦴", "dark", "physical", "physical", "enemy", 1, 6, 0, { power: 1.3, fx: fx({ s: "bleed", ch: 0.5, t: 3 }) });
+S("corpse_blast", "Thi Bạo", "💀", "dark", "dark", "magical", "enemies", 3, 20, 3, { power: 0.9, fx: fx({ s: "curse", ch: 0.5, t: 3 }, { s: "weaken", ch: 0.4, t: 2 }) });
+S("lich_form", "Hoá Thân Vu Yêu", "☠️", "dark", "dark", "support", "self", 5, 30, 6, { self: fx({ s: "magUp", t: 3 }, { s: "lifesteal", t: 3 }, { s: "barrier", t: 2 }) });
+S("elemental_edge", "Nguyên Tố Nhận", "🌀", "sword", "arcane", "physical", "enemy", 4, 20, 2, { power: 1.6, sp: sp({ k: "randomElement" }) });
+
 // ------------------------------------------------------------------ monsters (enemy-only)
 const M = (id: string, name: string, icon: string, el: Element, kind: SkillKind, target: TargetType, mp: number, cd: number, o: Opts = {}) =>
   S(id, name, icon, "monster", el, kind, target, 1, mp, cd, { enemy: true, ...o });

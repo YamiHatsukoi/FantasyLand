@@ -1,6 +1,6 @@
 import { app } from "../app";
 import { describeSkill, skillCostText } from "../combat/describe";
-import { addItem, charPassives, charStats, partySize, passiveSlots, removeItem, skillSlots, type Character } from "../core/state";
+import { addItem, charPassives, charStats, syncLook, partySize, passiveSlots, removeItem, skillSlots, type Character } from "../core/state";
 import { CLASSES, xpForLevel } from "../data/classes";
 import { getItem, type EquipSlot } from "../data/items";
 import { getPassive } from "../data/passives";
@@ -8,6 +8,7 @@ import { SCHOOL_NAMES, getSkill } from "../data/skills";
 import { spriteImg } from "../render/pixel";
 import { bar, h, nn, openModal, toast, type ModalHandle } from "../ui/dom";
 import { itemImg } from "../ui/icon";
+import { openAppearance } from "./appearance";
 
 const SLOT_NAMES: Record<EquipSlot, string> = { weapon: "Vũ khí", armor: "Giáp", accessory: "Trang sức" };
 const STAT_NAMES: Record<string, string> = { hp: "Máu", mp: "MP", atk: "Công", mag: "Phép", def: "Thủ", res: "Kháng", spd: "Tốc", crit: "Chí mạng", eva: "Né" };
@@ -55,7 +56,7 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
   const header = h("div", { class: "row", style: "align-items:flex-start;gap:12px" },
     spriteImg(ch.sprite, ch.pal, "sprite big-portrait"),
     h("div", { class: "grow col", style: "gap:4px" },
-      h("div", { class: "row between" }, h("b", { style: "font-size:18px" }, ch.name), rosterBtn),
+      h("div", { class: "row between" }, h("b", { style: "font-size:18px" }, ch.name), h("div", { class: "row" }, h("button", { class: "btn small", onclick: () => openAppearance(ch, rerender) }, "🎨 Ngoại hình"), rosterBtn)),
       h("div", { class: "muted small" }, `${cls.icon} ${cls.name} · Cấp ${ch.level} · ${cls.desc}`),
       ch.bio ? h("div", { class: "small" }, ch.bio) : null,
       bar(ch.hp, s.hp, "hp big", `Máu ${ch.hp}/${s.hp}`),
@@ -163,7 +164,7 @@ function pickGear(ch: Character, slot: EquipSlot, done: () => void) {
   const cur = ch.gear[slot];
   const list = h("div", { class: "list" });
   if (cur) {
-    list.append(h("button", { class: "item-row", onclick: () => { addItem(g, cur, 1); delete ch.gear[slot]; clampVitals(ch); m.close(); done(); } },
+    list.append(h("button", { class: "item-row", onclick: () => { addItem(g, cur, 1); delete ch.gear[slot]; syncLook(ch); clampVitals(ch); m.close(); done(); } },
       h("span", { class: "ico" }, "↩️"), h("div", { class: "meta" }, h("div", { class: "name" }, `Tháo ${getItem(cur).name}`))));
   }
   for (const it of items) {
@@ -173,6 +174,7 @@ function pickGear(ch: Character, slot: EquipSlot, done: () => void) {
         if (!removeItem(g, it.id, 1)) return;
         if (cur) addItem(g, cur, 1);
         ch.gear[slot] = it.id;
+        syncLook(ch);
         clampVitals(ch);
         m.close();
         done();
