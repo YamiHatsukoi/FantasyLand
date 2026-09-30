@@ -1,12 +1,13 @@
 import type { StatMods, Stats } from "../combat/types";
 import { PARTY_SIZE, costFor, type Cost, passiveSlotsFor, skillSlotsFor } from "../data/buildings";
-import { CLASSES, COMPANIONS, classStats, learnLevel, xpForLevel } from "../data/classes";
-import { MAX_LEVEL, fromOldLevel, pointsAtLevel, power } from "./levels";
+import { CLASSES, COMPANIONS, classStats, xpForLevel } from "../data/classes";
 import { decodeFog, encodeFog } from "../world/fog";
 import { hashString } from "./rng";
 import { enhLevel, enhancedId, getItem, type GearKey, type MealBuff } from "../data/items";
 
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
+/** Highest character level (the floor-100 gatekeeper stands at 200). */
+export const MAX_LEVEL = 200;
 
 export interface Character {
   id: string;
@@ -218,7 +219,7 @@ export function newGame(heroName: string, classId: string, seed: number): GameSt
 export function makeCharacter(id: string, name: string, classId: string, sprite: string, level: number): Character {
   const cls = CLASSES[classId];
   const skills = [...cls.startSkills];
-  for (const [lvl, sk] of Object.entries(cls.learnset)) if (learnLevel(lvl) <= level && !skills.includes(sk)) skills.push(sk);
+  for (const [lvl, sk] of Object.entries(cls.learnset)) if (Number(lvl) <= level && !skills.includes(sk)) skills.push(sk);
   const s = classStats(classId, level);
   return {
     id, name, classId, sprite, level, xp: 0, hp: s.hp, mp: s.mp,
@@ -334,7 +335,7 @@ export function resetPoints(ch: Character) {
   ch.points = (ch.points ?? 0) + spent;
   ch.alloc = {};
 }
-export const resetCost = (ch: Character) => Math.round(50 * power(ch.level));
+export const resetCost = (ch: Character) => 50 * ch.level;
 
 /** Full stats of a character including gear. A weapon in the off hand counts for half. */
 export function charStats(ch: Character): Stats {
@@ -433,9 +434,8 @@ export function giveXp(ch: Character, amount: number): string[] {
     ch.xp -= xpForLevel(ch.level);
     ch.level++;
     msgs.push(`${ch.name} lên cấp ${ch.level}!`);
-    const pts = pointsAtLevel(ch.level) - pointsAtLevel(ch.level - 1);
-    if (ch.id === "hero" && pts) { ch.points = (ch.points ?? 0) + pts; msgs.push(`+${pts} điểm chỉ số để phân bổ!`); }
-    const learn = Object.entries(CLASSES[ch.classId].learnset).find(([lvl]) => learnLevel(lvl) === ch.level)?.[1];
+    if (ch.id === "hero") { ch.points = (ch.points ?? 0) + POINTS_PER_LEVEL; msgs.push(`+${POINTS_PER_LEVEL} điểm chỉ số để phân bổ!`); }
+    const learn = CLASSES[ch.classId].learnset[ch.level];
     if (learn && !ch.skills.includes(learn)) {
       ch.skills.push(learn);
       if (ch.equipped.length < 5) ch.equipped.push(learn);
@@ -586,13 +586,15 @@ export function migrate(raw: unknown): GameState {
     }
     if (g.expedition) g.expedition.done = [];
   }
-  if ((g.v ?? 1) < 4) {
-    // v4: levels stretched from 1–99 to 1–200. Old level L becomes 2L−1, which is exactly as strong;
-    // progress towards the next level is kept as a fraction. Stat points earned stay the same.
+  if (g.v === 4) {
+    // v4 briefly doubled every level (2L−1). Levels are back to what they were; only the cap and
+    // the monsters grew. Progress towards the next level is kept as a fraction.
     for (const ch of Object.values(g.chars ?? {})) {
-      const frac = Math.min(0.99, Math.max(0, (ch.xp ?? 0) / Math.max(1, Math.round(30 * Math.pow(ch.level, 1.55)))));
-      ch.level = Math.min(MAX_LEVEL, fromOldLevel(ch.level));
+      const v4Need = Math.round(15 * Math.pow((ch.level + 1) / 2, 1.55));
+      const frac = Math.min(0.99, Math.max(0, (ch.xp ?? 0) / Math.max(1, v4Need)));
+      ch.level = Math.max(1, Math.round((ch.level + 1) / 2));
       ch.xp = Math.floor(frac * xpForLevel(ch.level));
+      // stat points need no change: 1.5 per doubled level is the same total as 3 per level
     }
     if (g.tavern) g.tavern.offers = [];
   }
@@ -622,7 +624,7 @@ export function migrate(raw: unknown): GameState {
     syncLook(ch);
   }
   const hero = g.chars[g.heroId];
-  if (hero && hero.points === undefined) hero.points = pointsAtLevel(hero.level); // points for levels gained before allocation existed
+  if (hero && hero.points === undefined) hero.points = (hero.level - 1) * POINTS_PER_LEVEL; // points for levels gained before allocation existed
   // crit / dodge points above the (lowered) caps are refunded
   if (hero?.alloc) for (const [k, cap] of Object.entries(POINT_CAP) as [keyof Stats, number][]) {
     const spent = hero.alloc[k] ?? 0;

@@ -1,4 +1,3 @@
-import { power } from "../core/levels";
 import { charPassives, charStats, dualWielding, type Character } from "../core/state";
 import type { Element, StatMods } from "./types";
 import { hashString } from "../core/rng";
@@ -36,8 +35,7 @@ export function unitFromCharacter(ch: Character, buffs: StatMods = {}): Unit {
   };
 }
 
-export function enemyStats(def: EnemyDef, lvl: number): Stats {
-  const level = power(lvl);
+export function enemyStats(def: EnemyDef, level: number): Stats {
   const g = 1 + 0.14 * (level - 1);
   const b = def.base;
   // a bit tougher than before: breaking shields and boosting is how the party gets ahead
@@ -73,8 +71,7 @@ export function enemyResist(def: EnemyDef): Partial<Record<Element, number>> {
 }
 
 /** Shield points: tougher and deeper enemies take more weakness hits to break. */
-export function shieldFor(def: EnemyDef, lvl: number): number {
-  const level = power(lvl);
+export function shieldFor(def: EnemyDef, level: number): number {
   return def.boss ? Math.min(8, 4 + Math.floor(level / 12)) : Math.min(4, 2 + Math.floor(level / 18));
 }
 
