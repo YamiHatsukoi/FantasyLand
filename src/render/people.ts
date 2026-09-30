@@ -413,7 +413,7 @@ function drawHead(g: G, L: Look, dir: Dir, bob: number) {
   spriteBack(g, hairDef(style), hair, L.accent, dir, top);
   // face
   if (dir === 2) {
-    g.rect(5, top + 3, 8, 8, skin); g.rect(6, top + 11, 5, 1, sk2); g.px(13, top + 7, skin);
+    g.rect(5, top + 3, 8, 7, skin); g.rect(5, top + 10, 7, 1, skin); g.rect(6, top + 11, 4, 1, sk2); g.px(12, top + 9, sk2);
   } else {
     g.rect(4, top + 3, 8, 8, skin); g.rect(5, top + 11, 6, 1, sk2); g.rect(3, top + 5, 1, 4, skin); g.rect(12, top + 5, 1, 4, sk2);
   }
@@ -437,10 +437,10 @@ function drawHead(g: G, L: Look, dir: Dir, bob: number) {
     }
   } else if (dir === 2) {
     const iris = L.glow ? L.eyes : mixHex(L.eyes, "#1e1a2a", 0.35);
-    g.px(11, top + 6, "#1e1a2a"); g.px(12, top + 6, "#1e1a2a");
-    g.px(11, top + 7, iris); g.px(12, top + 7, L.glow ? L.eyes : "#f4f0ea");
-    if (L.beard) g.rect(9, top + 9, 4, 3, L.hair);
-    else { g.px(10, top + 8, mixHex(skin, "#e86a6a", 0.35)); g.px(12, top + 9, lip); }
+    g.px(10, top + 6, "#1e1a2a"); if (L.fem) g.px(11, top + 6, "#1e1a2a");
+    g.px(10, top + 7, iris); g.px(11, top + 7, L.glow ? L.eyes : "#f4f0ea");
+    if (L.beard) { g.rect(8, top + 9, 4, 2, L.hair); g.rect(8, top + 11, 3, 1, L.hair); }
+    else { g.px(9, top + 8, mixHex(skin, "#e86a6a", 0.35)); g.px(11, top + 9, lip); }
   }
   spriteFront(g, hairDef(style), hair, L.accent, dir, top);
   if (L.ears === "beast") { g.rect(3, top - 2, 3, 3, hair); g.rect(10, top - 2, 3, 3, hair); g.px(4, top - 1, "#f0b0b0"); g.px(11, top - 1, "#f0b0b0"); }

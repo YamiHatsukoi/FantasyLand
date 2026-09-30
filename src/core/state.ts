@@ -385,6 +385,9 @@ export function charPassives(ch: Character): string[] {
   return out;
 }
 
+/** Global experience multiplier (battles, events, academy). */
+export const XP_RATE = 0.5;
+
 /** Adds XP, returns list of level-up messages. */
 export function giveXp(ch: Character, amount: number): string[] {
   const msgs: string[] = [];

@@ -24,6 +24,8 @@ import { sceneReady } from "../world/residents";
 import { openTodo, todoBadge, todoList } from "./todo";
 import { openSanctuaryMarket } from "./settlement";
 import { fold } from "../ui/smart";
+import { openPlayers } from "./players";
+import type { PlayerVisit } from "../net/api";
 
 const SPROUT_TIPS = [
   "Cậu đã gieo hạt chưa? Ngủ một giấc là cây lớn thêm một ngày đó!",
@@ -47,13 +49,38 @@ const SPROUT_TIPS = [
   "Nhớ sinh nhật mọi người nha. Quà sinh nhật được quý gấp ba đấy!",
 ];
 
-export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: number) => void }): Screen {
+/** Pre-rendered sanctuary ground: grass, forest outside the territory, darkness past the border. */
+export function sanctuaryGround(terr: ReturnType<typeof territory>): HTMLCanvasElement {
+  const tiles = tileSet(BIOMES.forest);
+  const cv = document.createElement("canvas");
+  cv.width = SZ_W * 16;
+  cv.height = SZ_H * 16;
+  const gc = cv.getContext("2d")!;
+  gc.imageSmoothingEnabled = false;
+  const trees: [number, number, HTMLCanvasElement][] = [];
+  for (let y = 0; y < SZ_H; y++) {
+    for (let x = 0; x < SZ_W; x++) {
+      const hsh = hashString(`${x},${y}`);
+      const inside = x >= terr.x0 && y >= terr.y0 && x < terr.x1 && y < terr.y1;
+      const type = inside ? (hsh % 9 === 0 ? T.DECOR : T.GROUND) : (hsh % 3 === 0 ? T.GROUND : T.OBSTACLE);
+      gc.drawImage(tiles.tiles[type === T.OBSTACLE ? T.GROUND : type][hsh % 4], x * 16, y * 16);
+      if (type === T.OBSTACLE && (x + y) % 2 === 0) trees.push([x, y, tiles.tall[hsh % tiles.tall.length]]);
+      if (!inside) {
+        const d = Math.max(terr.x0 - x, x - terr.x1 + 1, terr.y0 - y, y - terr.y1 + 1);
+        gc.fillStyle = `rgba(3,6,5,${Math.min(0.92, 0.35 + d * 0.14)})`;
+        gc.fillRect(x * 16, y * 16, 16, 16);
+      }
+    }
+  }
+  for (const [x, y, tall] of trees) gc.drawImage(tall, (x - 0.5) * 16, (y - 2) * 16 - 6, 32, 48); // trunk mid-tile
+  return cv;
+}
+
+export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: number) => void; visit: (p: PlayerVisit) => void }): Screen {
   const g = app.game;
   const el = h("div", { class: "screen" });
   root.append(el);
   const view = new MapView(el);
-  const biome = BIOMES.forest;
-  const tiles = tileSet(biome);
 
   // hero position
   const hero = { x: 35, y: 37, px: 35, py: 37, path: [] as { x: number; y: number }[], t: 0, flip: false, dir: 0 as Dir };
@@ -63,30 +90,6 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   const sim = new ResidentSim(g);
   let ground: HTMLCanvasElement | null = null;
   let groundSig = "";
-  const renderGround = (terr: ReturnType<typeof territory>) => {
-    const cv = document.createElement("canvas");
-    cv.width = SZ_W * 16;
-    cv.height = SZ_H * 16;
-    const gc = cv.getContext("2d")!;
-    gc.imageSmoothingEnabled = false;
-    const trees: [number, number, HTMLCanvasElement][] = [];
-    for (let y = 0; y < SZ_H; y++) {
-      for (let x = 0; x < SZ_W; x++) {
-        const hsh = hashString(`${x},${y}`);
-        const inside = x >= terr.x0 && y >= terr.y0 && x < terr.x1 && y < terr.y1;
-        const type = inside ? (hsh % 9 === 0 ? T.DECOR : T.GROUND) : (hsh % 3 === 0 ? T.GROUND : T.OBSTACLE);
-        gc.drawImage(tiles.tiles[type === T.OBSTACLE ? T.GROUND : type][hsh % 4], x * 16, y * 16);
-        if (type === T.OBSTACLE && (x + y) % 2 === 0) trees.push([x, y, tiles.tall[hsh % tiles.tall.length]]);
-        if (!inside) {
-          const d = Math.max(terr.x0 - x, x - terr.x1 + 1, terr.y0 - y, y - terr.y1 + 1);
-          gc.fillStyle = `rgba(3,6,5,${Math.min(0.92, 0.35 + d * 0.14)})`;
-          gc.fillRect(x * 16, y * 16, 16, 16);
-        }
-      }
-    }
-    for (const [x, y, tall] of trees) gc.drawImage(tall, (x - 0.5) * 16, (y - 2) * 16 - 6, 32, 48); // trunk mid-tile
-    return cv;
-  };
   let talkingTo: string | null = null;
   const marks = new Map<string, boolean>(); // "!" markers, refreshed every few seconds
   let markT = 0;
@@ -146,6 +149,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     dockBtn("💞", "Cư dân", () => openResidentList({ find: walkToResident, onClose: updateHud }), "res"),
     dockBtn("🌀", "Vực Sâu", () => { const gate = app.game.buildings.find((b) => b.type === "gate"); if (gate) openB(gate); }),
     dockBtn("📜", "Nhật ký", () => openJournal()),
+    dockBtn("🌐", "Người chơi", () => openPlayers(hooks.visit)),
     dockBtn("⚙️", "Menu", () => openMenu()),
   );
   el.append(dock);
@@ -350,7 +354,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     const terr = territory(g.territory);
     // static ground (tiles, trees, darkness outside the territory) is pre-rendered once
     const gsig = `${g.territory}`;
-    if (gsig !== groundSig) { ground = renderGround(terr); groundSig = gsig; }
+    if (gsig !== groundSig) { ground = sanctuaryGround(terr); groundSig = gsig; }
     {
       const sx0 = (view.camX + 0.5 - view.w / 2 / view.tile) * 16, sy0 = (view.camY + 0.5 - view.h / 2 / view.tile) * 16;
       c.drawImage(ground!, sx0, sy0, (view.w / view.tile) * 16, (view.h / view.tile) * 16, 0, 0, view.w, view.h);

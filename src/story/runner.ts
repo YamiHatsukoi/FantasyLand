@@ -1,5 +1,5 @@
 import { Rng } from "../core/rng";
-import { addItem, charStats, giveXp, logMsg, makeCharacter, recruit, removeItem, syncLook, type GameState } from "../core/state";
+import { XP_RATE, addItem, charStats, giveXp, logMsg, makeCharacter, recruit, removeItem, syncLook, type GameState } from "../core/state";
 import { CLASSES, COMPANIONS } from "../data/classes";
 import { gearForFloor, getItem } from "../data/items";
 import { SKILLS } from "../data/skills";
@@ -133,7 +133,7 @@ export function applyEffect(e: Effect, ctx: StoryCtx): string[] {
   if ("goldF" in e) return applyEffect({ gold: Math.round(e.goldF * (1 + (ctx.floor - 1) * 0.5)) }, ctx);
   if ("loot" in e) return giveToGame(g, randomLoot(ctx, e.loot));
   if ("xp" in e || "xpF" in e) {
-    const amount = "xp" in e ? e.xp : Math.round(e.xpF * lb * 3);
+    const amount = Math.max(1, Math.round(("xp" in e ? e.xp : e.xpF * lb * 3) * XP_RATE));
     const out = [`+${amount} kinh nghiệm`];
     for (const id of g.party) {
       const ch = g.chars[id];

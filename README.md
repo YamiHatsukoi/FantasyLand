@@ -51,10 +51,11 @@ Trình duyệt (GitHub Pages)                         Supabase (gói Free)
 ### 1. Supabase
 
 1. Tạo project miễn phí tại <https://supabase.com>.
-2. Mở **SQL Editor** và chạy lần lượt 3 file, mỗi file một query riêng (**New query** → dán **toàn bộ** nội dung → **Run**):
+2. Mở **SQL Editor** và chạy lần lượt 4 file, mỗi file một query riêng (**New query** → dán **toàn bộ** nội dung → **Run**):
    1. [`supabase/01_tables.sql`](supabase/01_tables.sql) — bảng, RLS, trigger băm mật khẩu
    2. [`supabase/02_auth.sql`](supabase/02_auth.sql) — hàm đăng nhập
    3. [`supabase/03_saves.sql`](supabase/03_saves.sql) — hàm tải/lưu game, đăng xuất
+   4. [`supabase/04_social.sql`](supabase/04_social.sql) — xem người chơi khác, sang thăm Thánh Địa (chỉ xem)
 
    Mẹo: mở file trên GitHub, bấm nút **Copy raw file** (biểu tượng 📋) để chắc chắn copy đủ. Chạy lại nhiều lần cũng không sao.
 3. **Tạo tài khoản người chơi:** vào **Table Editor → players → Insert row**, điền `username` (3–32 ký tự) và `password` (gõ mật khẩu thường, sẽ tự được băm). Hoặc dùng SQL:
