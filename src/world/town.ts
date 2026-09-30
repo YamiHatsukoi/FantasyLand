@@ -185,7 +185,9 @@ export function advanceDay(g: GameState): DayReport {
   const eff = efficiency(g);
   const whBonus = 1 + 0.1 * (g.buildings.find((b) => b.type === "warehouse")?.level ?? 0);
   const fedBefore = feedSettlers(g, lines);
-  const prod = eff * whBonus * (fedBefore ? 1 : 0.6);
+  const mills = g.buildings.filter((b) => b.type === "windmill").sort((a, b) => b.level - a.level).slice(0, 3);
+  const millBonus = 1 + mills.reduce((s, b) => s + 0.05 * b.level, 0);
+  const prod = eff * whBonus * millBonus * (fedBefore ? 1 : 0.6);
   const unlockedBiomes = unlockedBiomeIds(g);
   let flowersNear = 0;
   for (const b of g.buildings) {
@@ -252,6 +254,38 @@ export function advanceDay(g: GameState): DayReport {
         break;
       case "clinic":
         gain("potion_hp", L * prod);
+        break;
+      case "bakery": {
+        const got = eat(g, ["wheat"], 2 * L);
+        if (got) gain("bread", got * prod);
+        else lines.push("🥖 Lò Bánh thiếu lúa để nướng bánh.");
+        break;
+      }
+      case "winery": {
+        const got = eat(g, ["night_grape"], 2 * L);
+        if (got) gain("night_wine", Math.ceil(got / 2) * prod);
+        break;
+      }
+      case "dairy": {
+        const m = eat(g, ["milk"], L), gm = eat(g, ["goat_milk"], L);
+        if (m) gain("butter", m * prod);
+        if (gm) gain("cheese", gm * prod);
+        break;
+      }
+      case "orchard": {
+        const fruit = ["ruby_apple", "sun_orange", "moon_pear", "ruby_apple"][season];
+        gain(fruit, (1 + L) * prod);
+        if (L >= 3 && rng.chance(0.15)) gain("immortal_peach", 1);
+        break;
+      }
+      case "fisherhut":
+        for (let i = 0; i < L; i++) gain(rng.pick(["carp", "silver_salmon"]), prod);
+        break;
+      case "observatory":
+        if (rng.chance(0.25 * L)) gain("mana_crystal", 1);
+        break;
+      case "guild":
+        for (let i = 0; i < L + 1; i++) gain(rng.pick(Object.values(BIOME_MATS[rng.pick(unlockedBiomes)]).filter((x): x is string => typeof x === "string")), 2 * prod);
         break;
       case "tree":
         if (rng.chance(0.4)) gain("cactus_fruit", 1);

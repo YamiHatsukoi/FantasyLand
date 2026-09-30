@@ -18,6 +18,12 @@ export function inTerritory(g: GameState, x: number, y: number) {
   return x >= t.x0 && y >= t.y0 && x < t.x1 && y < t.y1;
 }
 
+/** A building that blocks movement at (x, y) (flat decor like paths does not). */
+export function blockerAt(g: GameState, x: number, y: number): PlacedBuilding | undefined {
+  const b = buildingAt(g, x, y);
+  return b && !BUILDINGS[b.type].walkable ? b : undefined;
+}
+
 export function buildingAt(g: GameState, x: number, y: number): PlacedBuilding | undefined {
   return g.buildings.find((b) => {
     const [w, h] = BUILDINGS[b.type].size;

@@ -182,6 +182,8 @@ export function applyEffect(e: Effect, ctx: StoryCtx): string[] {
     const hero = g.chars[g.heroId];
     const fresh = makeCharacter(hero.id, hero.name, e.setClass, `hero_${e.setClass}`, hero.level);
     fresh.pal = hero.pal;
+    fresh.points = hero.points;
+    fresh.alloc = hero.alloc;
     syncLook(fresh);
     g.chars[g.heroId] = fresh;
     return [`${CLASSES[e.setClass].icon} ${CLASSES[e.setClass].name}`];

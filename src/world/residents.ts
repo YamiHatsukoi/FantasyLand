@@ -200,6 +200,7 @@ export function moodOf(g: GameState, ch: Character): number {
   let m = r < 0.08 ? -2 : r < 0.25 ? -1 : r < 0.7 ? 0 : r < 0.92 ? 1 : 2;
   if (isBirthday(g, p)) m += 2;
   if (b.jealous) m -= 1;
+  if (m < 0 && g.buildings.some((x) => x.type === "bathhouse")) m += 1; // a hot bath fixes most days
   if ((g.weather === "rain" || g.weather === "storm") && p.loves.includes("nature")) m += 1;
   return Math.max(-2, Math.min(2, m));
 }

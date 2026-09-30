@@ -34,14 +34,15 @@ export interface Agent {
   rng: Rng;
 }
 
-const HOMES = ["house", "tent", "cottage", "stonehouse", "manor", "apartment", "palace"];
-const SOCIAL = ["fountain", "park", "statue", "well", "tavern", "flowers", "tree", "market", "temple", "lamp", "arch"];
+const HOMES = ["house", "tent", "cottage", "stonehouse", "manor", "apartment", "palace", "inn", "treehouse", "bamboohouse"];
+const SOCIAL = ["fountain", "park", "statue", "well", "tavern", "flowers", "tree", "market", "temple", "lamp", "arch", "gazebo", "lily_pond", "bench", "stone_bench",
+  "campfire_ring", "bathhouse", "sakura", "picnic_rug", "torii", "dragon_statue", "angel_statue", "sprout_statue", "bird_bath", "observatory"];
 const WORK: Record<string, string[]> = {
-  farmer: ["farm", "greenhouse", "herbgarden"], blacksmith: ["forge", "mine", "workshop"], innkeeper: ["tavern", "kitchen"],
-  scholar: ["library", "academy"], priest: ["temple", "clinic"], herbalist: ["herbgarden", "alchemy", "clinic"],
-  fisher: ["fishpond", "well"], guard: ["watchtower", "wall", "gate", "training"], hunter: ["barn", "coop", "training"],
-  merchant: ["market", "warehouse"], bard: ["tavern", "fountain", "park"], mercenary: ["training", "watchtower"],
-  adventurer: ["gate", "training", "tavern"], child: ["park", "fountain", "coop"], elder: ["temple", "park", "library"],
+  farmer: ["farm", "greenhouse", "herbgarden", "orchard", "windmill"], blacksmith: ["forge", "mine", "workshop"], innkeeper: ["tavern", "kitchen", "inn", "bakery"],
+  scholar: ["library", "academy", "observatory"], priest: ["temple", "clinic"], herbalist: ["herbgarden", "alchemy", "clinic"],
+  fisher: ["fishpond", "well", "fisherhut"], guard: ["watchtower", "wall", "gate", "training"], hunter: ["barn", "coop", "training"],
+  merchant: ["market", "warehouse", "winery", "dairy"], bard: ["tavern", "fountain", "park"], mercenary: ["training", "watchtower"],
+  adventurer: ["gate", "training", "tavern", "guild"], child: ["park", "fountain", "coop"], elder: ["temple", "park", "library"],
 };
 const MAX_PATHS_PER_FRAME = 2;
 let shadow: HTMLCanvasElement | null = null;
@@ -83,6 +84,7 @@ export class ResidentSim {
     this.occ[SPROUT.y * SZ_W + SPROUT.x] = 0;
     this.pois = [];
     for (const b of g.buildings) {
+      if (BUILDINGS[b.type].walkable) continue;
       const [w, h] = BUILDINGS[b.type].size;
       for (let y = b.y; y < b.y + h; y++) for (let x = b.x; x < b.x + w; x++) if (x >= 0 && y >= 0 && x < SZ_W && y < SZ_H) this.occ[y * SZ_W + x] = 0;
     }

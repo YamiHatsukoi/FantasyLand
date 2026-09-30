@@ -22,6 +22,9 @@ export interface Character {
   pal?: Record<string, string>; // palette override for generated recruits
   origin?: string; // npc id this character was recruited from
   bio?: string;
+  /** Hero only: unspent stat points and where the spent ones went. */
+  points?: number;
+  alloc?: Partial<Record<keyof Stats, number>>;
   /** Earned in the sanctuary: 10-heart friendship or marriage. */
   bond?: "kindred" | "beloved";
 }
@@ -150,6 +153,7 @@ export interface Bond {
 
 export function newGame(heroName: string, classId: string, seed: number): GameState {
   const hero = makeCharacter("hero", heroName, classId, `hero_${classId}`, 1);
+  hero.points = 0;
   syncLook(hero);
 
   return {
@@ -263,9 +267,33 @@ export function equipGear(ch: Character, key: GearKey, id: string): string[] {
   return off;
 }
 
+/** Stat allocation: points per level for the hero, and what one point buys. */
+export const POINTS_PER_LEVEL = 3;
+export const POINT_VALUE: Record<keyof Stats, number> = { hp: 8, mp: 4, atk: 1, mag: 1, def: 1, res: 1, spd: 1, crit: 1, eva: 1 };
+export const POINT_CAP: Partial<Record<keyof Stats, number>> = { crit: 40, eva: 30 };
+
+export function allocPoint(ch: Character, k: keyof Stats, n = 1): boolean {
+  const have = ch.points ?? 0;
+  const cur = ch.alloc?.[k] ?? 0;
+  const cap = POINT_CAP[k];
+  n = Math.min(n, have, cap !== undefined ? cap - cur : n);
+  if (n <= 0) return false;
+  ch.alloc = { ...(ch.alloc ?? {}), [k]: cur + n };
+  ch.points = have - n;
+  return true;
+}
+/** Takes back every spent point. */
+export function resetPoints(ch: Character) {
+  const spent = Object.values(ch.alloc ?? {}).reduce((a, b) => a + (b ?? 0), 0);
+  ch.points = (ch.points ?? 0) + spent;
+  ch.alloc = {};
+}
+export const resetCost = (ch: Character) => 50 * ch.level;
+
 /** Full stats of a character including gear. A weapon in the off hand counts for half. */
 export function charStats(ch: Character): Stats {
   const s = classStats(ch.classId, ch.level);
+  for (const [k, n] of Object.entries(ch.alloc ?? {}) as [keyof Stats, number][]) s[k] += n * POINT_VALUE[k];
   for (const [key, id] of Object.entries(ch.gear) as [GearKey, string][]) {
     if (!id) continue;
     const eq = getItem(id).equip;
@@ -335,6 +363,7 @@ export function giveXp(ch: Character, amount: number): string[] {
     ch.xp -= xpForLevel(ch.level);
     ch.level++;
     msgs.push(`${ch.name} lên cấp ${ch.level}!`);
+    if (ch.id === "hero") { ch.points = (ch.points ?? 0) + POINTS_PER_LEVEL; msgs.push(`+${POINTS_PER_LEVEL} điểm chỉ số để phân bổ!`); }
     const learn = CLASSES[ch.classId].learnset[ch.level];
     if (learn && !ch.skills.includes(learn)) {
       ch.skills.push(learn);
@@ -436,5 +465,7 @@ export function migrate(raw: unknown): GameState {
   g.floors ??= {};
   g.bonds ??= {};
   for (const ch of Object.values(g.chars)) { fixGear(g, ch); syncLook(ch); }
+  const hero = g.chars[g.heroId];
+  if (hero && hero.points === undefined) hero.points = (hero.level - 1) * POINTS_PER_LEVEL; // points for levels gained before allocation existed
   return g;
 }

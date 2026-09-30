@@ -20,6 +20,7 @@ export interface BuildingDef {
   housing?: number; // residents per level
   workers?: number; // workers needed per level
   appeal?: number; // attractiveness per level
+  walkable?: boolean; // flat decor (paths, rugs): people walk over it
   /** Rendering style: wall/roof colours and an item-icon emblem on the facade. */
   style?: { wall: string; roof: string; emblem?: string };
   first?: Cost; // explicit build cost (otherwise generated)
@@ -32,6 +33,63 @@ export const TERRITORY_SIZES = [10, 14, 18, 22, 26, 32, 38, 44, 52, 60];
 export const MAX_TERRITORY_FOR_RANK = [0, 1, 3, 4, 6, 8, 9];
 
 const B = (d: BuildingDef) => d;
+
+type Deco = [id: string, name: string, icon: string, size: [number, number], rank: number, appeal: number, first: Cost | undefined, desc: string, walkable?: boolean];
+/** Decorations: they only make the sanctuary prettier (appeal draws settlers). */
+const DECOR: Deco[] = [
+  ["bench", "Ghế Gỗ", "🪑", [1, 1], 1, 1, { wood: 4 }, "Chỗ ngồi nghỉ chân."],
+  ["stone_bench", "Ghế Đá", "🪨", [1, 1], 2, 1, { stone: 6 }, "Ghế đá mát lạnh dưới bóng cây."],
+  ["paper_lantern", "Cột Đèn Lồng", "🏮", [1, 1], 1, 1, { wood: 3, fiber_forest: 2 }, "Đèn lồng giấy đỏ đung đưa trong gió."],
+  ["street_lamp", "Đèn Đường Sắt", "💡", [1, 1], 3, 2, undefined, "Cột đèn sắt uốn cong kiểu thành phố."],
+  ["torch", "Đuốc", "🔥", [1, 1], 1, 1, { wood: 2 }, "Ngọn đuốc cháy suốt đêm."],
+  ["brazier", "Chậu Lửa", "🪔", [1, 1], 2, 1, { stone: 4, wood: 2 }, "Chậu đồng đỏ rực than hồng."],
+  ["flower_pot", "Chậu Hoa", "🪴", [1, 1], 1, 1, { stone: 2, herb: 1 }, "Chậu gốm với cây cảnh xanh mướt."],
+  ["sunflowers", "Khóm Hướng Dương", "🌻", [1, 1], 1, 1, { herb: 2 }, "Luôn quay về phía có ánh sáng."],
+  ["rose_bush", "Bụi Hồng", "🌹", [1, 1], 2, 2, { herb: 3 }, "Hoa hồng đỏ thắm, có gai."],
+  ["hedge", "Hàng Rào Cây", "🟩", [1, 1], 1, 1, { herb: 2, wood: 1 }, "Bụi cây cắt tỉa vuông vức."],
+  ["fence_wood", "Hàng Rào Gỗ", "🪵", [1, 1], 1, 0, { wood: 2 }, "Rào gỗ mộc mạc."],
+  ["fence_white", "Hàng Rào Trắng", "⬜", [1, 1], 2, 1, { wood: 2, stone: 1 }, "Rào gỗ sơn trắng kiểu nông trại."],
+  ["fence_stone", "Tường Rào Đá", "🧱", [1, 1], 2, 1, { stone: 4 }, "Tường rào thấp xếp đá."],
+  ["barrel", "Thùng Gỗ", "🛢️", [1, 1], 1, 0, { wood: 3 }, "Thùng gỗ đựng nước mưa."],
+  ["crates", "Chồng Thùng Hàng", "📦", [1, 1], 1, 0, { wood: 4 }, "Hàng hoá chờ chuyển đi."],
+  ["hay_bale", "Kiện Rơm", "🌾", [1, 1], 1, 1, { fiber_forest: 3 }, "Rơm khô thơm mùi nắng."],
+  ["scarecrow", "Bù Nhìn", "🧑‍🌾", [1, 1], 1, 1, { wood: 2, fiber_forest: 2 }, "Canh ruộng cho khỏi chim. Trông hơi đáng sợ."],
+  ["signpost", "Cột Chỉ Đường", "🪧", [1, 1], 1, 1, { wood: 3 }, "Chỉ về Vực Sâu, Nhà Chính và... tầng 100?"],
+  ["mailbox", "Hộp Thư", "📮", [1, 1], 2, 1, { wood: 2, copper_ingot: 1 }, "Chưa ai gửi thư. Chưa."],
+  ["bird_bath", "Bể Tắm Chim", "🐦", [1, 1], 2, 2, { stone: 5 }, "Chim chóc hay ghé tắm vào buổi sáng."],
+  ["sundial", "Đồng Hồ Mặt Trời", "🕰️", [1, 1], 3, 2, undefined, "Dưới Vực Sâu nó chỉ giờ sai hoàn toàn."],
+  ["bush", "Bụi Cây", "🌿", [1, 1], 1, 1, { herb: 2 }, "Bụi cây tròn xanh."],
+  ["pine", "Cây Thông", "🌲", [1, 1], 1, 1, { wood: 3, herb: 1 }, "Cây thông cao vút."],
+  ["sakura", "Cây Anh Đào", "🌸", [1, 1], 2, 3, undefined, "Hoa anh đào nở quanh năm ở Thánh Địa."],
+  ["maple", "Cây Phong Đỏ", "🍁", [1, 1], 2, 2, undefined, "Lá đỏ như lửa."],
+  ["palm", "Cây Cọ", "🌴", [1, 1], 2, 2, undefined, "Một chút nhiệt đới."],
+  ["bamboo", "Khóm Trúc", "🎋", [1, 1], 1, 1, { wood: 2, herb: 1 }, "Trúc xanh xào xạc."],
+  ["giant_mushroom", "Nấm Khổng Lồ", "🍄", [1, 1], 2, 2, { mushroom_cap: 3 }, "Nấm phát sáng to bằng người."],
+  ["crystal_cluster", "Cụm Pha Lê", "💎", [1, 1], 3, 3, undefined, "Pha lê ngân nga khi có gió."],
+  ["rock_garden", "Đá Cảnh", "🪨", [1, 1], 1, 1, { stone: 4 }, "Vài tảng đá rêu xếp đẹp mắt."],
+  ["stone_lantern", "Đèn Đá Cổ", "🗼", [1, 1], 2, 2, { stone: 6 }, "Đèn đá kiểu đền cổ."],
+  ["totem", "Cột Vật Tổ", "🗿", [1, 1], 2, 2, { wood: 6 }, "Tượng gỗ chạm khắc các linh thú."],
+  ["banner", "Cờ Hiệu", "🚩", [1, 1], 1, 1, { wood: 2, fiber_forest: 2 }, "Cờ của Thánh Địa tung bay."],
+  ["wind_chime", "Chuông Gió", "🎐", [1, 1], 2, 1, { wood: 2, copper_ingot: 1 }, "Leng keng mỗi khi có gió."],
+  ["snowman", "Người Tuyết", "⛄", [1, 1], 1, 1, { stone: 1 }, "Không bao giờ tan. Phép thuật chăng?"],
+  ["pumpkins", "Đống Bí Ngô", "🎃", [1, 1], 1, 1, { herb: 2 }, "Bí ngô mùa thu, có quả khắc mặt cười."],
+  ["cart", "Xe Kéo", "🛒", [1, 1], 1, 1, { wood: 5 }, "Xe kéo chở đầy nông sản."],
+  ["weapon_rack", "Giá Vũ Khí", "⚔️", [1, 1], 2, 1, { wood: 3, iron_ingot: 1 }, "Kiếm, giáo và khiên xếp gọn gàng."],
+  ["cat_house", "Nhà Mèo", "🐈", [1, 1], 1, 2, { wood: 3 }, "Có một con mèo sống ở đây. Nó không trả tiền thuê."],
+  ["dog_house", "Chuồng Chó", "🐕", [1, 1], 1, 2, { wood: 4 }, "Nhà của chú chó canh cổng."],
+  ["campfire_ring", "Vòng Lửa Trại", "🏕️", [1, 1], 1, 1, { stone: 3, wood: 2 }, "Nơi mọi người quây quần kể chuyện."],
+  ["angel_statue", "Tượng Thiên Thần", "👼", [1, 1], 4, 4, undefined, "Đôi cánh đá sải rộng."],
+  ["sprout_statue", "Tượng Mầm", "🌱", [1, 1], 3, 3, undefined, "Mầm rất thích bức tượng này. Rất rất thích."],
+  ["obelisk", "Bia Đá Cổ", "🪦", [1, 1], 3, 2, undefined, "Khắc những ký tự không ai đọc được."],
+  ["stone_path", "Đường Lát Đá", "⬛", [1, 1], 1, 0, { stone: 2 }, "Lối đi lát đá. Đi xuyên qua được.", true],
+  ["flower_carpet", "Thảm Hoa Dại", "💐", [1, 1], 1, 1, { herb: 1 }, "Hoa dại mọc thành thảm. Đi xuyên qua được.", true],
+  ["picnic_rug", "Thảm Picnic", "🧺", [2, 2], 1, 2, { fiber_forest: 4 }, "Tấm thảm kẻ ô với giỏ bánh. Đi xuyên qua được.", true],
+  ["lily_pond", "Hồ Sen", "🪷", [2, 2], 2, 4, undefined, "Hồ nhỏ với lá sen và cá chép."],
+  ["gazebo", "Chòi Nghỉ", "⛱️", [2, 2], 3, 5, undefined, "Chòi lục giác cho những buổi chiều thong thả."],
+  ["wood_bridge", "Cầu Gỗ Cong", "🌉", [2, 1], 2, 3, undefined, "Cây cầu cong kiểu vườn cảnh."],
+  ["torii", "Cổng Đền", "⛩️", [2, 1], 3, 4, undefined, "Cổng đỏ đánh dấu nơi linh thiêng."],
+  ["dragon_statue", "Tượng Rồng", "🐉", [2, 2], 5, 8, undefined, "Rồng đá cuộn mình canh giữ Thánh Địa."],
+];
 const list: BuildingDef[] = [
   // ------------------------------------------------------------ core
   B({ id: "house", name: "Nhà Chính", icon: "🏛️", size: [3, 3], maxLevel: 6, unique: true, fixed: true, rank: 1, category: "core", housing: 2, appeal: 2, style: { wall: "#d8c8a0", roof: "#9a3a2a" },
@@ -123,6 +181,33 @@ const list: BuildingDef[] = [
   B({ id: "statue", name: "Tượng Anh Hùng", icon: "🗿", size: [1, 1], maxLevel: 1, unique: false, rank: 4, category: "decor", appeal: 4, desc: "Tượng tưởng niệm những người chuyển sinh đã ngã xuống." }),
   B({ id: "park", name: "Công Viên", icon: "🌲", size: [3, 3], maxLevel: 1, unique: false, rank: 4, category: "decor", appeal: 10, desc: "Vườn cây, ghế đá và lối đi lát sỏi." }),
   B({ id: "arch", name: "Cổng Hoa", icon: "🌸", size: [2, 1], maxLevel: 1, unique: false, rank: 2, category: "decor", appeal: 3, desc: "Cổng vòm phủ hoa leo." }),
+  // ------------------------------------------------------------ more buildings
+  B({ id: "bakery", name: "Lò Bánh", icon: "🥖", size: [2, 2], maxLevel: 3, unique: false, rank: 2, category: "production", workers: 1, appeal: 1, style: { wall: "#e8c890", roof: "#b86a3a", emblem: "bread" },
+    desc: "Mỗi ngày nướng bánh mì từ lúa trong kho (2/4/6 lúa → bánh mì)." }),
+  B({ id: "winery", name: "Hầm Rượu Vang", icon: "🍷", size: [2, 2], maxLevel: 3, unique: false, rank: 3, category: "production", workers: 1, style: { wall: "#8a5a4a", roof: "#5a2a3a", emblem: "bottle" },
+    desc: "Ủ Nho Đêm thành Rượu Nho Đêm mỗi ngày." }),
+  B({ id: "dairy", name: "Xưởng Bơ Sữa", icon: "🧀", size: [2, 2], maxLevel: 3, unique: false, rank: 3, category: "production", workers: 1, style: { wall: "#f0e8d0", roof: "#6a8ab0", emblem: "cheese" },
+    desc: "Biến sữa bò thành bơ và sữa dê thành phô mai mỗi ngày." }),
+  B({ id: "orchard", name: "Vườn Cây Ăn Trái", icon: "🍎", size: [3, 2], maxLevel: 3, unique: false, rank: 2, category: "farm", workers: 1, appeal: 2,
+    desc: "Hàng cây ăn trái cho táo, cam, lê theo mùa mỗi ngày." }),
+  B({ id: "windmill", name: "Cối Xay Gió", icon: "🌾", size: [2, 2], maxLevel: 3, unique: false, rank: 2, category: "production", workers: 1, appeal: 3,
+    desc: "Cánh quạt quay đều mang lại may mắn: tăng 5% sản lượng mọi công trình sản xuất mỗi cấp (tối đa 3 cối)." }),
+  B({ id: "fisherhut", name: "Chòi Câu Cá", icon: "🎣", size: [2, 1], maxLevel: 3, unique: false, rank: 1, category: "farm", workers: 1, first: { wood: 10, fiber_forest: 4 },
+    desc: "Ngư dân câu vài con cá mỗi ngày, không cần ao." }),
+  B({ id: "observatory", name: "Đài Thiên Văn", icon: "🔭", size: [2, 2], maxLevel: 3, unique: true, rank: 4, category: "service", workers: 1, appeal: 4,
+    desc: "Quan sát những đốm sáng trên trần Vực Sâu: mỗi ngày có cơ hội thu Tinh Thể Ma Lực. Nơi hẹn hò ngắm sao lý tưởng." }),
+  B({ id: "bathhouse", name: "Nhà Tắm Suối Nóng", icon: "♨️", size: [3, 2], maxLevel: 2, unique: true, rank: 3, category: "service", workers: 1, appeal: 6, style: { wall: "#c8a878", roof: "#3a5a7a", emblem: "herb" },
+    desc: "Cả đội hồi đầy khi ngủ dậy như thường, và cư dân vui vẻ hơn. Nơi hẹn hò ngâm chân thư giãn." }),
+  B({ id: "inn", name: "Nhà Trọ", icon: "🛏️", size: [3, 2], maxLevel: 3, unique: false, rank: 3, category: "housing", housing: 6, appeal: 2, style: { wall: "#c89a5a", roof: "#3a6a4a", emblem: "cup" },
+    desc: "Chỗ ở cho 6 người mỗi cấp, khách lữ hành cũng hay ghé." }),
+  B({ id: "guild", name: "Hội Mạo Hiểm", icon: "🗡️", size: [3, 3], maxLevel: 3, unique: true, rank: 4, category: "service", workers: 2, appeal: 4, style: { wall: "#b0a080", roof: "#7a2a2a", emblem: "sword" },
+    desc: "Nhà mạo hiểm giả nhận việc vặt: mỗi ngày mang về nguyên liệu từ các vùng đã khám phá." }),
+  B({ id: "treehouse", name: "Nhà Trên Cây", icon: "🌳", size: [2, 2], maxLevel: 1, unique: false, rank: 2, category: "housing", housing: 3, appeal: 3,
+    desc: "Căn nhà nhỏ trên cành cây cổ thụ cho 3 người." }),
+  B({ id: "bamboohouse", name: "Nhà Trúc", icon: "🎋", size: [2, 2], maxLevel: 2, unique: false, rank: 2, category: "housing", housing: 4, appeal: 2, style: { wall: "#c8c080", roof: "#6a8a3a" },
+    desc: "Nhà sàn bằng trúc mát mẻ cho 4 người." }),
+  // ------------------------------------------------------------ more decor
+  ...DECOR.map(([id, name, icon, size, rank, appeal, first, desc, walkable]) => B({ id, name, icon, size, maxLevel: 1, unique: false, rank, category: "decor", appeal, first, desc, walkable })),
 ];
 
 export const BUILDINGS: Record<string, BuildingDef> = Object.fromEntries(list.map((b) => [b.id, b]));

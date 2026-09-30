@@ -1,12 +1,12 @@
 import { app } from "../app";
 import { describeSkill, skillCostText } from "../combat/describe";
-import { GEAR_KEYS, addItem, charPassives, charStats, dualWielding, equipGear, fitsGear, isTwoHanded, syncLook, partySize, passiveSlots, removeItem, skillSlots, type Character } from "../core/state";
+import { GEAR_KEYS, POINTS_PER_LEVEL, POINT_CAP, POINT_VALUE, addItem, allocPoint, resetCost, resetPoints, charPassives, charStats, dualWielding, equipGear, fitsGear, isTwoHanded, syncLook, partySize, passiveSlots, removeItem, skillSlots, type Character } from "../core/state";
 import { CLASSES, xpForLevel } from "../data/classes";
 import { getItem, type GearKey, type ItemDef } from "../data/items";
 import { getPassive } from "../data/passives";
 import { SCHOOL_NAMES, getSkill } from "../data/skills";
 import { spriteImg } from "../render/pixel";
-import { bar, h, nn, openModal, toast, type ModalHandle } from "../ui/dom";
+import { bar, confirmBox, h, nn, openModal, toast, type ModalHandle } from "../ui/dom";
 import { itemImg } from "../ui/icon";
 import { GEAR_ICONS, GEAR_NAMES, gearTags, rarityClass, scaleStats, statDiff } from "../ui/gear";
 import { openAppearance } from "./appearance";
@@ -66,8 +66,30 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
   );
   const note = inDungeon ? h("p", { class: "muted small" }, "Đang ở trong Vực Sâu: không thể đổi thành viên, nhưng vẫn đổi được trang bị và kỹ năng.") : null;
 
-  const stats = h("div", { class: "grid2" }, (["atk", "mag", "def", "res", "spd", "crit", "eva"] as const).map((k) =>
-    h("div", { class: "stat" }, STAT_NAMES[k], h("b", null, `${s[k]}${k === "crit" || k === "eva" ? "%" : ""}`))));
+  // the hero spends stat points earned on level-up
+  const isHero = ch.id === g.heroId;
+  const pts = isHero ? ch.points ?? 0 : 0;
+  const statKeys = isHero ? (["hp", "mp", "atk", "mag", "def", "res", "spd", "crit", "eva"] as const) : (["atk", "mag", "def", "res", "spd", "crit", "eva"] as const);
+  const stats = h("div", { class: "grid2" }, statKeys.map((k) => {
+    const spent = ch.alloc?.[k] ?? 0;
+    const capped = POINT_CAP[k] !== undefined && spent >= POINT_CAP[k]!;
+    return h("div", { class: "stat" }, STAT_NAMES[k],
+      h("span", { class: "row", style: "gap:6px;flex-wrap:nowrap" },
+        spent ? h("span", { class: "small good" }, `+${spent * POINT_VALUE[k]}`) : null,
+        h("b", null, `${s[k]}${k === "crit" || k === "eva" ? "%" : ""}`),
+        isHero && pts > 0 ? h("button", { class: "btn small primary pt-btn", disabled: capped, title: `1 điểm = +${POINT_VALUE[k]} ${STAT_NAMES[k]}`, onclick: () => { if (allocPoint(ch, k)) { clampVitals(ch); rerender(); } } }, "+") : null));
+  }));
+  const pointsBar = isHero ? h("div", { class: "row between", style: "margin:4px 0" },
+    h("span", { class: pts ? "gold" : "muted small" }, pts ? `✨ ${pts} điểm chỉ số chưa dùng (+${POINTS_PER_LEVEL} mỗi cấp)` : `Mỗi lần lên cấp nhận ${POINTS_PER_LEVEL} điểm chỉ số.`),
+    Object.keys(ch.alloc ?? {}).length ? h("button", {
+      class: "btn small",
+      onclick: async () => {
+        const cost = resetCost(ch);
+        if (!(await confirmBox("Tẩy điểm", `Lấy lại toàn bộ điểm đã phân bổ với giá ${cost} vàng?`, "Tẩy điểm"))) return;
+        if (g.gold < cost) return toast(`Cần ${cost} vàng.`, "bad");
+        g.gold -= cost; resetPoints(ch); clampVitals(ch); rerender();
+      },
+    }, `↺ Tẩy điểm (${resetCost(ch)}💰)`) : null) : null;
 
   // gear
   const gear = h("div", { class: "gear-grid" }, GEAR_KEYS.map((key) => {
@@ -147,7 +169,7 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
 
   m.body.replaceChildren(...nn(
     tabs, header, note,
-    h("div", { class: "section-title" }, "Chỉ số"), stats,
+    h("div", { class: "section-title" }, "Chỉ số"), pointsBar, stats,
     h("div", { class: "section-title" }, "Trang bị"), gear, dualNote,
     h("div", { class: "section-title" }, `Kỹ năng (${ch.equipped.length}/${slots} đang dùng)`),
     h("p", { class: "muted small", style: "margin:0 0 6px" }, "Chạm vào kỹ năng để xem chi tiết. Tấn công và Phòng thủ luôn có sẵn."),

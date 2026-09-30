@@ -387,3 +387,4 @@ img.iicon.lg { width: 48px; height: 48px; }
 }
 .item-row .ico img.sprite { width: 40px; height: 40px; display: block; }
 .item-row .ico:has(img.sprite) { width: 40px; }
+.pt-btn { padding: 0 8px; min-width: 0; line-height: 1.4; }

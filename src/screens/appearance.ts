@@ -1,14 +1,12 @@
 import { app } from "../app";
 import { syncLook, type Character } from "../core/state";
+import { HAIR_STYLES } from "../render/hair";
 import { lookFor, personCanvas, portraitCanvas, type Dir, type HairStyle, type Hat } from "../render/people";
 import { h, openModal } from "../ui/dom";
 
 /** Appearance editor: body/face/hair chosen by the player; clothes and weapon come from equipped gear. */
 
-const HAIR_STYLES: [HairStyle, string][] = [
-  ["short", "Ngắn"], ["spiky", "Dựng"], ["long", "Dài"], ["ponytail", "Đuôi ngựa"], ["bob", "Bob"],
-  ["bun", "Búi"], ["braids", "Tết"], ["curly", "Xoăn"], ["mohawk", "Mohawk"], ["bald", "Trọc"],
-];
+const HAIR_CHOICES: [HairStyle, string][] = HAIR_STYLES.map((h) => [h.id, h.name]);
 const HAIR_COLORS = ["#1a1a1a", "#3a2418", "#6b3f22", "#a0652e", "#d8a040", "#f0d890", "#e8e8f0", "#9a9aa8", "#c83a2a", "#e87aa8", "#8a4ad8", "#3a7ad8", "#3aa878", "#2a4a3a"];
 const EYE_COLORS = ["#2a3a6a", "#3a8a5a", "#6a3a1a", "#1a1a1a", "#8a8a9a", "#b0302a", "#8a4ad8", "#e0a020", "#8ad8ff", "#ffe14a"];
 const SKINS = ["#fbe0c8", "#f2c8a0", "#e0b088", "#c68a5a", "#a06a40", "#6e4428", "#e0dcd8", "#9ad0d8", "#8ab070", "#6a5a8a"];
@@ -61,7 +59,7 @@ export function openAppearance(ch: Character, done: () => void, always = false) 
     draw();
     controls.replaceChildren(
       section("Giới tính", chips("g", [["m", "Nam"], ["f", "Nữ"]], L.fem ? "f" : "m")),
-      section("Kiểu tóc", chips("hs", HAIR_STYLES, L.hairStyle)),
+      section(`Kiểu tóc (${HAIR_CHOICES.length})`, chips("hs", HAIR_CHOICES, L.hairStyle)),
       section("Màu tóc", swatches("hc", HAIR_COLORS, L.hair)),
       section("Màu mắt", swatches("ec", EYE_COLORS, L.eyes)),
       section("Màu da", swatches("sk", SKINS, L.skin)),
