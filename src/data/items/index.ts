@@ -10,6 +10,7 @@ import { ITEMS, ITEM_LIST, type ItemDef } from "./core";
 import type { StatMods } from "../../combat/types";
 
 applyHerbUses();
+import "../pets";
 
 export { ITEMS, ITEM_LIST, TYPE_NAMES, TYPE_EMOJI } from "./core";
 export type { ItemDef, ItemType, ItemUse, EquipSlot, GearKey, Rarity, MealBuff } from "./core";

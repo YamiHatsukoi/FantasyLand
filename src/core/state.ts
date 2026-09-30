@@ -92,6 +92,8 @@ export interface FloorState {
   px?: number;
   py?: number;
   cleared: boolean; // guardian defeated
+  /** Rune stones touched so far, in order (sealed vault puzzle). */
+  puzzle?: string;
 }
 
 export interface Expedition {
@@ -137,6 +139,9 @@ export interface GameState {
   bonds: Record<string, Bond>;
   /** Elements the party has tried on each enemy kind (reveals weaknesses in battle). */
   scan?: Record<string, string[]>;
+  /** Pets hatched so far, and the one travelling with the party. */
+  pets?: string[];
+  pet?: string;
 }
 
 /** Friendship / romance with a resident. Points: 100 per heart, 10 hearts max. */
@@ -256,8 +261,15 @@ export const passiveSlots = (g: GameState) => passiveSlotsFor(houseLevel(g));
 export const skillSlots = (g: GameState) => skillSlotsFor(houseLevel(g));
 
 /** Party-wide buffs: meal eaten this expedition + temple blessing. */
+/** Every tenth floor is a milestone. */
+export const isMilestone = (n: number) => n > 0 && n % 10 === 0;
+/** Each conquered milestone leaves a lasting mark: this much more of every stat for the party. */
+export const MARK_BONUS = 0.02;
+
 export function partyBuffs(g: GameState): StatMods {
   const out: StatMods = {};
+  const marks = Number(g.flags.marks ?? 0);
+  if (marks) for (const k of ["hp", "mp", "atk", "mag", "def", "res", "spd"] as const) out[k] = (out[k] ?? 0) + marks * MARK_BONUS;
   for (const [k, v] of Object.entries(g.meal?.mods ?? {})) out[k as keyof StatMods] = (out[k as keyof StatMods] ?? 0) + (v as number);
   const bl = g.expedition?.blessing ?? 0;
   if (bl) for (const k of ["hp", "atk", "mag", "def", "res", "spd"] as const) out[k] = (out[k] ?? 0) + bl;

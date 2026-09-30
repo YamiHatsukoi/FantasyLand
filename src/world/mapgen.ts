@@ -5,7 +5,7 @@ import { BUILDINGS } from "../data/buildings";
 import { settlementCount, type FloorDef } from "./floors";
 import { getSettlement } from "./people";
 
-export type EntityKind = "monster" | "node" | "event" | "random" | "chest" | "camp" | "stairs" | "portal" | "guardian" | "town" | "building" | "npc" | "deco";
+export type EntityKind = "monster" | "node" | "event" | "random" | "chest" | "camp" | "stairs" | "portal" | "guardian" | "town" | "building" | "npc" | "deco" | "secret" | "vault" | "rune";
 
 export interface MapEntity {
   id: string;
@@ -305,6 +305,53 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
     const rect: TownRect = { i, x: best.x, y: best.y, w: TW, h: TH };
     towns.push(rect);
     layoutTown(rect, s.size, s.shops, s.npcs, def.family, trng);
+  }
+
+  // Milestone floors (every tenth): the lair becomes a throne ground ringed with braziers and
+  // banners. Placed after everything else so older saves keep their entity ids.
+  if (def.n % 10 === 0) {
+    const g0 = entities.find((e) => e.kind === "guardian")!;
+    for (let k = 0; k < 12; k++) {
+      const a = (k / 12) * Math.PI * 2;
+      const x = Math.round(g0.x + Math.cos(a) * 4), y = Math.round(g0.y + Math.sin(a) * 3);
+      if (free(x, y, 0)) place({ kind: "deco", x, y, sprite: k % 3 === 0 ? "banner" : "brazier" });
+    }
+  }
+
+  // Secrets (from floor 2): rooms hidden inside the rock behind a cracked wall, and a sealed vault
+  // whose three rune stones must be touched in the order its riddle hints at. Own RNG, placed
+  // last, so older saves keep their entity ids.
+  if (def.n >= 2) {
+    const srng = new Rng(seed ^ 0x5ec2e7);
+    const solidRock = (x: number, y: number) => x > 1 && y > 1 && x < w - 2 && y < h - 2 && !passable(x, y) && tiles[idx(x, y)] !== T.WATER && !occupied.has(idx(x, y));
+    let rooms = 0;
+    for (let tries = 0; tries < 4000 && rooms < 1 + (def.n % 3 === 0 ? 1 : 0); tries++) {
+      // a door tile in the rock, next to a reachable floor tile, with a 3x3 pocket of rock behind it
+      const x = srng.int(4, w - 5), y = srng.int(4, h - 5);
+      const [dx, dy] = srng.pick([[1, 0], [-1, 0], [0, 1], [0, -1]]);
+      if (!passable(x - dx, y - dy) || dist[idx(x - dx, y - dy)] < 0 || occupied.has(idx(x - dx, y - dy))) continue;
+      if (!solidRock(x, y)) continue;
+      const cx = x + dx * 2, cy = y + dy * 2;
+      let ok = true;
+      for (let oy = -2; oy <= 2 && ok; oy++) for (let ox = -2; ox <= 2 && ok; ox++) if (!solidRock(cx + ox, cy + oy)) ok = false;
+      if (!ok) continue;
+      for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) tiles[idx(cx + ox, cy + oy)] = T.GROUND;
+      tiles[idx(x, y)] = T.GROUND;
+      place({ kind: "secret", x, y, sprite: "cracked_wall", ref: "secret_wall" });
+      place({ kind: "chest", x: cx, y: cy, sprite: "chest", ref: "secret" });
+      rooms++;
+    }
+    if (def.n >= 4 && def.n % 2 === 0) {
+      const v = randomSpot(14, 4);
+      if (v) {
+        const order = srng.shuffle([0, 1, 2]);
+        place({ kind: "vault", x: v.x, y: v.y, sprite: "vault", ref: order.join("") });
+        for (let k = 0; k < 3; k++) {
+          const p = near(v.x + srng.int(-7, 7), v.y + srng.int(-7, 7), 3, 1);
+          if (p) place({ kind: "rune", x: p.x, y: p.y, sprite: "rune", ref: String(k) });
+        }
+      }
+    }
   }
 
   // Safety net: the gatekeeper and the stairs must always be reachable, whatever the terrain,
