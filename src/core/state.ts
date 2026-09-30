@@ -22,6 +22,8 @@ export interface Character {
   pal?: Record<string, string>; // palette override for generated recruits
   origin?: string; // npc id this character was recruited from
   bio?: string;
+  /** Earned in the sanctuary: 10-heart friendship or marriage. */
+  bond?: "kindred" | "beloved";
 }
 
 export interface PlacedBuilding {
@@ -119,6 +121,31 @@ export interface GameState {
   npcs: Record<string, NpcMemory>;
   tavern: { day: number; offers: RecruitOffer[] };
   report: string[];
+  /** Relationships with residents of the sanctuary, by character id. */
+  bonds: Record<string, Bond>;
+}
+
+/** Friendship / romance with a resident. Points: 100 per heart, 10 hearts max. */
+export interface Bond {
+  fp: number; // friendship
+  rp: number; // romance
+  stage: "none" | "dating" | "engaged" | "married";
+  closed?: boolean; // turned down romance
+  mutual?: boolean; // confessed feelings to each other
+  day: number; // last day talked
+  acts: number; // conversation actions used that day
+  gift: number; // day of last gift
+  date: number; // day of last date
+  flirt: number; // day of last flirt
+  known: string[]; // learned tastes: "t:food+" / "t:music-" / "i:itemId+"
+  said: string[]; // recently used line ids
+  answers: string[]; // "q3:bold"
+  events: string[]; // milestone scenes seen
+  topics: string[]; // "food:12" topic:day, recent topics
+  jealous?: number; // day jealousy started
+  gossip?: string; // who they heard the player flirting with
+  request?: { item: string; n: number; done?: boolean };
+  wedding?: number; // wedding day
 }
 
 export function newGame(heroName: string, classId: string, seed: number): GameState {
@@ -158,6 +185,7 @@ export function newGame(heroName: string, classId: string, seed: number): GameSt
     npcs: {},
     tavern: { day: 0, offers: [] },
     report: [],
+    bonds: {},
   };
 }
 
@@ -290,6 +318,8 @@ function fixGear(g: GameState, ch: Character) {
 
 export function charPassives(ch: Character): string[] {
   const out = [...ch.equippedPassives];
+  if (ch.bond === "kindred") out.push("p_kindred");
+  if (ch.bond === "beloved") out.push("p_beloved");
   for (const id of Object.values(ch.gear)) {
     const p = id ? getItem(id).equip?.passive : undefined;
     if (p && !out.includes(p)) out.push(p);
@@ -404,6 +434,7 @@ export function migrate(raw: unknown): GameState {
   g.stats ??= { battles: 0, kills: 0, deaths: 0, steps: 0 };
   g.learnedRecipes ??= [];
   g.floors ??= {};
+  g.bonds ??= {};
   for (const ch of Object.values(g.chars)) { fixGear(g, ch); syncLook(ch); }
   return g;
 }

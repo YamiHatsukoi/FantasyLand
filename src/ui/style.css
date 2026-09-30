@@ -372,3 +372,18 @@ img.iicon.lg { width: 48px; height: 48px; }
 .gear-grid .slot .gname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .diff-up { color: #7be07b; }
 .diff-down { color: #ff7a7a; }
+.hearts { letter-spacing: -1px; font-size: 12px; }
+.hearts-off { color: rgba(255, 255, 255, 0.28); }
+.res-acts { flex-direction: row; flex-wrap: wrap; }
+.res-acts .choice { flex: 1 1 100%; }
+.res-acts .choice.half { flex: 1 1 calc(50% - 8px); min-width: 150px; }
+.scene-box { max-height: 46dvh; min-height: 140px; }
+.scene-line { margin: 0 0 10px; line-height: 1.6; animation: sceneIn 0.35s ease; }
+@keyframes sceneIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (max-width: 480px) {
+  .dock { gap: 2px; padding: 4px; width: calc(100vw - 16px); }
+  .dock button { min-width: 0; flex: 1 1 0; padding: 4px 1px; font-size: 9.5px; white-space: nowrap; overflow: hidden; }
+  .dock button span:first-child { font-size: 20px; }
+}
+.item-row .ico img.sprite { width: 40px; height: 40px; display: block; }
+.item-row .ico:has(img.sprite) { width: 40px; }

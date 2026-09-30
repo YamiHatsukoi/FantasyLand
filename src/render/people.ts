@@ -149,7 +149,8 @@ function applyCustom(L: Look, pal: Record<string, string>) {
   if (pal.ht) L.hat = pal.ht as Hat;
   if (pal.a) {
     // Party members: clothes come only from equipped armor — class outfits, hats and capes are not free.
-    Object.assign(L, { outfit: "tunic", top: "#e8dcc0", accent: "#b89a70", pants: "#6a5a4a", shoes: "#5a3a2a", cape: undefined });
+    // plain everyday clothes in the person's own colours (linen for those without any)
+    Object.assign(L, { outfit: "tunic", top: pal.c ?? "#e8dcc0", accent: pal.b ?? "#b89a70", pants: pal.p ?? "#6a5a4a", shoes: "#5a3a2a", cape: undefined });
     L.hat = (pal.ht as Hat) ?? "none";
   }
   if (pal.a && pal.a !== "none") {
@@ -173,6 +174,22 @@ function applyCustom(L: Look, pal: Record<string, string>) {
 }
 
 // ------------------------------------------------------------ grid painter
+const rgbaCache = new Map<string, [number, number, number, number]>();
+/** "#rrggbb" / "#rgb" / "rgba(r,g,b,a)" → bytes. */
+function rgba(c: string): [number, number, number, number] {
+  let v = rgbaCache.get(c);
+  if (v) return v;
+  if (c.startsWith("#")) {
+    const h = c.length === 4 ? c.slice(1).split("").map((x) => x + x).join("") : c.slice(1, 7);
+    const n = parseInt(h, 16);
+    v = [(n >> 16) & 255, (n >> 8) & 255, n & 255, 255];
+  } else {
+    const m = c.match(/[\d.]+/g)?.map(Number) ?? [0, 0, 0, 1];
+    v = [m[0], m[1], m[2], Math.round((m[3] ?? 1) * 255)];
+  }
+  rgbaCache.set(c, v);
+  return v;
+}
 type Col = string | null;
 class G {
   g: Col[][];
@@ -201,7 +218,16 @@ class G {
     c.width = this.w;
     c.height = this.h;
     const ctx = c.getContext("2d")!;
-    out.forEach((row, y) => row.forEach((col, x) => { if (col) { ctx.fillStyle = col; ctx.fillRect(x, y, 1, 1); } }));
+    // one putImageData instead of a fillRect per pixel: this runs for hundreds of residents
+    const img = ctx.createImageData(this.w, this.h);
+    const d = img.data;
+    out.forEach((row, y) => row.forEach((col, x) => {
+      if (!col) return;
+      const [r, g, b, a] = rgba(col);
+      const i = (y * this.w + x) * 4;
+      d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = a;
+    }));
+    ctx.putImageData(img, 0, 0);
     return c;
   }
 }
