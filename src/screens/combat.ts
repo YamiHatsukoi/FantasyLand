@@ -12,6 +12,7 @@ import { BIOME_MATS, ESSENCES, LEGENDARY_BY_BIOME, gearForFloor, getItem, type I
 import { iconURL } from "../render/icons";
 import { getSkill } from "../data/skills";
 import { spriteURL } from "../render/pixel";
+import { isPerson, personCanvas } from "../render/people";
 import { T, TS, tileSet } from "../render/tiles";
 import { giveToGame } from "../story/runner";
 import { BIOMES } from "../world/biomes";
@@ -55,6 +56,35 @@ const pref = {
   get fast() { try { return localStorage.getItem("fl.fast") === "1"; } catch { return false; } },
   set fast(v: boolean) { try { localStorage.setItem("fl.fast", v ? "1" : "0"); } catch { /* ignore */ } },
 };
+
+/**
+ * Feet position (x%, y%) of slot i of n inside one team's half; the front line is nearest the centre.
+ * Wide screens use two columns side by side, narrow ones a zigzag so name plates never cover anyone.
+ */
+function slot(i: number, n: number, wide: boolean): [number, number] {
+  const W: Record<number, [number, number][]> = {
+    1: [[52, 78]],
+    2: [[62, 60], [26, 94]],
+    3: [[64, 72], [26, 46], [26, 98]],
+    4: [[68, 46], [28, 46], [68, 98], [28, 98]],
+  };
+  const N: Record<number, [number, number][]> = {
+    1: [[50, 80]],
+    2: [[62, 52], [32, 96]],
+    3: [[64, 38], [32, 68], [64, 98]],
+    4: [[66, 27], [32, 51], [66, 76], [32, 99]],
+  };
+  const L = wide ? W : N;
+  return (L[Math.min(4, n)] ?? L[4])[Math.min(i, 3)];
+}
+
+const personCache = new Map<string, string>();
+function personURL(sprite: string, pal?: Record<string, string>): string {
+  const k = `${sprite}|${pal ? JSON.stringify(pal) : ""}`;
+  let url = personCache.get(k);
+  if (!url) { url = personCanvas(sprite, pal, 2, 0).toDataURL(); personCache.set(k, url); }
+  return url;
+}
 
 const groundCache = new Map<string, string>();
 function groundURL(biomeId: string): string {
@@ -100,9 +130,10 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   const fastBtn = h("button", { class: `btn small ${fast ? "primary" : ""}`, onclick: () => { fast = !fast; pref.fast = fast; fastBtn.classList.toggle("primary", fast); } }, "⏩ x2");
   const helpBtn = h("button", { class: "btn small", title: "Cách chơi", onclick: () => combatHelp() }, "❓");
   const banner = h("div", { class: "cb-banner" });
-  const fieldE = h("div", { class: "field-enemies" });
-  const stage = h("div", { class: "cb-stage" }, fieldE, banner);
-  const fieldA = h("div", { class: "field-allies" });
+  // two teams facing each other across the field: party on the left, enemies on the right
+  const sideA = h("div", { class: "side left" });
+  const sideE = h("div", { class: "side right" });
+  const stage = h("div", { class: "cb-stage arena" }, sideA, sideE, banner);
   const actorBox = h("div", { class: "cb-actor" });
   const bpBox = h("div", { class: "bp-ctl" });
   const info = h("div", { class: "cb-info" }, "…");
@@ -111,31 +142,59 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   const logLine = h("div", { class: "cb-log" });
   const panel = h("div", { class: "cb-panel" }, h("div", { class: "cb-head" }, actorBox, bpBox), info, tabs, grid, logLine);
   const el = h("div", { class: "combat", style: `--cb1:${biome.bg[0]};--cb2:${biome.bg[1]};--ground:url(${groundURL(setup.biome)})` },
-    h("div", { class: "cb-top" }, h("span", { class: "tl-label" }, "Lượt"), timeline, helpBtn, autoBtn, fastBtn), stage, fieldA, panel);
+    h("div", { class: "cb-top" }, h("span", { class: "tl-label" }, "Lượt"), timeline, helpBtn, autoBtn, fastBtn), stage, panel);
   document.body.append(el);
 
   const views = new Map<string, UnitView>();
-  for (const u of enemies) {
+  const place = (root: HTMLElement, i: number, n: number, side: "left" | "right") => {
+    const [x, y] = slot(i, n, window.innerWidth >= 760);
+    root.style.left = `${side === "left" ? x : 100 - x}%`;
+    root.style.top = `${y}%`;
+    root.style.zIndex = String(Math.round(y));
+    root.style.setProperty("--d", `${(i * 0.37) % 1.2}s`);
+  };
+  // the boss always takes the front, centre spot
+  const eOrder = [...enemies].sort((a, b) => Number(!!b.boss) - Number(!!a.boss));
+  eOrder.forEach((u, i) => {
     const img = h("img", { class: "sprite", src: spriteURL(u.sprite, u.palette, 8), alt: u.name, draggable: false });
     const hp = bar(u.hp, battle.maxHp(u), "hp");
     const st = h("div", { class: "statuses" });
     const intent = h("div", { class: "intent" });
     const shield = h("div", { class: "shieldrow" });
-    const root = h("div", { class: `unit enemy ${u.boss ? "boss" : ""}` }, intent, st, img, h("div", { class: "uname" }, `${u.name} · Lv${u.level}`), hp, shield);
+    const root = h("div", { class: `unit fighter enemy ${u.boss ? "boss" : ""}` },
+      intent,
+      h("div", { class: "plate" }, h("div", { class: "pl-name" }, h("span", null, u.name), h("small", null, `Lv${u.level}`)), hp, shield, st),
+      h("div", { class: "body" }, h("div", { class: "plat" }), img));
     root.addEventListener("click", () => onUnitClick(u));
-    fieldE.append(root);
+    place(root, i, eOrder.length, "right");
+    sideE.append(root);
     views.set(u.uid, { root, img, hp, st, intent, shield });
-  }
-  for (const u of allies) {
-    const img = h("img", { class: "sprite", src: spriteURL(u.sprite, u.palette, 4), alt: u.name, draggable: false });
+  });
+  allies.forEach((u, i) => {
+    const person = isPerson(u.sprite);
+    const img = h("img", { class: `sprite ${person ? "tall" : ""}`, src: person ? personURL(u.sprite, u.palette) : spriteURL(u.sprite, u.palette, 8), alt: u.name, draggable: false });
     const hp = bar(u.hp, battle.maxHp(u), "hp", "");
     const mp = bar(u.mp, battle.maxMp(u), "mp", "");
     const st = h("div", { class: "statuses" });
     const bp = h("div", { class: "bp-pips", title: "Dũng Khí: +1 mỗi lượt, tiêu để tăng sức đòn đánh" });
-    const root = h("div", { class: "unit ally-card" }, img, h("div", { class: "info" }, h("div", { class: "uname" }, u.name), hp, mp, h("div", { class: "row", style: "gap:4px;flex-wrap:nowrap;justify-content:space-between" }, bp, st)));
+    const root = h("div", { class: "unit fighter ally" },
+      h("div", { class: "plate" }, h("div", { class: "pl-name" }, h("span", null, u.name.split(" ")[0]), h("small", null, `Lv${u.level}`)), hp, mp, h("div", { class: "pl-row" }, bp, st)),
+      h("div", { class: "body" }, h("div", { class: "plat" }), img));
     root.addEventListener("click", () => onUnitClick(u));
-    fieldA.append(root);
+    place(root, i, allies.length, "left");
+    sideA.append(root);
     views.set(u.uid, { root, img, hp, mp, st, bp });
+  });
+
+  /** Attacker steps toward the other side. */
+  function lunge(u: Unit, magic: boolean) {
+    const v = views.get(u.uid);
+    if (!v) return;
+    const cls = magic ? "cast" : "lunge";
+    v.root.classList.remove("lunge", "cast");
+    void v.root.offsetWidth;
+    v.root.classList.add(cls);
+    setTimeout(() => v.root.classList.remove(cls), 420);
   }
 
   function setAuto(v: boolean) {
@@ -259,6 +318,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         const name = ev.skill.startsWith("item:") ? getItem(ev.skill.slice(5)).name : getSkill(ev.skill).name;
         const icon = ev.skill.startsWith("item:") ? getItem(ev.skill.slice(5)).icon : getSkill(ev.skill).icon;
         log(`${u.name} dùng ${icon} ${name}`);
+        if (!ev.skill.startsWith("item:")) { const sk = getSkill(ev.skill); if ((sk.power ?? 0) > 0) lunge(u, sk.kind !== "physical"); }
         if (ev.skill !== "attack") floaty(u, `${icon} ${name}`, "react");
         await delay(ev.skill === "attack" ? 220 : 480);
         break;
