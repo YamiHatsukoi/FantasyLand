@@ -710,3 +710,7 @@ img.iicon.lg { width: 48px; height: 48px; }
   .party-tabs button .pt-label { display: none; }
   .party-tabs button .pt-ico { font-size: 18px; }
 }
+.saga-chip { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; border-color: #e04a8a88; max-width: 62vw; }
+.saga-chip b { font-size: 12px; color: #ffc8e0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.saga-chip small { font-size: 11px; color: var(--text); }
+.mm-label.saga { color: #ffc8e0; transform: translate(-50%, 14px); }

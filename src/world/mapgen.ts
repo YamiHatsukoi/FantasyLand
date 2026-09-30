@@ -4,8 +4,9 @@ import { BIOMES } from "./biomes";
 import { BUILDINGS } from "../data/buildings";
 import { settlementCount, type FloorDef } from "./floors";
 import { getSettlement } from "./people";
+import { placeSaga, type SagaInfo } from "./saga";
 
-export type EntityKind = "monster" | "node" | "event" | "random" | "chest" | "camp" | "stairs" | "portal" | "guardian" | "town" | "building" | "npc" | "deco" | "secret" | "vault" | "rune";
+export type EntityKind = "monster" | "node" | "event" | "random" | "chest" | "camp" | "stairs" | "portal" | "guardian" | "town" | "building" | "npc" | "deco" | "secret" | "vault" | "rune" | "saga";
 
 export interface MapEntity {
   id: string;
@@ -20,6 +21,8 @@ export interface MapEntity {
   level?: number;
   tint?: Record<string, string>;
   foot?: [x: number, y: number, w: number, h: number]; // building footprint
+  /** Part of the floor's great event ("pack" = a guarding monster group). */
+  saga?: string;
 }
 
 export interface FloorMap {
@@ -33,6 +36,8 @@ export interface FloorMap {
   start: { x: number; y: number };
   stairs: { x: number; y: number };
   towns: TownRect[];
+  /** The floor's great event (a whole district). */
+  saga?: SagaInfo;
 }
 
 export const MAP_W = 144;
@@ -354,6 +359,9 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
     }
   }
 
+  // The floor's great event takes over a whole district (own RNG, placed after everything else).
+  const saga = placeSaga({ def, seed, w, h, tiles, centers, start, entities, towns, occupied, passable, place });
+
   // Safety net: the gatekeeper and the stairs must always be reachable, whatever the terrain,
   // towns or permanent props did. If not, dig a road to them.
   const solid = new Set(entities.filter((e) => e.kind === "building" || e.kind === "town" || e.kind === "deco").map((e) => idx(e.x, e.y)));
@@ -371,18 +379,28 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
     return seen;
   };
   const guard = entities.find((e) => e.kind === "guardian")!;
-  for (const goal of [guard, stairs]) {
-    const seen = reachFrom();
-    if (DIRS.some(([dx, dy]) => seen[idx(goal.x + dx, goal.y + dy)])) continue;
+  // the gatekeeper and the stairs first, then everything else a player can walk up to
+  const goals = [guard, stairs, ...entities.filter((e) => e !== guard && !["building", "town", "deco", "npc", "stairs", "portal"].includes(e.kind))];
+  let seen = reachFrom();
+  for (const goal of goals) {
+    if (seen[idx(goal.x, goal.y)] || DIRS.some(([dx, dy]) => seen[idx(goal.x + dx, goal.y + dy)])) continue;
     let x = goal.x - 1, y = goal.y;
     for (let guardN = 0; guardN < 800 && !seen[idx(x, y)]; guardN++) {
       const i = idx(x, y);
-      if (!passable(x, y) || solid.has(i)) { tiles[i] = tiles[i] === T.WATER ? T.SHALLOW : T.ALT; solid.delete(i); }
+      if (!passable(x, y) || solid.has(i)) {
+        tiles[i] = tiles[i] === T.WATER ? T.SHALLOW : T.ALT;
+        // props standing in the way are cleared too (buildings stay)
+        if (solid.has(i)) {
+          const k = entities.findIndex((e) => e.kind === "deco" && idx(e.x, e.y) === i);
+          if (k >= 0) { entities.splice(k, 1); solid.delete(i); }
+        }
+      }
       if (x !== start.x + 1) x += Math.sign(start.x + 1 - x); else y += Math.sign(start.y - y);
     }
+    seen = reachFrom();
   }
 
-  return { w, h, tiles, variant, region, regionCenters: centers, entities, start, stairs, towns };
+  return { w, h, tiles, variant, region, regionCenters: centers, entities, start, stairs, towns, saga };
 
   function layoutTown(r: TownRect, size: string, shops: string[], npcs: string[], fam: string, tr: Rng) {
     const { x: x0, y: y0, w: TW, h: TH } = r;
