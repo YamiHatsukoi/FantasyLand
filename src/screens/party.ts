@@ -10,12 +10,13 @@ import { bar, confirmBox, h, nn, openModal, toast, type ModalHandle } from "../u
 import { itemImg } from "../ui/icon";
 import { GEAR_ICONS, GEAR_NAMES, gearTags, rarityClass, scaleStats, statDiff } from "../ui/gear";
 import { autoEquip, planBestGear } from "../ui/smart";
+import { critChance, dodgeChance, pctLabel } from "../combat/rates";
 import { openAppearance } from "./appearance";
 
 const STAT_NAMES: Record<string, string> = { hp: "Máu", mp: "MP", atk: "Công", mag: "Phép", def: "Thủ", res: "Kháng", spd: "Tốc", crit: "Chí mạng", eva: "Né" };
 
 export function statText(stats: Record<string, number | undefined>): string {
-  return Object.entries(stats).filter(([, v]) => v).map(([k, v]) => `${STAT_NAMES[k] ?? k} ${v! > 0 ? "+" : ""}${v}${k === "crit" || k === "eva" ? "%" : ""}`).join(", ");
+  return Object.entries(stats).filter(([, v]) => v).map(([k, v]) => `${STAT_NAMES[k] ?? k} ${v! > 0 ? "+" : ""}${v}`).join(", ");
 }
 
 export function openParty(opts: { inDungeon: boolean; onChange?: () => void; select?: string }) {
@@ -76,9 +77,9 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
     const capped = POINT_CAP[k] !== undefined && spent >= POINT_CAP[k]!;
     return h("div", { class: "stat" }, STAT_NAMES[k],
       h("span", { class: "row", style: "gap:6px;flex-wrap:nowrap" },
-        spent ? h("span", { class: "small good" }, `+${spent * POINT_VALUE[k]}`) : null,
-        h("b", null, `${s[k]}${k === "crit" || k === "eva" ? "%" : ""}`),
-        isHero && pts > 0 ? h("button", { class: "btn small primary pt-btn", disabled: capped, title: `1 điểm = +${POINT_VALUE[k]} ${STAT_NAMES[k]}`, onclick: () => { if (allocPoint(ch, k)) { clampVitals(ch); rerender(); } } }, "+") : null));
+        spent ? h("span", { class: "small good" }, `+${Math.floor(spent * POINT_VALUE[k])}`) : null,
+        h("b", null, k === "crit" ? `${s[k]} (${pctLabel(critChance(s[k]))})` : k === "eva" ? `${s[k]} (${pctLabel(dodgeChance(s[k]))})` : String(s[k])),
+        isHero && pts > 0 ? h("button", { class: "btn small primary pt-btn", disabled: capped, title: POINT_VALUE[k] < 1 ? `2 điểm = +1 ${STAT_NAMES[k]} (tối đa ${POINT_CAP[k]} điểm)` : `1 điểm = +${POINT_VALUE[k]} ${STAT_NAMES[k]}`, onclick: () => { if (allocPoint(ch, k)) { clampVitals(ch); rerender(); } } }, "+") : null));
   }));
   const pointsBar = isHero ? h("div", { class: "row between", style: "margin:4px 0" },
     h("span", { class: pts ? "gold" : "muted small" }, pts ? `✨ ${pts} điểm chỉ số chưa dùng (+${POINTS_PER_LEVEL} mỗi cấp)` : `Mỗi lần lên cấp nhận ${POINTS_PER_LEVEL} điểm chỉ số.`),
@@ -101,11 +102,7 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
       h("button", {
         class: `btn small ${plan.length ? "primary" : ""}`, disabled: !plan.length, title: "Tự chọn đồ mạnh nhất trong túi cho nhân vật này",
         onclick: () => { const n = autoEquip(g, ch); toast(`⚡ Đã thay ${n} món cho ${ch.name.split(" ")[0]}.`, "good"); rerender(); },
-      }, plan.length ? `⚡ Tối ưu (${plan.length})` : "✓ Đồ tốt nhất"),
-      h("button", {
-        class: "btn small", title: "Tối ưu trang bị cho cả đội (người đứng trước được chọn trước)",
-        onclick: () => { let n = 0; for (const id of g.party) n += autoEquip(g, g.chars[id]); toast(n ? `⚡ Đã thay ${n} món cho cả đội.` : "Cả đội đang dùng đồ tốt nhất.", n ? "good" : "info"); rerender(); },
-      }, "⚡ Cả đội")));
+      }, plan.length ? `⚡ Tối ưu (${plan.length})` : "✓ Đồ tốt nhất")));
   const gear = h("div", { class: "gear-grid" }, GEAR_KEYS.map((key) => {
     const id = ch.gear[key];
     const it = id ? getItem(id) : null;
@@ -184,6 +181,7 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
   m.body.replaceChildren(...nn(
     tabs, header, note,
     h("div", { class: "section-title" }, "Chỉ số"), pointsBar, stats,
+    h("p", { class: "muted small", style: "margin:4px 0 0" }, "Chí mạng và Né là điểm, càng nhiều càng giảm hiệu quả: số trong ngoặc là tỉ lệ thật (tối đa 60% chí mạng, 35% né)."),
     gearTitle, gear, dualNote,
     h("div", { class: "section-title" }, `Kỹ năng (${ch.equipped.length}/${slots} đang dùng)`),
     h("p", { class: "muted small", style: "margin:0 0 6px" }, "Chạm vào kỹ năng để xem chi tiết. Tấn công và Phòng thủ luôn có sẵn."),

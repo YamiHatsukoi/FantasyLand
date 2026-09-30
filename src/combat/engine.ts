@@ -1,3 +1,4 @@
+import { critChance, dodgeChance } from "./rates";
 import { Rng } from "../core/rng";
 import type { ItemUse } from "../data/items";
 import { PASSIVES } from "../data/passives";
@@ -408,7 +409,7 @@ export class Battle {
     // accuracy
     if (sk.kind === "physical") {
       const helpless = this.isDisabled(target) || this.has(target, "rooted");
-      let miss = helpless ? 0 : this.stat(target, "eva") / 100;
+      let miss = helpless ? 0 : dodgeChance(this.stat(target, "eva"));
       if (this.has(actor, "blind")) miss += 0.5;
       if (this.rng.next() < Math.min(0.8, miss)) {
         this.emit({ t: "miss", uid: target.uid });
@@ -462,8 +463,8 @@ export class Battle {
     for (const h of this.hooks(actor, "elemDmg")) if (h.el === el) dmg *= h.mult;
 
     let crit = false;
-    const critChance = this.has(target, "mark") ? 1 : this.stat(actor, "crit") / 100;
-    if (this.rng.next() < critChance) {
+    const critP = this.has(target, "mark") ? 1 : critChance(this.stat(actor, "crit"));
+    if (this.rng.next() < critP) {
       crit = true;
       let cd = 1.5;
       for (const h of this.hooks(actor, "critDmg")) cd += h.add;
