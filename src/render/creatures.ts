@@ -1,4 +1,5 @@
 import { Rng, hashString } from "../core/rng";
+import { outline } from "./palette";
 
 /**
  * Procedural 32x32 creature sprites. A creature is a body plan (quadruped, bird, serpent,
@@ -146,6 +147,45 @@ const D: Record<string, Drawer> = {
 
 // ------------------------------------------------------------ public API
 const cache = new Map<string, HTMLCanvasElement>();
+const smallCache = new Map<string, HTMLCanvasElement>();
+
+/**
+ * 16x16 version for the map, made by picking the dominant colour of every 2x2 block so the
+ * sprite sits on the same pixel grid as the terrain. Outlines and eyes win ties so the
+ * silhouette and face survive the reduction.
+ */
+export function creatureSmall(s: CreatureSpec): HTMLCanvasElement {
+  const key = creatureKey(s);
+  const hit = smallCache.get(key);
+  if (hit) return hit;
+  const big = creatureCanvas(s);
+  const data = big.getContext("2d")!.getImageData(0, 0, 32, 32).data;
+  const c = document.createElement("canvas");
+  c.width = 16;
+  c.height = 16;
+  const ctx = c.getContext("2d")!;
+  const col = (x: number, y: number) => {
+    const i = (y * 32 + x) * 4;
+    return data[i + 3] < 128 ? null : `#${[data[i], data[i + 1], data[i + 2]].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+  };
+  const lum = (h: string) => { const n = parseInt(h.slice(1), 16); return ((n >> 16) & 255) * 0.3 + ((n >> 8) & 255) * 0.59 + (n & 255) * 0.11; };
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    const cells = [col(x * 2, y * 2), col(x * 2 + 1, y * 2), col(x * 2, y * 2 + 1), col(x * 2 + 1, y * 2 + 1)];
+    const filled = cells.filter((v): v is string => !!v);
+    if (filled.length < 2) continue;
+    const counts = new Map<string, number>();
+    for (const v of filled) counts.set(v, (counts.get(v) ?? 0) + 1);
+    let best = filled[0], bestN = 0;
+    for (const [v, n] of counts) {
+      const score = n + (lum(v) < 60 ? 0.6 : 0) + (lum(v) > 200 && n === 1 ? 0.4 : 0);
+      if (score > bestN) { best = v; bestN = score; }
+    }
+    ctx.fillStyle = best;
+    ctx.fillRect(x, y, 1, 1);
+  }
+  smallCache.set(key, c);
+  return c;
+}
 
 export function creatureKey(s: CreatureSpec) {
   return `cr:${s.plan}:${s.c}:${s.c2 ?? ""}:${s.eye ?? ""}:${s.seed}:${s.boss ? 1 : 0}`;
@@ -175,7 +215,8 @@ export function creatureCanvas(s: CreatureSpec): HTMLCanvasElement {
   const K = "#1b1b2a";
   for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
     if (g.g[y][x]) continue;
-    if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => g.get(x + dx, y + dy))) out[y][x] = K;
+    const n = [[0, 1], [0, -1], [1, 0], [-1, 0]].map(([dx, dy]) => g.get(x + dx, y + dy)).find((v) => v);
+    if (n) out[y][x] = n === K ? K : outline(n);
   }
   const c = document.createElement("canvas");
   c.width = S;
