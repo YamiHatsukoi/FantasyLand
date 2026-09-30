@@ -1,6 +1,7 @@
 import type { StatMods, Stats } from "../combat/types";
 import { PARTY_SIZE, costFor, type Cost, passiveSlotsFor, skillSlotsFor } from "../data/buildings";
 import { CLASSES, COMPANIONS, classStats, xpForLevel } from "../data/classes";
+import { decodeFog, encodeFog } from "../world/fog";
 import { enhLevel, enhancedId, getItem, type GearKey, type MealBuff } from "../data/items";
 
 export const SAVE_VERSION = 3;
@@ -461,9 +462,49 @@ export function logMsg(g: GameState, msg: string) {
 }
 
 /** Upgrades older saves in place. */
+/**
+ * The save as stored: NPC memories drop empty fields and keep their recent lines as one string,
+ * empty bag slots are dropped. `migrate` restores the full shape. Shallow: nothing is mutated.
+ */
+export function packSave(g: GameState): GameState {
+  const npcs: Record<string, unknown> = {};
+  for (const [id, m] of Object.entries(g.npcs ?? {})) {
+    const o: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(m)) {
+      if (v === 0 || v === false || v === undefined || v === null || (Array.isArray(v) && !v.length)) continue;
+      o[k] = k === "seen" && Array.isArray(v) ? v.slice(-SEEN_KEEP).join(",") : v;
+    }
+    npcs[id] = o;
+  }
+  const inventory: Record<string, number> = {};
+  for (const [id, n] of Object.entries(g.inventory)) if (n > 0) inventory[id] = n;
+  // cleared things per floor ("event_3", "chest_12"...) as one comma-separated string
+  const floors: Record<number, FloorState> = {};
+  for (const [n, fs] of Object.entries(g.floors ?? {})) floors[Number(n)] = { ...fs, done: fs.done.join(",") as unknown as string[] };
+  return { ...g, npcs: npcs as GameState["npcs"], inventory, floors, newItems: g.newItems?.slice(-60) };
+}
+const SEEN_KEEP = 40;
+
+function unpackNpcs(g: GameState) {
+  for (const m of Object.values(g.npcs ?? {}) as (NpcMemory & { seen: string[] | string })[]) {
+    m.aff ??= 0; m.talks ??= 0; m.lastDay ??= 0; m.giftDay ??= 0;
+    m.seen = typeof m.seen === "string" ? (m.seen ? m.seen.split(",") : []) : (m.seen ?? []).slice(-SEEN_KEEP);
+    m.mem ??= [];
+    m.questsDone ??= [];
+  }
+}
+
 export function migrate(raw: unknown): GameState {
   const g = raw as GameState;
   if (!g || typeof g !== "object" || !g.chars) throw new Error("Save không hợp lệ");
+  g.npcs ??= {};
+  unpackNpcs(g);
+  // explored maps from older saves: plain bitsets -> run-length form (about 10x smaller)
+  for (const fs of Object.values(g.floors ?? {})) {
+    const done = fs.done as unknown;
+    fs.done = typeof done === "string" ? (done ? done.split(",") : []) : ((done as string[]) ?? []);
+    if (fs.fog && fs.fog[0] !== "~") { try { fs.fog = encodeFog(decodeFog(fs.fog, atob(fs.fog).length * 8)); } catch { fs.fog = ""; } }
+  }
   if ((g.v ?? 1) < 2) {
     // v2: sanctuary world grew from 36x36 to 72x72 (centre 18 -> 36); farm plots gained soil/water state.
     for (const b of g.buildings) {

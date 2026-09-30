@@ -215,6 +215,9 @@ function fill(text: string, { g, npc }: TalkCtx, extra: Record<string, string | 
   return text.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? `{${k}}`));
 }
 
+/** How many recent lines an NPC remembers saying (kept small: it is stored in the save). */
+export const SEEN_MAX = 40;
+
 /** Picks a line from a pool, preferring ones this NPC hasn't said yet. */
 function pickFresh(pool: string[], m: NpcMemory, tag: string, rng: Rng): string {
   const ids = pool.map((_, i) => `${tag}${i}`);
@@ -225,7 +228,7 @@ function pickFresh(pool: string[], m: NpcMemory, tag: string, rng: Rng): string 
   }
   const id = rng.pick(fresh);
   m.seen.push(id);
-  if (m.seen.length > 120) m.seen.splice(0, m.seen.length - 120);
+  if (m.seen.length > SEEN_MAX) m.seen.splice(0, m.seen.length - SEEN_MAX);
   return pool[ids.indexOf(id)];
 }
 

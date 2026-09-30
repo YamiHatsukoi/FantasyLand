@@ -1,4 +1,4 @@
-import { migrate, type GameState } from "../core/state";
+import { migrate, packSave, type GameState } from "../core/state";
 import { ApiError, loadSave, storeSave, type Session } from "./api";
 
 interface LocalCopy {
@@ -19,7 +19,7 @@ function readLocal(s: Session): LocalCopy | null {
 }
 
 function writeLocal(s: Session, c: LocalCopy) {
-  try { localStorage.setItem(localKey(s), JSON.stringify(c)); } catch { /* quota / private mode */ }
+  try { localStorage.setItem(localKey(s), JSON.stringify({ ...c, data: packSave(c.data) })); } catch { /* quota / private mode */ }
 }
 
 export type SaveStatus = "saved" | "saving" | "dirty" | "offline" | "error" | "conflict" | "auth";
@@ -99,7 +99,8 @@ export class SaveManager {
     }
     if (!this.pending && !force) return;
     this.pending = false;
-    const snapshot = JSON.parse(JSON.stringify(this.game)) as GameState;
+    // compact form; built and serialised synchronously, so later changes can't leak into it
+    const snapshot = JSON.parse(JSON.stringify(packSave(this.game))) as GameState;
     this.setStatus("saving");
     this.inflight = (async () => {
       try {
