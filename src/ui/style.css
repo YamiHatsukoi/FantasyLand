@@ -738,3 +738,9 @@ img.iicon.lg { width: 48px; height: 48px; }
 /* the info line never gets squeezed under the tabs; the skill list is what gives way (and scrolls) */
 .cb-panel > .cb-info, .cb-panel > .cb-head, .cb-panel > .cb-tabs, .cb-panel > .tabs { flex: none; }
 .cb-panel > .skill-grid { flex: 1 1 auto; min-height: 0; }
+
+/* battle result: the summary scrolls, "Tiếp tục" never leaves the screen */
+.cb-panel:has(> .result) { max-height: 60dvh; }
+.cb-panel > .result { display: flex; flex-direction: column; align-items: center; flex: 1 1 auto; min-height: 0; }
+.result-body { flex: 1 1 auto; min-height: 0; width: 100%; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.result-go { flex: none; margin-top: 8px; min-width: 160px; }
