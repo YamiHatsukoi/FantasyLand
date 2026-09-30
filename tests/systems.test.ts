@@ -8,7 +8,7 @@ import { generateFloor } from "../src/world/mapgen";
 import {
   chat, doRecruit, floorSettlements, getNpc, giveGift, greet, memOf, questFor, recruitCheck, shopStock, tavernOffers,
 } from "../src/world/people";
-import { advanceDay, allPlots, harvest, isReady, plant, population } from "../src/world/town";
+import { advanceDay, allPlots, cropTarget, harvest, isReady, msToRipe, plant, population, tickFarm, waterPlot } from "../src/world/town";
 import { Rng } from "../src/core/rng";
 
 describe("items & recipes", () => {
@@ -28,16 +28,34 @@ describe("items & recipes", () => {
 });
 
 describe("farming & town", () => {
-  it("grows, waters and harvests crops over days", () => {
+  it("grows crops in real time, faster when watered, and harvests them", () => {
     const g = newGame("A", "warrior", 7);
+    g.weather = "sun";
     const plots = allPlots(g);
     expect(plots.length).toBe(4);
+    const t0 = 1_000_000_000;
+    g.farmT = t0;
     plant(plots[0].plot, "wheat");
-    for (let d = 0; d < 6 && !isReady(plots[0].plot.crop); d++) {
-      plots[0].plot.watered = true;
-      advanceDay(g);
-    }
+    plant(plots[1].plot, "wheat");
+    waterPlot(plots[0].plot, t0);
+    // sleeping alone no longer grows anything
+    g.farmT = Date.now();
+    advanceDay(g);
+    expect(plots[0].plot.crop!.growth).toBeLessThan(0.01);
+    g.farmT = t0;
+    tickFarm(g, t0 + 20 * 1000);
+    const wet = plots[0].plot.crop!.growth, dry = plots[1].plot.crop!.growth;
+    expect(wet).toBeGreaterThan(dry);
+    expect(plots[1].plot.crop!.perfect).toBe(false);
+    // keep it watered until ripe
+    let t = t0 + 20 * 1000;
+    for (let k = 0; k < 40 && !isReady(plots[0].plot.crop); k++) { waterPlot(plots[0].plot, t); t += 5 * 1000; tickFarm(g, t); }
+    expect(t - t0).toBeLessThan(60 * 1000); // wheat ripens in well under a minute
     expect(isReady(plots[0].plot.crop)).toBe(true);
+    expect(msToRipe(g, plots[0].plot, false)).toBe(0);
+    // long absences never push a crop past ripe
+    tickFarm(g, t + 1000 * 3600 * 1000);
+    expect(plots[1].plot.crop!.growth).toBeLessThanOrEqual(cropTarget(plots[1].plot.crop!));
     const got = harvest(g, plots[0].plot, new Rng(1));
     expect(got.wheat).toBeGreaterThan(0);
   });

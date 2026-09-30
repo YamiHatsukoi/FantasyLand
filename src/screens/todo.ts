@@ -5,7 +5,7 @@ import { h, openModal } from "../ui/dom";
 import { planBestGear } from "../ui/smart";
 import { activeQuest, getNpc, questGoal, questProgress } from "../world/people";
 import { isBirthday, profileOf, residents, sceneReady } from "../world/residents";
-import { allPlots, isReady } from "../world/town";
+import { allPlots, isReady, tickFarm, waterPlot } from "../world/town";
 import { harvestMany } from "./buildingPanels";
 import { openParty } from "./party";
 
@@ -29,10 +29,13 @@ export interface TodoHooks {
 
 export function todoList(g: GameState, hooks: TodoHooks): Todo[] {
   const out: Todo[] = [];
+  tickFarm(g);
   const ripe = allPlots(g).filter((p) => isReady(p.plot.crop));
   if (ripe.length) out.push({ kind: "farm", icon: "🌾", text: `${ripe.length} ô ruộng đã chín.`, act: { label: "🧺 Thu hoạch hết", run: () => { harvestMany(ripe.map((p) => p.plot)); hooks.refresh(); } } });
   const dry = allPlots(g).filter((p) => p.plot.crop && !isReady(p.plot.crop) && !p.plot.watered && !p.greenhouse).length;
-  if (dry) out.push({ kind: "farm", icon: "💧", text: `${dry} ô ruộng chưa được tưới hôm nay.` });
+  const dryPlots = allPlots(g).filter((p) => p.plot.crop && !isReady(p.plot.crop) && !p.plot.watered && !p.greenhouse).map((p) => p.plot);
+  const well = g.buildings.some((b) => b.type === "well");
+  if (dry) out.push({ kind: "farm", icon: "💧", text: `${dry} ô ruộng đang khô — cây lớn chậm.${well ? "" : " (Xây Giếng Nước để tưới hết một lần.)"}`, act: well ? { label: "💧 Tưới hết", run: () => { for (const p of dryPlots) waterPlot(p); app.dirty(); hooks.refresh(); } } : undefined });
 
   const hero = g.chars[g.heroId];
   if ((hero.points ?? 0) > 0) out.push({ kind: "party", icon: "✨", text: `${hero.name} còn ${hero.points} điểm chỉ số chưa phân bổ.`, act: { label: "Phân bổ", run: () => openParty({ inDungeon: false, select: g.heroId, onChange: hooks.refresh }) } });

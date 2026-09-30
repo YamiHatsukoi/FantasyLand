@@ -1,7 +1,7 @@
 import { Rng, hashString } from "../core/rng";
 import { addItem, charStats, giveXp, healParty, logMsg, removeItem, type CropState, type GameState, type PlacedBuilding, type PlotState, type Weather } from "../core/state";
 import { BUILDINGS, MAX_TERRITORY_FOR_RANK, RANK_NAMES } from "../data/buildings";
-import { BIOME_MATS, CROPS, CROP_LIST, METALS, getItem, metalTierForFloor, seasonOf, type CropDef } from "../data/items";
+import { BIOME_MATS, CROPS, CROP_LIST, METALS, cropSeconds, getItem, metalTierForFloor, seasonOf, type CropDef } from "../data/items";
 import { getFloor } from "../world/floors";
 import { residentsNewDay } from "./residents";
 
@@ -58,6 +58,68 @@ export function cropStage(c?: CropState): number {
 
 export const SOIL_NAMES = ["Đất Cằn", "Đất Thường", "Đất Màu Mỡ", "Linh Thổ"];
 
+// ------------------------------------------------------------ real-time growth
+export { cropSeconds };
+/** How long one watering keeps a plot moist, in real seconds. */
+export const WATER_SEC = 180;
+/** Offline growth is capped so a long absence doesn't skip everything. */
+const OFFLINE_CAP_MS = 8 * 3600 * 1000;
+const DRY_GRACE_MS = 10 * 1000;
+
+export function autoWatered(g: GameState, b: PlacedBuilding, greenhouse: boolean) {
+  return greenhouse || isWet(g.weather) || sprinklerCovers(g, b);
+}
+export function isWatered(g: GameState, b: PlacedBuilding, plot: PlotState, greenhouse: boolean, now = Date.now()) {
+  return autoWatered(g, b, greenhouse) || (plot.wetUntil ?? 0) > now;
+}
+export function waterPlot(plot: PlotState, now = Date.now()) {
+  plot.wetUntil = now + WATER_SEC * 1000;
+  plot.watered = true;
+}
+/** Growth per real ms for a crop, watered or not. */
+function rates(g: GameState, plot: PlotState, greenhouse: boolean) {
+  const def = CROPS[plot.crop!.id];
+  const inSeason = greenhouse || def.seasons.includes(seasonOf(g.day));
+  const target = cropTarget(plot.crop!);
+  const base = ((inSeason ? 1 : 0.4) * (1 + 0.12 * plot.soil) * target) / (cropSeconds(target) * 1000);
+  const dryMul = def.water === 2 ? 0 : def.water === 1 ? 0.5 : 1;
+  return { wet: base, dry: base * dryMul, def };
+}
+/** Advances every crop by the real time since the last tick. Cheap enough to call every second. */
+export function tickFarm(g: GameState, now = Date.now()) {
+  const last = g.farmT ?? now;
+  g.farmT = now;
+  const dt = Math.min(OFFLINE_CAP_MS, Math.max(0, now - last));
+  for (const { b, plot, greenhouse } of allPlots(g)) {
+    // older saves: a plot marked watered counts as freshly watered
+    if (plot.watered && plot.wetUntil === undefined && !greenhouse) waterPlot(plot, now);
+    const auto = autoWatered(g, b, greenhouse);
+    const c = plot.crop;
+    if (c && dt > 0 && !isReady(c)) {
+      const r = rates(g, plot, greenhouse);
+      const wetMs = auto ? dt : Math.min(dt, Math.max(0, (plot.wetUntil ?? 0) - last));
+      const dryMs = dt - wetMs;
+      if (dryMs > DRY_GRACE_MS && r.def.water > 0) c.perfect = false;
+      c.growth = Math.min(cropTarget(c), c.growth + r.wet * wetMs + r.dry * dryMs);
+    }
+    plot.watered = auto || (plot.wetUntil ?? 0) > now;
+  }
+}
+/** Real ms until a crop is ripe, if it stays watered. */
+export function msToRipe(g: GameState, plot: PlotState, greenhouse: boolean): number {
+  const c = plot.crop;
+  if (!c || isReady(c)) return 0;
+  return (cropTarget(c) - c.growth) / rates(g, plot, greenhouse).wet;
+}
+export function fmtDuration(ms: number): string {
+  const sec = Math.max(1, Math.ceil(ms / 1000));
+  if (sec < 60) return `${sec} giây`;
+  const m = Math.floor(sec / 60), r = sec % 60;
+  if (m < 60) return r ? `${m} phút ${r} giây` : `${m} phút`;
+  const h = Math.floor(m / 60), rm = m % 60;
+  return rm ? `${h} giờ ${rm} phút` : `${h} giờ`;
+}
+
 export function plant(plot: PlotState, cropId: string) {
   plot.crop = { id: cropId, growth: 0, harvests: 0, perfect: true };
 }
@@ -88,7 +150,7 @@ export function applyFertilizer(plot: PlotState, itemId: string): string {
   const before = plot.soil;
   plot.soil = Math.min(3, Math.max(plot.soil, 0) + f.soil);
   if (f.speed && plot.crop) plot.crop.growth += f.speed;
-  return `${SOIL_NAMES[before]} → ${SOIL_NAMES[plot.soil]}${f.speed && plot.crop ? `, cây lớn thêm ${f.speed} ngày` : ""}`;
+  return `${SOIL_NAMES[before]} → ${SOIL_NAMES[plot.soil]}${f.speed && plot.crop ? ", cây lớn vọt lên!" : ""}`;
 }
 
 export function allPlots(g: GameState): { b: PlacedBuilding; plot: PlotState; greenhouse: boolean }[] {
@@ -142,27 +204,11 @@ export function advanceDay(g: GameState): DayReport {
     gains[id] = (gains[id] ?? 0) + n;
   };
   const season = seasonOf(g.day);
-  const wetToday = isWet(g.weather);
 
-  // --- crops grow (for the day that just ended)
-  let grown = 0, dry = 0;
-  for (const { b, plot, greenhouse } of allPlots(g)) {
-    const c = plot.crop;
-    if (c) {
-      const def = CROPS[c.id];
-      const watered = greenhouse || plot.watered || wetToday || sprinklerCovers(g, b);
-      const inSeason = greenhouse || def.seasons.includes(season);
-      let m = (inSeason ? 1 : 0.4) * (1 + 0.12 * plot.soil);
-      if (!watered) {
-        if (def.water === 2) m = 0;
-        else if (def.water === 1) m *= 0.5;
-        if (def.water > 0) { c.perfect = false; dry++; }
-      }
-      c.growth += m;
-      grown++;
-    }
-    plot.watered = greenhouse;
-  }
+  // --- crops grow in real time now (tickFarm); sleeping only moves the calendar
+  tickFarm(g);
+  const grown = allPlots(g).filter((p) => p.plot.crop).length;
+  const dry = allPlots(g).filter((p) => p.plot.crop && !p.plot.watered).length;
 
   // --- cross-pollination: empty plots next to two ripe parent crops may sprout a hybrid
   const farmAt = new Map(g.buildings.filter((b) => b.type === "farm").map((b) => [`${b.x},${b.y}`, b]));
@@ -323,7 +369,7 @@ export function advanceDay(g: GameState): DayReport {
   if (isWet(g.weather)) for (const { plot } of allPlots(g)) plot.watered = true;
   const ready = allPlots(g).filter((p) => isReady(p.plot.crop)).length;
   if (ready) lines.push(`🌾 ${ready} ô đã chín, sẵn sàng thu hoạch.`);
-  if (dry) lines.push(`🥀 ${dry} ô ruộng bị khô hôm qua (tưới nước để cây lớn đều và được mùa gấp rưỡi).`);
+  if (dry) lines.push(`🥀 ${dry} ô ruộng đang khô — tưới nước để cây lớn đều và được mùa gấp rưỡi.`);
   if (grown === 0 && allPlots(g).length) lines.push("🌱 Ruộng đang trống — hãy gieo hạt!");
   if (eff < 1 && workersNeeded(g) > 0) lines.push(`👷 Thiếu công nhân: các công trình chỉ chạy ${Math.round(eff * 100)}% công suất.`);
   if (seasonOf(g.day) !== season) lines.unshift(`🍃 Chuyển mùa: bắt đầu mùa ${["Xuân", "Hạ", "Thu", "Đông"][seasonOf(g.day)]}!`);

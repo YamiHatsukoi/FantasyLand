@@ -53,7 +53,9 @@ export interface CropState {
 export interface PlotState {
   crop?: CropState;
   soil: number; // 0..3
-  watered: boolean;
+  watered: boolean; // derived from wetUntil / weather / sprinklers; kept for older saves and the map tint
+  /** Real-time ms until the watering dries out. */
+  wetUntil?: number;
 }
 
 export type Weather = "sun" | "cloud" | "rain" | "storm" | "snow";
@@ -124,6 +126,8 @@ export interface GameState {
   stats: { battles: number; kills: number; deaths: number; steps: number; goldSpent?: number };
   settlers: number;
   weather: Weather;
+  /** Real time (ms) the farm was last advanced; crops grow in real time. */
+  farmT?: number;
   meal: MealBuff | null;
   npcs: Record<string, NpcMemory>;
   tavern: { day: number; offers: RecruitOffer[] };

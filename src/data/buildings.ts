@@ -98,11 +98,11 @@ const list: BuildingDef[] = [
     desc: "Cánh cổng đá dẫn xuống Vực Sâu Bách Tầng. Dịch chuyển tới đầu mọi tầng đã mở khoá." }),
   // ------------------------------------------------------------ farming
   B({ id: "farm", name: "Ô Ruộng", icon: "🟫", size: [1, 1], maxLevel: 1, unique: false, rank: 1, category: "farm", first: { wood: 2 },
-    desc: "Gieo hạt hoặc trồng cây giống. Cần tưới nước mỗi ngày (trừ ngày mưa); bón phân để đất màu mỡ hơn." }),
+    desc: "Gieo hạt rồi chờ cây lớn theo thời gian thật (từ 15 giây). Tưới nước giữ ẩm 3 phút để cây lớn nhanh và được mùa; bón phân cho đất màu mỡ." }),
   B({ id: "well", name: "Giếng Nước", icon: "🪣", size: [1, 1], maxLevel: 1, unique: false, rank: 1, category: "farm", appeal: 1, first: { stone: 10, wood: 4 },
     desc: "Mở khoá nút 'Tưới tất cả' cho mọi ô ruộng." }),
   B({ id: "sprinkler", name: "Vòi Tưới Tự Động", icon: "💦", size: [1, 1], maxLevel: 3, unique: false, rank: 3, category: "farm",
-    desc: "Tự tưới các ô ruộng xung quanh mỗi ngày (bán kính 1/2/3 theo cấp)." }),
+    desc: "Giữ ẩm liên tục cho các ô ruộng xung quanh — không cần tưới tay (bán kính 1/2/3 theo cấp)." }),
   B({ id: "compost", name: "Hố Ủ Phân", icon: "🟤", size: [1, 1], maxLevel: 3, unique: true, rank: 1, category: "farm", station: "compost", first: { wood: 6, stone: 4 },
     desc: "Ủ phân bón từ phụ phẩm nông nghiệp, xương và bào tử." }),
   B({ id: "greenhouse", name: "Nhà Kính", icon: "🏡", size: [3, 3], maxLevel: 3, unique: false, rank: 3, category: "farm", style: { wall: "#b8e8f0", roof: "#6ab0c0" },

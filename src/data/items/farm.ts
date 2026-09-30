@@ -22,6 +22,16 @@ export interface CropDef {
   herb?: boolean; // usable raw as a herb
 }
 
+/**
+ * Real seconds for a crop's growth from its size in "days": the quickest crop (2 days) takes
+ * 15 seconds, a 5-day crop about a minute, the big 12-day fruit trees about 4.5 minutes.
+ */
+export const cropSeconds = (days: number) => Math.round(15 * Math.pow(Math.max(1, days) / 2, 1.6));
+const growLabel = (days: number) => {
+  const sec = cropSeconds(days);
+  return sec < 60 ? `${sec} giây` : sec % 60 ? `${Math.floor(sec / 60)} phút ${sec % 60} giây` : `${sec / 60} phút`;
+};
+
 export const CROPS: Record<string, CropDef> = {};
 export const CROP_LIST: CropDef[] = [];
 
@@ -94,7 +104,7 @@ for (const [id, name, seedName, shape, col, value, days, regrow, seasons, y0, y1
   CROPS[id] = def;
   CROP_LIST.push(def);
   const seasonText = seasons.length === 4 ? "mọi mùa" : seasons.map((s) => ["Xuân", "Hạ", "Thu", "Đông"][s]).join(", ");
-  const growText = `${days} ngày${regrow ? `, sau đó cho thu hoạch mỗi ${regrow} ngày` : ""}. Mùa: ${seasonText}.${water === 2 ? " Cần tưới đủ nước." : water === 0 ? " Chịu hạn tốt." : ""}`;
+  const growText = `lớn trong ${growLabel(days)}${regrow ? `, sau đó ra lứa mới mỗi ${growLabel(regrow)}` : ""}. Mùa: ${seasonText}.${water === 2 ? " Cần tưới đủ nước." : water === 0 ? " Chịu hạn tốt." : ""}`;
   I(seed, seedName, kind === "tree" ? "sapling" : "seed", Math.ceil(value * (kind === "tree" ? 3 : 0.6)), `Trồng ra ${name}: ${growText}${def.hybrid ? " Giống lai hiếm." : ""}`,
     kind === "tree" ? "sapling" : "seed", kind === "tree" ? [col, C.brown, "#ffffff"] : [C.paleWood, col, col], { crop: id, tier });
   I(id, name, extra?.herb ? "herb" : "crop", value, `Nông sản${def.hybrid ? " lai hiếm" : ""} từ Thánh Địa. Nguyên liệu nấu ăn và giả kim.`, shape, [col, C.leaf, "#ffffff"], { tier });
