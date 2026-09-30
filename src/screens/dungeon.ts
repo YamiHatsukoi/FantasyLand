@@ -7,6 +7,8 @@ import { PLAYER_SKILLS } from "../data/skills";
 import { MapView } from "../render/mapview";
 import { drawParticles } from "../render/particles";
 import { spriteCanvas } from "../render/pixel";
+import { creatureSmall, parseCreature } from "../render/creatures";
+import { isPerson, personCanvas, type Dir } from "../render/people";
 import { PASSABLE, T, tileSet } from "../render/tiles";
 import { RANDOM_EVENTS } from "../story";
 import { giveToGame, randomLoot } from "../story/runner";
@@ -81,7 +83,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     return !fs.done.includes(e.id);
   };
   const ents = map.entities.map((e) => ({ ...e, px: e.x, py: e.y, stun: 0 }));
-  const player = { x: map.start.x + 1, y: map.start.y, px: 0, py: 0, flip: false, path: [] as { x: number; y: number }[], t: 0 };
+  const player = { x: map.start.x + 1, y: map.start.y, px: 0, py: 0, flip: false, dir: 0 as Dir, path: [] as { x: number; y: number }[], t: 0 };
   if (fs.px !== undefined && fs.py !== undefined && PASSABLE.has(map.tiles[idx(fs.px, fs.py)])) { player.x = fs.px; player.y = fs.py; }
   if (!PASSABLE.has(map.tiles[idx(player.x, player.y)])) { player.x = map.start.x; player.y = map.start.y + 1; }
   player.px = player.x;
@@ -170,6 +172,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     }
     if (!passable(nx, ny)) { player.path = []; return; }
     if (nx !== player.x) player.flip = nx < player.x;
+    player.dir = nx !== player.x ? 2 : ny < player.y ? 1 : 0;
     trail.unshift({ x: player.x, y: player.y });
     trail.length = Math.min(trail.length, 8);
     player.x = nx;
@@ -521,13 +524,13 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
               c.restore();
             }
           }
-          if (tt === T.WALL && tileAt(x, y + 1) !== T.WALL) c.drawImage(tiles.wallFace, sx, sy + TL * 0.55, TL, TL * 0.45);
+          if (tt === T.WALL && tileAt(x, y + 1) !== T.WALL) c.drawImage(tiles.wallFace, sx, sy, TL, TL);
           if (tt !== T.WALL && tileAt(x, y - 1) === T.WALL) { c.fillStyle = "rgba(0,0,0,.22)"; c.fillRect(sx, sy, TL, TL * 0.25); }
         }
         if (tt === T.OBSTACLE) {
           const tall = tiles.tall[(v + x * 7 + y * 13) % tiles.tall.length];
           const seen = inSight(x, y);
-          drawables.push({ y: y + 0.99, fn: () => view.img(tall, x, y, { h: 1.5, alpha: seen ? 1 : 0.55 }) });
+          drawables.push({ y: y + 0.99, fn: () => view.img(tall, x - 0.5, y - 2, { w: 2, h: 3, alpha: seen ? 1 : 0.55 }) });
         }
       }
     }
@@ -552,7 +555,8 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         c.beginPath();
         c.ellipse(view.sx(e.px) + TL / 2, view.sy(e.py) + TL * 0.92, TL * 0.3, TL * 0.09, 0, 0, Math.PI * 2);
         c.fill();
-        view.img(spriteCanvas(ed.sprite, ed.palette), e.px, e.py, { dy: bob(e.x) - 0.05, flip: player.x < e.x });
+        const small = parseCreature(ed.sprite);
+        view.img(small ? creatureSmall(small) : spriteCanvas(ed.sprite, ed.palette), e.px, e.py, { dy: bob(e.x) - 0.05, flip: player.x < e.x });
         if (e.group!.length > 1) {
           c.font = `bold ${Math.round(view.tile * 0.28)}px sans-serif`;
           c.fillStyle = "#fff";
@@ -588,7 +592,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
       const bounce = e.kind === "event" || e.kind === "random" || e.kind === "guardian" ? Math.abs(Math.sin(t / 300 + e.x)) * -0.18 : 0;
       if (e.kind === "guardian") {
         const bd = ENEMIES[def.boss.find((id) => ENEMIES[id]?.boss) ?? def.boss[0]];
-        view.img(spriteCanvas(bd.sprite, bd.palette), e.x, e.y, { scale: 1.4, alpha: seen ? 1 : 0.6 });
+        view.img(spriteCanvas(bd.sprite, bd.palette), e.x - 0.5, e.y - 1, { w: 2, h: 2, alpha: seen ? 1 : 0.6 });
       }
       view.img(spriteCanvas(sprite), e.x, e.y, { scale, dy: bounce - (e.kind === "guardian" ? 0.9 : 0) });
       if (e.kind === "stairs" && !fs.cleared) {
@@ -603,20 +607,25 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
       }
     };
 
-    const drawMember = (ch: (typeof g.chars)[string], pos: { x: number; y: number }, i: number) => {
-      c.fillStyle = "rgba(0,0,0,0.3)";
+    const drawMember = (ch: (typeof g.chars)[string], pos: { x: number; y: number; dir?: Dir; flip?: boolean }, i: number) => {
+      c.fillStyle = "rgba(20,10,40,0.28)";
       c.beginPath();
-      c.ellipse(view.sx(pos.x) + view.tile / 2, view.sy(pos.y) + view.tile * 0.92, view.tile * 0.28, view.tile * 0.09, 0, 0, Math.PI * 2);
+      c.ellipse(view.sx(pos.x) + view.tile / 2, view.sy(pos.y) + view.tile * 0.92, view.tile * 0.3, view.tile * 0.1, 0, 0, Math.PI * 2);
       c.fill();
-      const moving = i === 0 && Math.abs(player.px - player.x) + Math.abs(player.py - player.y) > 0.05;
-      view.img(spriteCanvas(ch.sprite, ch.pal), pos.x, pos.y, { flip: player.flip, dy: moving ? -Math.abs(Math.sin(t / 70)) * 0.08 : 0, alpha: ch.hp <= 0 ? 0.4 : 1, scale: i === 0 ? 1 : 0.85 });
+      const moving = Math.abs(player.px - player.x) + Math.abs(player.py - player.y) > 0.05;
+      const frame = moving ? Math.floor(t / 130) % 4 : 0;
+      const dir = i === 0 ? player.dir : pos.dir ?? player.dir;
+      const flip = i === 0 ? player.flip : pos.flip ?? player.flip;
+      if (isPerson(ch.sprite)) view.img(personCanvas(ch.sprite, ch.pal, dir, frame), pos.x, pos.y - 1, { h: 2, flip: dir === 2 && flip, alpha: ch.hp <= 0 ? 0.4 : 1 });
+      else view.img(spriteCanvas(ch.sprite, ch.pal), pos.x, pos.y, { flip, alpha: ch.hp <= 0 ? 0.4 : 1 });
     };
 
     // party (companions follow the trail)
     const members = g.party.map((id) => g.chars[id]);
     for (let i = members.length - 1; i >= 0; i--) {
       const ch = members[i];
-      const pos = i === 0 ? { x: player.px, y: player.py } : trail[i * 1 - 1] ?? { x: player.px, y: player.py };
+      const tr = trail[i - 1], prev = trail[i - 2] ?? { x: player.x, y: player.y };
+      const pos = i === 0 || !tr ? { x: player.px, y: player.py } : { x: tr.x, y: tr.y, dir: (prev.x !== tr.x ? 2 : prev.y < tr.y ? 1 : 0) as Dir, flip: prev.x < tr.x };
       drawables.push({ y: pos.y + 1 + (i === 0 ? 0.01 : 0), fn: () => drawMember(ch, pos, i) });
     }
     drawables.sort((a, b) => a.y - b.y);

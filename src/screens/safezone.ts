@@ -6,6 +6,7 @@ import { SEASON_ICONS, SEASON_NAMES, seasonOf } from "../data/items";
 import { buildingCanvas, cropCanvas } from "../render/buildings";
 import { MapView } from "../render/mapview";
 import { spriteCanvas } from "../render/pixel";
+import { isPerson, personCanvas, type Dir } from "../render/people";
 import { T, tileSet } from "../render/tiles";
 import { BIOMES } from "../world/biomes";
 import { findPath } from "../world/mapgen";
@@ -44,7 +45,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   const tiles = tileSet(biome);
 
   // hero position
-  const hero = { x: 35, y: 37, px: 35, py: 37, path: [] as { x: number; y: number }[], t: 0, flip: false };
+  const hero = { x: 35, y: 37, px: 35, py: 37, path: [] as { x: number; y: number }[], t: 0, flip: false, dir: 0 as Dir };
   view.camX = hero.x;
   view.camY = hero.y;
   let placing: { type: string; moving?: PlacedBuilding; x: number; y: number } | null = null;
@@ -235,6 +236,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
       }
       if (next) {
         if (next.x !== hero.x) hero.flip = next.x < hero.x;
+        hero.dir = next.x !== hero.x ? 2 : next.y < hero.y ? 1 : 0;
         hero.x = next.x;
         hero.y = next.y;
       }
@@ -251,13 +253,18 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     c.fillRect(0, 0, view.w, view.h);
     const vr = view.visible();
     const terr = territory(g.territory);
+    const outsideTrees: { y: number; fn: () => void }[] = [];
     for (let y = vr.y0; y <= vr.y1; y++) {
       for (let x = vr.x0; x <= vr.x1; x++) {
         if (x < 0 || y < 0 || x >= SZ_W || y >= SZ_H) continue;
         const hsh = hashString(`${x},${y}`);
         const inside = x >= terr.x0 && y >= terr.y0 && x < terr.x1 && y < terr.y1;
         const type = inside ? (hsh % 9 === 0 ? T.DECOR : T.GROUND) : (hsh % 3 === 0 ? T.GROUND : T.OBSTACLE);
-        view.img(tiles.tiles[type][hsh % 4], x, y);
+        view.img(tiles.tiles[type === T.OBSTACLE ? T.GROUND : type][hsh % 4], x, y);
+        if (type === T.OBSTACLE && (x + y) % 2 === 0) {
+          const tall = tiles.tall[hsh % tiles.tall.length];
+          outsideTrees.push({ y: y + 0.99, fn: () => view.img(tall, x - 0.5, y - 2, { w: 2, h: 3 }) });
+        }
         if (!inside) {
           const d = Math.max(terr.x0 - x, x - terr.x1 + 1, terr.y0 - y, y - terr.y1 + 1);
           c.fillStyle = `rgba(3,6,5,${Math.min(0.92, 0.35 + d * 0.14)})`;
@@ -302,9 +309,12 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
       c.beginPath();
       c.ellipse(view.sx(hero.px) + view.tile / 2, view.sy(hero.py) + view.tile * 0.92, view.tile * 0.3, view.tile * 0.1, 0, 0, Math.PI * 2);
       c.fill();
-      const moving = Math.abs(hero.px - hero.x) + Math.abs(hero.py - hero.y) > 0.05;
-      view.img(spriteCanvas(ch.sprite), hero.px, hero.py, { flip: hero.flip, dy: moving ? -Math.abs(Math.sin(t / 70)) * 0.08 : 0 });
+      const moving = Math.abs(hero.px - hero.x) + Math.abs(hero.py - hero.y) > 0.05 || hero.path.length > 0;
+      const frame = moving ? Math.floor(t / 130) % 4 : 0;
+      if (isPerson(ch.sprite)) view.img(personCanvas(ch.sprite, ch.pal, hero.dir, frame), hero.px, hero.py - 1, { h: 2, flip: hero.dir === 2 && hero.flip });
+      else view.img(spriteCanvas(ch.sprite, ch.pal), hero.px, hero.py, { flip: hero.flip });
     } });
+    draw.push(...outsideTrees);
     draw.sort((a, b) => a.y - b.y);
     for (const d of draw) d.fn();
 

@@ -160,7 +160,8 @@ function makeNpc(rng: Rng, id: string, floor: number, s: Pick<Settlement, "id" |
   const classId = rng.pick(jobDef.classes);
   const level = Math.max(1, getFloor(floor).levelBase + rng.int(-2, 3) + (job === "elder" ? 3 : 0));
   const hat = classId === "mage" || classId === "witch";
-  const pal: Record<string, string> = { h: rng.pick(HAIR), c: rng.pick(CLOTH), b: rng.pick(CLOTH), p: rng.pick(CLOTH), s: rng.pick(SKIN) };
+  const race = rng.pick(RACES);
+  const pal: Record<string, string> = { h: rng.pick(HAIR), c: rng.pick(CLOTH), b: rng.pick(CLOTH), p: rng.pick(CLOTH), s: rng.pick(SKIN), r: race, j: job, g: rng.chance(0.5) ? "f" : "m" };
   if (hat) pal.t = rng.pick(CLOTH);
   const maxV = 40 + floor * 25;
   const taste = TASTE[job];
@@ -169,7 +170,7 @@ function makeNpc(rng: Rng, id: string, floor: number, s: Pick<Settlement, "id" |
   const loves = rng.shuffle([...lovePool]).slice(0, 3).map((x) => x.id);
   const hates = rng.shuffle([...hatePool]).filter((x) => !loves.includes(x.id)).slice(0, 2).map((x) => x.id);
   return {
-    id, name, floor, settlement: s.id, town: s.name, race: rng.pick(RACES), job, persona, classId, level,
+    id, name, floor, settlement: s.id, town: s.name, race, job, persona, classId, level,
     sprite: hat ? "hero_mage" : "villager", pal, recruitable: jobDef.recruit || rng.chance(0.15),
     loves, likes: taste.likes, hates, wage: persona === "greedy" ? 120 * Math.max(1, level) : 0,
   };

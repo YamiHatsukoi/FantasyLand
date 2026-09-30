@@ -15,11 +15,11 @@ const STYLE: Record<Exclude<ParticleKind, "none">, { col: string[]; vx: number; 
   snow: { col: ["#ffffff", "#e0f0ff"], vx: -0.01, vy: 0.05, size: 2, sway: 0.02, count: 60 },
   ash: { col: ["#6a6060", "#a09090", "#ff7a3a"], vx: 0.01, vy: 0.02, size: 2, sway: 0.01, count: 50 },
   spores: { col: ["#8fffd0", "#ff9af0", "#fff6a8"], vx: 0.004, vy: -0.012, size: 2, sway: 0.03, glow: true, count: 40 },
-  petals: { col: ["#ffd0e0", "#f090b8", "#ffffff"], vx: 0.03, vy: 0.03, size: 3, sway: 0.04, count: 35 },
+  petals: { col: ["#ffd0e0", "#f090b8", "#ffffff"], vx: 0.03, vy: 0.03, size: 2, sway: 0.04, count: 28 },
   rain: { col: ["#a8c8f0"], vx: -0.02, vy: 0.4, size: 1, sway: 0, count: 70 },
   bubbles: { col: ["#c8f0ff", "#ffffff"], vx: 0, vy: -0.03, size: 3, sway: 0.02, count: 30 },
   stars: { col: ["#ffffff", "#fff4b0", "#b0d0ff"], vx: 0, vy: 0, size: 2, sway: 0, glow: true, count: 45 },
-  leaves: { col: ["#6fcf5a", "#4a9a4a", "#e0a030"], vx: 0.025, vy: 0.025, size: 3, sway: 0.05, count: 22 },
+  leaves: { col: ["#6fcf5a", "#4a9a4a", "#e0a030"], vx: 0.025, vy: 0.025, size: 2, sway: 0.05, count: 14 },
   embers: { col: ["#ff7a2a", "#ffc83a", "#ff4a1a"], vx: 0.005, vy: -0.03, size: 2, sway: 0.02, glow: true, count: 45 },
   dust: { col: ["#e0c890", "#c8a870"], vx: 0.05, vy: 0.005, size: 2, sway: 0.01, count: 45 },
   fireflies: { col: ["#e0ff8a", "#fff6a8"], vx: 0, vy: 0, size: 2, sway: 0.06, glow: true, count: 30 },
@@ -33,7 +33,7 @@ export function drawParticles(c: CanvasRenderingContext2D, kind: ParticleKind | 
   if (!kind || kind === "none") return;
   const st = STYLE[kind];
   const sec = t / 1000;
-  const px = Math.max(1, Math.round(tile / 40));
+  const px = Math.max(1, Math.round(tile / 32));
   for (let i = 0; i < st.count; i++) {
     const s = seeds[i];
     const speed = 0.6 + s.s * 0.8;

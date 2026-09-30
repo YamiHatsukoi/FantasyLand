@@ -12,7 +12,7 @@ import { BIOME_MATS, ESSENCES, ITEM_LIST, LEGENDARY_BY_BIOME, getItem, metalTier
 import { iconURL } from "../render/icons";
 import { getSkill } from "../data/skills";
 import { spriteURL } from "../render/pixel";
-import { T, tileSet } from "../render/tiles";
+import { T, TS, tileSet } from "../render/tiles";
 import { giveToGame } from "../story/runner";
 import { BIOMES } from "../world/biomes";
 import { getFloor } from "../world/floors";
@@ -59,10 +59,10 @@ function groundURL(biomeId: string): string {
   if (!url) {
     const set = tileSet(BIOMES[biomeId] ?? BIOMES.forest);
     const c = document.createElement("canvas");
-    c.width = 64;
-    c.height = 64;
+    c.width = TS * 2;
+    c.height = TS * 2;
     const g = c.getContext("2d")!;
-    [set.tiles[T.GROUND][0], set.tiles[T.GROUND][1], set.tiles[T.DECOR][1], set.tiles[T.GROUND][2]].forEach((t, i) => g.drawImage(t, (i % 2) * 32, Math.floor(i / 2) * 32));
+    [set.tiles[T.GROUND][0], set.tiles[T.GROUND][1], set.tiles[T.DECOR][1], set.tiles[T.GROUND][2]].forEach((t, i) => g.drawImage(t, (i % 2) * TS, Math.floor(i / 2) * TS));
     url = c.toDataURL();
     groundCache.set(biomeId, url);
   }
