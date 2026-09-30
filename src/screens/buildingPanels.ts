@@ -18,6 +18,9 @@ import {
   maxTerritory, plant, population, rankOf, residents, workersNeeded,
 } from "../world/town";
 import { openTavern } from "./tavern";
+import { openEnhance } from "./enhance";
+import { marketKinds, openSanctuaryMarket } from "./settlement";
+import { SHOP_NAMES } from "../world/people";
 
 export interface PanelHooks {
   refresh: () => void;
@@ -42,8 +45,15 @@ export function openBuilding(b: PlacedBuilding, hooks: PanelHooks) {
       case "library": libraryBody(m, b, render); break;
       case "training": trainingBody(m, b, render); break;
       case "tavern": m.body.append(h("button", { class: "btn primary block", onclick: () => openTavern(hooks.refresh) }, "🍺 Xem khách trong quán")); genericFooter(m, b, render); break;
+      case "market":
+        productionInfo(m, b);
+        m.body.append(h("button", { class: "btn primary block", style: "margin:6px 0", onclick: () => openSanctuaryMarket(hooks.refresh, marketKinds(b.level)) }, "🛒 Vào chợ mua hàng"),
+          h("p", { class: "muted small" }, `Cấp ${b.level}: ${marketKinds(b.level).map((k) => SHOP_NAMES[k].name).join(", ")}. Nâng cấp để có thêm quầy hàng.`));
+        genericFooter(m, b, render);
+        break;
       default:
         productionInfo(m, b);
+        if (b.type === "forge") m.body.append(h("button", { class: "btn primary block", style: "margin:6px 0", onclick: () => openEnhance(render) }, "✨ Cường hoá trang bị (dùng vàng)"));
         if (def.station) stationBody(m, b, def.station, render);
         genericFooter(m, b, render);
     }

@@ -60,7 +60,7 @@ export class MapView {
     this.h = Math.max(1, r.height);
     this.canvas.width = Math.round(this.w * this.dpr);
     this.canvas.height = Math.round(this.h * this.dpr);
-    const base = Math.max(2, Math.min(5, Math.round(Math.min(this.w, this.h) / (16 * 11))));
+    const base = Math.max(2, Math.min(5, Math.round(Math.min(this.w, this.h) / (16 * 13))));
     const scale = Math.max(1, Math.min(6, base + this.zoomLevel));
     this.tile = 16 * scale;
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -78,8 +78,9 @@ export class MapView {
   }
 
   /** Top-left screen position of a tile. */
-  sx(tx: number) { return Math.round((tx - this.camX - 0.5) * this.tile + this.w / 2); }
-  sy(ty: number) { return Math.round((ty - this.camY - 0.5) * this.tile + this.h / 2); }
+  // snapped to device pixels (not css pixels) so slow scrolling and gliding stay smooth on hi-dpi screens
+  sx(tx: number) { return Math.round(((tx - this.camX - 0.5) * this.tile + this.w / 2) * this.dpr) / this.dpr; }
+  sy(ty: number) { return Math.round(((ty - this.camY - 0.5) * this.tile + this.h / 2) * this.dpr) / this.dpr; }
 
   visible() {
     const hw = this.w / this.tile / 2 + 1, hh = this.h / this.tile / 2 + 1;
