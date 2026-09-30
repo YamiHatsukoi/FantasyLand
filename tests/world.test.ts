@@ -42,6 +42,11 @@ describe("floors", () => {
         }
         for (const e of m.entities) {
           if (e.kind === "portal") continue;
+          if (e.kind === "building") {
+            // buildings stand on blocked lots; shops and homes need a reachable doorstep
+            if (e.ref !== "prop") expect([[0, 1], [1, 0], [-1, 0], [0, -1]].some(([dx, dy]) => seen[(e.y + dy) * m.w + e.x + dx]), `${n}/${seed} door ${e.ref}`).toBe(true);
+            continue;
+          }
           expect(passable(e.x, e.y), `${n}/${seed} ${e.kind} on passable tile`).toBe(true);
           expect(seen[e.y * m.w + e.x], `${n}/${seed} ${e.kind} ${e.id} reachable`).toBe(1);
         }
