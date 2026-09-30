@@ -780,7 +780,9 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
       el.remove();
       return outcome;
     }
-    const result = h("div", { class: `result ${outcome === "win" ? "" : "lose"}` });
+    // the summary scrolls when the loot is long; the button below it always stays in reach
+    const body = h("div", { class: "result-body" });
+    const result = h("div", { class: `result ${outcome === "win" ? "" : "lose"}` }, body);
     panel.replaceChildren(result);
     if (outcome === "win") {
       let xp = 0, gold = 0;
@@ -833,7 +835,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         if (ch) lvl.push(...giveXp(ch, u.hp > 0 ? xp : Math.round(xp / 2)));
       }
       if (enemies.some((u) => u.boss)) logMsg(g, `Hạ gục ${enemies.find((u) => u.boss)!.name}.`);
-      result.append(...nn(
+      body.append(...nn(
         h("h3", null, "Chiến Thắng!"),
         h("div", null, `+${xp} kinh nghiệm · +${gold} vàng`),
         setup.elite ? h("div", { class: "gold small" }, "⭐ Hạ gục Tinh Anh: vàng và kinh nghiệm ×2, chiến lợi phẩm hiếm!") : null,
@@ -843,10 +845,10 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
       ));
     } else {
       g.stats.deaths++;
-      result.append(h("h3", null, "Thất Bại..."), h("p", { class: "muted" }, "Bóng tối nuốt chửng cả đội..."));
+      body.append(h("h3", null, "Thất Bại..."), h("p", { class: "muted" }, "Bóng tối nuốt chửng cả đội..."));
     }
     app.dirty();
-    await new Promise<void>((r) => result.append(h("button", { class: "btn primary", style: "margin-top:8px;min-width:160px", onclick: () => r() }, "Tiếp tục")));
+    await new Promise<void>((r) => result.append(h("button", { class: "btn primary result-go", onclick: () => r() }, "Tiếp tục")));
     el.remove();
     return outcome;
   });
