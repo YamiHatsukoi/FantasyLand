@@ -43,30 +43,44 @@ describe("classes", () => {
 });
 
 describe("forge enhancement", () => {
-  it("costs gold, can fail at high levels, and strengthens the slot", async () => {
-    const { newGame, charStats, equipGear, tryEnhance, enhanceCost, ENH_MAX } = await import("../src/core/state");
-    const { GEAR_BY_FLOOR } = await import("../src/data/items");
+  it("costs gold, can fail at high levels, and the level travels with the item", async () => {
+    const { newGame, charStats, equipGear, tryEnhance, enhanceCost, ENH_MAX, migrate } = await import("../src/core/state");
+    const { GEAR_BY_FLOOR, enhLevel, enhancedId, baseItemId, getItem } = await import("../src/data/items");
     const g = newGame("An", "warrior", 1);
     const hero = g.chars[g.heroId];
     const sword = GEAR_BY_FLOOR[5].find((i) => i.equip!.kind === "sword")!;
-    equipGear(hero, "weapon", sword.id);
+    for (const x of equipGear(hero, "weapon", sword.id)) g.inventory[x] = (g.inventory[x] ?? 0) + 1;
     const atk0 = charStats(hero).atk;
     g.gold = 0;
     expect(tryEnhance(g, hero, "weapon", 0)).toBe("gold");
     g.gold = 1e9;
     expect(tryEnhance(g, hero, "weapon", 0)).toBe("ok");
-    expect(charStats(hero).atk).toBeGreaterThan(atk0);
+    expect(hero.gear.weapon).toBe(`${sword.id}+1`);
+    expect(getItem(hero.gear.weapon!).name).toBe(`${sword.name} +1`);
+    expect(charStats(hero).atk).toBeGreaterThanOrEqual(atk0 + 1);
     for (let i = 1; i < ENH_MAX; i++) tryEnhance(g, hero, "weapon", 0);
-    expect(hero.enh!.weapon).toBe(ENH_MAX);
+    expect(enhLevel(hero.gear.weapon!)).toBe(ENH_MAX);
     expect(tryEnhance(g, hero, "weapon", 0)).toBe("max");
+    // +10 roughly doubles the weapon
+    expect(getItem(hero.gear.weapon!).equip!.stats.atk!).toBeGreaterThanOrEqual(sword.equip!.stats.atk! * 2);
     // a bad roll at a risky level only costs gold
-    hero.enh!.weapon = 8;
+    hero.gear.weapon = enhancedId(sword.id, 8);
     const before = g.gold;
     expect(tryEnhance(g, hero, "weapon", 0.99)).toBe("fail");
-    expect(hero.enh!.weapon).toBe(8);
+    expect(enhLevel(hero.gear.weapon!)).toBe(8);
     expect(before - g.gold).toBe(enhanceCost(g, 8));
-    // the level stays with the slot when the weapon changes
-    equipGear(hero, "weapon", GEAR_BY_FLOOR[6].find((i) => i.equip!.kind === "sword")!.id);
-    expect(hero.enh!.weapon).toBe(8);
+    // swapping weapons: the new one is plain, the +8 goes back to the bag as it is
+    const other = GEAR_BY_FLOOR[6].find((i) => i.equip!.kind === "sword")!;
+    const back = equipGear(hero, "weapon", other.id);
+    expect(back).toContain(`${sword.id}+8`);
+    expect(enhLevel(hero.gear.weapon!)).toBe(0);
+    expect(baseItemId(`${sword.id}+8`)).toBe(sword.id);
+    // old saves: the per-slot level moves onto the worn item
+    const old = JSON.parse(JSON.stringify(g));
+    old.chars[old.heroId].gear.weapon = other.id;
+    old.chars[old.heroId].enh = { weapon: 3 };
+    const m = migrate(old);
+    expect(m.chars[m.heroId].gear.weapon).toBe(`${other.id}+3`);
+    expect(m.chars[m.heroId].enh).toBeUndefined();
   });
 });

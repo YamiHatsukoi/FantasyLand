@@ -1,6 +1,5 @@
 import { describeSkill, skillCostText } from "../combat/describe";
-import { ENH_BONUS } from "../core/state";
-import { getItem, type GearKey, type ItemDef } from "../data/items";
+import { ENH_STEP, enhLevel, getItem, type GearKey, type ItemDef } from "../data/items";
 import { getPassive } from "../data/passives";
 import { getSkill } from "../data/skills";
 import { h } from "./dom";
@@ -101,21 +100,19 @@ function passiveBlock(id: string) {
     h("div", { class: "tip-desc" }, p.desc));
 }
 
-/** Card for any item; `enh` shows gear with its slot enhancement applied. */
-export function itemCard(it: ItemDef, opts: { enh?: number; slot?: GearKey; qty?: number } = {}): HTMLElement {
+/** Card for any item; enhanced gear ("sword+4") already carries its boosted stats. */
+export function itemCard(it: ItemDef, opts: { slot?: GearKey; qty?: number } = {}): HTMLElement {
   const eq = it.equip;
   let stats = eq?.stats;
-  if (eq && stats) {
-    const f = (opts.slot === "offhand" && eq.slot === "weapon" ? 0.5 : 1) * (1 + ENH_BONUS * (opts.enh ?? 0));
-    if (f !== 1) stats = scaleStats(stats, f);
-  }
+  if (eq && stats && opts.slot === "offhand" && eq.slot === "weapon") stats = scaleStats(stats, 0.5);
+  const enh = enhLevel(it.id);
   return h("div", null,
     h("div", { class: "tip-head" }, h("span", { class: "tip-ico" }, itemImg(it.id)),
       h("div", null,
-        h("div", { class: `tip-name ${rarityClass(it)}` }, it.name, opts.enh ? h("span", { class: "gold" }, ` +${opts.enh}`) : null),
+        h("div", { class: `tip-name ${rarityClass(it)}` }, it.name),
         h("div", { class: "muted small" }, eq ? gearTags(it).join(" · ") : typeLabel(it), opts.qty ? ` · có ${opts.qty}` : ""))),
     stats ? statLines(stats) : null,
-    opts.enh ? h("div", { class: "muted small" }, `Cường hoá +${opts.enh}: chỉ số ×${(1 + ENH_BONUS * opts.enh).toFixed(2)}`) : null,
+    enh ? h("div", { class: "gold small" }, `✨ Cường hoá +${enh}: +${Math.round(ENH_STEP * 100 * enh)}% chỉ số (ít nhất +${enh} mỗi chỉ số)`) : null,
     eq?.passive ? passiveBlock(eq.passive) : null,
     it.skill ? h("div", null, h("div", { class: "muted small" }, "Dạy kỹ năng:"), skillBlock(it.skill)) : null,
     it.passive ? h("div", null, h("div", { class: "muted small" }, "Dạy nội tại:"), passiveBlock(it.passive)) : null,
@@ -130,6 +127,6 @@ function typeLabel(it: ItemDef) {
   } as Record<string, string>)[it.type] ?? "Vật phẩm";
 }
 
-export const itemTip = <T extends HTMLElement>(el: T, id: string, opts: { enh?: number; slot?: GearKey; qty?: number } = {}) => tip(el, () => itemCard(getItem(id), opts));
+export const itemTip = <T extends HTMLElement>(el: T, id: string, opts: { slot?: GearKey; qty?: number } = {}) => tip(el, () => itemCard(getItem(id), opts));
 export const skillTip = <T extends HTMLElement>(el: T, id: string) => tip(el, () => skillBlock(id));
 export const passiveTip = <T extends HTMLElement>(el: T, id: string) => tip(el, () => passiveBlock(id));

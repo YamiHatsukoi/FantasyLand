@@ -12,8 +12,8 @@ import { BIOME_MATS, ESSENCES, LEGENDARY_BY_BIOME, gearForFloor, getItem, type I
 import { iconURL } from "../render/icons";
 import { getSkill } from "../data/skills";
 import { spriteURL } from "../render/pixel";
+import { battleBackdrop } from "../render/backdrop";
 import { isPerson, personCanvas } from "../render/people";
-import { T, TS, tileSet } from "../render/tiles";
 import { giveToGame } from "../story/runner";
 import { BIOMES } from "../world/biomes";
 import { getFloor } from "../world/floors";
@@ -86,22 +86,6 @@ function personURL(sprite: string, pal?: Record<string, string>): string {
   return url;
 }
 
-const groundCache = new Map<string, string>();
-function groundURL(biomeId: string): string {
-  let url = groundCache.get(biomeId);
-  if (!url) {
-    const set = tileSet(BIOMES[biomeId] ?? BIOMES.forest);
-    const c = document.createElement("canvas");
-    c.width = TS * 2;
-    c.height = TS * 2;
-    const g = c.getContext("2d")!;
-    [set.tiles[T.GROUND][0], set.tiles[T.GROUND][1], set.tiles[T.DECOR][1], set.tiles[T.GROUND][2]].forEach((t, i) => g.drawImage(t, (i % 2) * TS, Math.floor(i / 2) * TS));
-    url = c.toDataURL();
-    groundCache.set(biomeId, url);
-  }
-  return url;
-}
-
 export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   const g = app.game;
   const rng = new Rng(Date.now() & 0xffffffff);
@@ -133,7 +117,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   // two teams facing each other across the field: party on the left, enemies on the right
   const sideA = h("div", { class: "side left" });
   const sideE = h("div", { class: "side right" });
-  const stage = h("div", { class: "cb-stage arena" }, sideA, sideE, banner);
+  const stage = h("div", { class: "cb-stage arena", style: `background-image:url(${battleBackdrop(setup.biome)})` }, sideA, sideE, banner);
   const actorBox = h("div", { class: "cb-actor" });
   const bpBox = h("div", { class: "bp-ctl" });
   const info = h("div", { class: "cb-info" }, "…");
@@ -141,7 +125,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   const grid = h("div", { class: "skill-grid" });
   const logLine = h("div", { class: "cb-log" });
   const panel = h("div", { class: "cb-panel" }, h("div", { class: "cb-head" }, actorBox, bpBox), info, tabs, grid, logLine);
-  const el = h("div", { class: "combat", style: `--cb1:${biome.bg[0]};--cb2:${biome.bg[1]};--ground:url(${groundURL(setup.biome)})` },
+  const el = h("div", { class: "combat", style: `--cb1:${biome.bg[0]};--cb2:${biome.bg[1]}` },
     h("div", { class: "cb-top" }, h("span", { class: "tl-label" }, "Lượt"), timeline, helpBtn, autoBtn, fastBtn), stage, panel);
   document.body.append(el);
 

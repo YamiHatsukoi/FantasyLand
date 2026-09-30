@@ -687,7 +687,10 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     for (let cy = Math.floor(vr.y0 / CH); cy <= Math.floor(vr.y1 / CH); cy++) {
       for (let cx = Math.floor(vr.x0 / CH); cx <= Math.floor(vr.x1 / CH); cx++) {
         if (cx < 0 || cy < 0 || cx * CH >= map.w || cy * CH >= map.h) continue;
-        c.drawImage(terrainChunk(cx, cy, frame), view.sx(cx * CH), view.sy(cy * CH), CH * TL, CH * TL);
+        // edges come from the neighbour's snapped position (plus a hair of overlap) so rounding never opens a seam
+        const x0 = view.sx(cx * CH), y0 = view.sy(cy * CH);
+        const x1 = view.sx((cx + 1) * CH), y1 = view.sy((cy + 1) * CH);
+        c.drawImage(terrainChunk(cx, cy, frame), x0, y0, x1 - x0 + 0.75, y1 - y0 + 0.75);
       }
     }
     {

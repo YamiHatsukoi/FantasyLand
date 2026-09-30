@@ -2,7 +2,7 @@ import { app } from "../app";
 import { describeSkill, skillCostText } from "../combat/describe";
 import { GEAR_KEYS, POINTS_PER_LEVEL, POINT_CAP, POINT_VALUE, addItem, allocPoint, resetCost, resetPoints, charPassives, charStats, dualWielding, equipGear, fitsGear, isTwoHanded, syncLook, partySize, passiveSlots, removeItem, skillSlots, type Character } from "../core/state";
 import { CLASSES, xpForLevel } from "../data/classes";
-import { getItem, type GearKey, type ItemDef } from "../data/items";
+import { enhLevel, getItem, type GearKey, type ItemDef } from "../data/items";
 import { getPassive } from "../data/passives";
 import { getSkill } from "../data/skills";
 import { spriteImg } from "../render/pixel";
@@ -96,13 +96,13 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
       const id = ch.gear[key];
       const it = id ? getItem(id) : null;
       const locked = key === "offhand" && !it && isTwoHanded(ch.gear.weapon);
-      const enh = ch.enh?.[key];
+      const enh = id ? enhLevel(id) : 0;
       const tile = h("button", { class: `gtile ${it ? "filled" : ""} ${it ? rarityClass(it) : ""}`, title: GEAR_NAMES[key], onclick: () => pickGear(ch, key, rerender) },
         h("div", { class: "gt-ico" }, it ? itemImg(it.id) : h("span", { class: "gt-empty" }, GEAR_ICONS[key])),
         h("div", { class: "gt-name" }, it ? it.name : locked ? "(hai tay)" : GEAR_NAMES[key]),
         enh ? h("span", { class: "gt-enh" }, `+${enh}`) : null,
         better.has(key) ? h("span", { class: "gt-up" }, "⬆") : null);
-      return it ? itemTip(tile, it.id, { enh, slot: key }) : tile;
+      return it ? itemTip(tile, it.id, { slot: key }) : tile;
     }));
     body = [summary, gear, dualWielding(ch) ? h("p", { class: "muted small" }, "⚔️⚔️ Song kiếm: tay trái 50% chỉ số, đánh thường chém thêm 1 nhát.") : null];
   } else if (partyTab === "stats") {
