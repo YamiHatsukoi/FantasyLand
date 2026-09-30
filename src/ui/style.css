@@ -714,3 +714,17 @@ img.iicon.lg { width: 48px; height: 48px; }
 .saga-chip b { font-size: 12px; color: #ffc8e0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .saga-chip small { font-size: 11px; color: var(--text); }
 .mm-label.saga { color: #ffc8e0; transform: translate(-50%, 14px); }
+
+/* ---------------------------------------------------------------- gift box */
+.gift-card { padding: 10px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.gift-note { font-style: italic; color: var(--muted); font-size: 13px; }
+.gift-items { display: flex; flex-wrap: wrap; gap: 4px; }
+.gift-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 8px 2px 4px; border-radius: 8px; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--line); }
+.gift-chip .iicon { width: 20px; height: 20px; }
+.gift-qty { width: 64px; text-align: center; padding: 6px 4px; }
+.gift-packed .btn.small { padding: 4px 9px; }
+@media (max-width: 480px) {
+  .gift-packed { flex-wrap: wrap; justify-content: flex-end; }
+  .gift-packed .meta { flex: 1 1 calc(100% - 50px); }
+}
+.gift-inv .item-row .desc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
