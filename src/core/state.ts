@@ -215,6 +215,18 @@ export function charStats(ch: Character): Stats {
   return s;
 }
 
+/** Copies the look of equipped armor / weapon into the character's palette so sprites show gear. */
+export function syncLook(ch: Character) {
+  const pal: Record<string, string> = { ...(ch.pal ?? {}) };
+  delete pal.a;
+  delete pal.w;
+  const arm = ch.gear.armor ? getItem(ch.gear.armor) : null;
+  if (arm?.equip) pal.a = `${arm.equip.kind ?? arm.shape}|${arm.col[0]}|${arm.col[2]}`;
+  const wp = ch.gear.weapon ? getItem(ch.gear.weapon) : null;
+  if (wp?.equip) pal.w = `${wp.equip.kind ?? wp.shape}|${wp.col[0]}|${wp.col[1]}|${wp.col[2]}`;
+  ch.pal = Object.keys(pal).length ? pal : undefined;
+}
+
 export function charPassives(ch: Character): string[] {
   const out = [...ch.equippedPassives];
   for (const id of Object.values(ch.gear)) {
@@ -331,5 +343,6 @@ export function migrate(raw: unknown): GameState {
   g.stats ??= { battles: 0, kills: 0, deaths: 0, steps: 0 };
   g.learnedRecipes ??= [];
   g.floors ??= {};
+  for (const ch of Object.values(g.chars)) syncLook(ch);
   return g;
 }

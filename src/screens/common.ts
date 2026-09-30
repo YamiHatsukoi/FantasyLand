@@ -13,7 +13,7 @@ export function partyMini(): { el: HTMLElement; update: () => void } {
     el.replaceChildren(...g.party.map((id) => {
       const ch = g.chars[id];
       const s = charStats(ch);
-      return h("div", { class: "pm", title: ch.name }, spriteImg(ch.sprite), bar(ch.hp, s.hp, "hp"), bar(ch.mp, s.mp, "mp"));
+      return h("div", { class: "pm", title: ch.name }, spriteImg(ch.sprite, ch.pal), bar(ch.hp, s.hp, "hp"), bar(ch.mp, s.mp, "mp"));
     }));
   };
   update();

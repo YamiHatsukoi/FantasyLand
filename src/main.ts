@@ -7,6 +7,7 @@ import { hashString } from "./core/rng";
 import { newGame } from "./core/state";
 import { ApiError, cachedSession, clearSession, errorText, type Session } from "./net/api";
 import { SaveManager } from "./net/save";
+import { openAppearance } from "./screens/appearance";
 import { mountDungeon, startExpedition } from "./screens/dungeon";
 import { mountLogin } from "./screens/login";
 import { mountSafeZone } from "./screens/safezone";
@@ -43,6 +44,7 @@ async function startSession(s: Session) {
     app.root.replaceChildren(h("div", { class: "screen", style: "background:#000" }));
     await playStory("intro", { floor: 0, bg: ["#020304", "#0f1f16"] });
     saver.markDirty(true);
+    await new Promise<void>((r) => openAppearance(app.game.chars[app.game.heroId], r, true));
   }
   if (app.game.expedition) goDungeon();
   else goSafeZone();
