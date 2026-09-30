@@ -65,7 +65,49 @@ export function openModal(title: string, opts: { onClose?: () => void; wide?: bo
     setTitle: (t) => { titleEl.textContent = t; },
   };
   modalStack.push(handle);
+  autoSearch(handle);
   return handle;
+}
+
+// ------------------------------------------------------------ automatic search for long lists
+/** Lower-case, accent-free text so "nhan" finds "Nhẫn". */
+const foldText = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
+const AUTO_SEARCH_MIN = 8;
+
+/**
+ * Any modal that shows a long list of rows (gear, gifts, shop stock, recipes, seeds...) gets a
+ * search box above the list. It survives re-renders and keeps what was typed.
+ */
+function autoSearch(m: ModalHandle) {
+  let query = "";
+  let busy = false;
+  const apply = () => {
+    const q = foldText(query.trim());
+    for (const row of m.body.querySelectorAll<HTMLElement>(".item-row")) {
+      if (row.closest(".no-search")) continue;
+      row.style.display = !q || foldText(row.textContent ?? "").includes(q) ? "" : "none";
+    }
+  };
+  const ensure = () => {
+    if (busy) return;
+    busy = true;
+    try {
+      const rows = m.body.querySelectorAll(".item-row");
+      const own = m.body.querySelector(".searchbar:not(.auto-search)") || m.el.querySelector(".no-autosearch");
+      let box = m.body.querySelector<HTMLElement>(".auto-search");
+      if (own || rows.length < AUTO_SEARCH_MIN) { box?.remove(); return; }
+      const list = rows[0].parentElement!;
+      if (!box || box.nextElementSibling !== list) {
+        box?.remove();
+        const input = h("input", { class: "input", type: "search", placeholder: "🔍 Tìm trong danh sách…", value: query }) as HTMLInputElement;
+        input.addEventListener("input", () => { query = input.value; apply(); });
+        box = h("div", { class: "searchbar auto-search" }, input);
+        list.before(box);
+      }
+      apply();
+    } finally { busy = false; }
+  };
+  new MutationObserver(ensure).observe(m.body, { childList: true, subtree: true });
 }
 
 export function closeAllModals() {

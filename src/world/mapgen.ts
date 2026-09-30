@@ -5,7 +5,7 @@ import { BUILDINGS } from "../data/buildings";
 import { settlementCount, type FloorDef } from "./floors";
 import { getSettlement } from "./people";
 
-export type EntityKind = "monster" | "node" | "event" | "random" | "chest" | "camp" | "stairs" | "portal" | "guardian" | "town" | "building" | "npc";
+export type EntityKind = "monster" | "node" | "event" | "random" | "chest" | "camp" | "stairs" | "portal" | "guardian" | "town" | "building" | "npc" | "deco";
 
 export interface MapEntity {
   id: string;
@@ -97,7 +97,14 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
     const cy = Math.round(((row + 0.5) / Math.ceil(nReg / cols)) * (h - 18)) + 9 + rng.int(-5, 5);
     centers.push({ x: cx, y: cy });
   }
-  const stairs = { x: w - 6, y: Math.floor(h / 2) + rng.int(-10, 10) };
+  // The gatekeeper's lair (and the stairs behind it) sits near one of the far regions, a
+  // different one on every floor and every playthrough.
+  const far = centers.map((c, i) => ({ i, d: Math.hypot(c.x - start.x, c.y - start.y) })).sort((a, b) => b.d - a.d);
+  const lairAt = centers[far[rng.int(0, Math.max(0, Math.ceil(far.length * 0.6) - 1))].i];
+  const stairs = {
+    x: Math.max(6, Math.min(w - 7, lairAt.x + rng.int(-5, 5))),
+    y: Math.max(6, Math.min(h - 7, lairAt.y + rng.int(-4, 4))),
+  };
 
   // Carve winding roads so everything important is connected.
   const carve = (a: { x: number; y: number }, b: { x: number; y: number }) => {
@@ -115,8 +122,9 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
       }
     }
   };
-  const order = [start, ...centers.slice().sort((a, b) => a.x - b.x), stairs];
+  const order = [start, ...centers.slice().sort((a, b) => a.x - b.x)];
   for (let i = 0; i < order.length - 1; i++) carve(order[i], order[i + 1]);
+  carve(lairAt, stairs);
   for (let i = 0; i < centers.length; i++) carve(centers[i], centers[(i + cols) % centers.length]);
   for (let i = 0; i < centers.length; i += 2) carve(centers[i], centers[(i + 1) % centers.length]);
   // clear a small plaza around key points
@@ -193,12 +201,37 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
   place({ kind: "portal", x: start.x, y: start.y, sprite: "portal" });
   occupied.add(idx(start.x + 1, start.y));
   place({ kind: "stairs", x: stairs.x, y: stairs.y, sprite: "stairs" });
-  const gpos = near(stairs.x - 2, stairs.y, 1, 1) ?? { x: stairs.x - 1, y: stairs.y };
+  const side = rng.pick([[-2, 0], [2, 0], [0, 2], [0, -2]]);
+  const gpos = near(stairs.x + side[0], stairs.y + side[1], 1, 1) ?? { x: stairs.x - 1, y: stairs.y };
   place({ kind: "guardian", x: gpos.x, y: gpos.y, sprite: "marker", ref: def.guardian, group: def.boss, level: def.levelBase + 4 });
+  // the lair: braziers, bones and a banner, watched over by a few strong groups
+  for (const deco of ["brazier", "brazier", "bone_pile", "banner", "bone_pile"]) {
+    const p = near(gpos.x, gpos.y, 2, 1);
+    if (p) place({ kind: "deco", x: p.x, y: p.y, sprite: deco });
+  }
+  const lairGuards = 2 + Math.min(3, Math.floor(def.n / 15)) + rng.int(0, 1);
+  for (let i = 0; i < lairGuards; i++) {
+    const p = near(gpos.x, gpos.y, 4, 1);
+    if (!p) continue;
+    const g = rng.pick(def.groups);
+    place({ kind: "monster", x: p.x, y: p.y, sprite: "", group: [...g, rng.pick(def.enemies)].slice(0, 4), level: def.levelBase + 3 });
+  }
 
+  // Floor 1 teaches the basics: right past the portal lie a gathering spot, a chest, a lone
+  // weak monster, a campfire, and the first companion waiting to be met.
+  if (def.n === 1) {
+    const tut: [EntityKind, string, number, number][] = [["node", "herb_node", 3, -2], ["chest", "chest", 5, 2], ["camp", "campfire", 7, -3]];
+    for (const [kind, sprite, dx, dy] of tut) {
+      const p = near(start.x + dx, start.y + dy, 1, 1);
+      if (p) place({ kind, x: p.x, y: p.y, sprite, ref: kind === "node" ? biome.nodes.find((n) => n.node === sprite)?.item ?? biome.nodes[0].item : undefined });
+    }
+    const m = near(start.x + 9, start.y, 1, 1);
+    if (m) place({ kind: "monster", x: m.x, y: m.y, sprite: "", group: [def.enemies[0]], level: 1 });
+  }
+  const NEAR_START = new Set(def.n === 1 ? ["f1_lyra", "f1_whisper"] : []);
   for (const ev of def.events) {
-    const c = centers[ev.region % centers.length];
-    const p = near(c.x, c.y, 3) ?? randomSpot(6);
+    const c = NEAR_START.has(ev.id) ? { x: start.x + (ev.id === "f1_lyra" ? 5 : 11), y: start.y + (ev.id === "f1_lyra" ? -1 : 3) } : centers[ev.region % centers.length];
+    const p = (NEAR_START.has(ev.id) ? near(c.x, c.y, 1, 1) : near(c.x, c.y, 3)) ?? randomSpot(6);
     if (p) place({ kind: "event", x: p.x, y: p.y, sprite: "marker", ref: ev.id });
   }
   for (let i = 0; i < def.randomEvents; i++) {
@@ -209,20 +242,22 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
     const p = near(c.x, c.y, 5);
     if (p) place({ kind: "camp", x: p.x, y: p.y, sprite: "campfire" });
   }
-  for (let i = 0; i < 22; i++) {
+  for (let i = 0; i < 12; i++) {
     const p = randomSpot(10, 2);
     if (p) place({ kind: "chest", x: p.x, y: p.y, sprite: "chest" });
   }
-  for (let i = 0; i < 130; i++) {
+  for (let i = 0; i < 80; i++) {
     const p = randomSpot(3, 1);
     if (!p) continue;
     const n = rng.weighted(biome.nodes, (nd) => nd.w);
     place({ kind: "node", x: p.x, y: p.y, sprite: n.node, ref: n.item });
   }
-  for (let i = 0; i < 95; i++) {
+  const nMon = Math.round(28 + Math.min(70, def.n * 0.75));
+  const maxPack = def.n <= 3 ? 2 : def.n <= 12 ? 3 : 4;
+  for (let i = 0; i < nMon; i++) {
     const p = randomSpot(9, 2);
     if (!p) continue;
-    const group = rng.pick(def.groups);
+    const group = rng.pick(def.groups).slice(0, maxPack);
     place({ kind: "monster", x: p.x, y: p.y, sprite: "", group, level: levelAt(p.x, p.y) });
   }
 
@@ -238,7 +273,8 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
     const TW = s.size === "village" ? 19 : s.size === "town" ? 23 : 29, TH = 3 + rows * 4;
     let best: { x: number; y: number; cost: number } | null = null;
     for (let tries = 0; tries < 160 * centers.length && !(best && tries >= 160); tries++) {
-      const c = centers[(i * 2 + 1 + Math.floor(tries / 160)) % centers.length];
+      // floor 1's first village sits a short walk from the portal
+      const c = def.n === 1 && i === 0 && tries < 160 ? { x: start.x + 24, y: start.y } : centers[(i * 2 + 1 + Math.floor(tries / 160)) % centers.length];
       const r = 2 + Math.floor((tries % 160) / 8);
       const x0 = c.x - (TW >> 1) + trng.int(-r, r), y0 = c.y - (TH >> 1) + trng.int(-r, r);
       if (x0 < 5 || y0 < 5 || x0 + TW > w - 5 || y0 + TH > h - 5) continue;
@@ -262,7 +298,7 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
 
   // Safety net: the gatekeeper and the stairs must always be reachable, whatever the terrain,
   // towns or permanent props did. If not, dig a road to them.
-  const solid = new Set(entities.filter((e) => e.kind === "building" || e.kind === "town").map((e) => idx(e.x, e.y)));
+  const solid = new Set(entities.filter((e) => e.kind === "building" || e.kind === "town" || e.kind === "deco").map((e) => idx(e.x, e.y)));
   const reachFrom = () => {
     const seen = new Uint8Array(w * h);
     const q = [idx(start.x + 1, start.y)];

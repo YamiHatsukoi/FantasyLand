@@ -22,6 +22,7 @@ import { openResident } from "./residentTalk";
 import { ResidentSim } from "../world/residentSim";
 import { sceneReady } from "../world/residents";
 import { openTodo, todoBadge, todoList } from "./todo";
+import { openSanctuaryMarket } from "./settlement";
 import { fold } from "../ui/smart";
 
 const SPROUT_TIPS = [
@@ -137,6 +138,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     h("button", { class: "icon-btn", title: "Về chỗ nhân vật", onclick: () => { view.camX = hero.px; view.camY = hero.py; } }, "◎")));
   const dock = h("div", { class: "dock" },
     dockBtn("📌", "Việc", () => openTodo(todoHooks()), "todo"),
+    dockBtn("🛒", "Chợ", () => openSanctuaryMarket(updateHud)),
     dockBtn("🔨", "Xây", () => openBuildMenu()),
     dockBtn("👥", "Đội", () => openParty({ inDungeon: false, onChange: updateHud }), "party"),
     dockBtn("🎒", "Túi", () => openInventory({ canSell: true, onChange: updateHud }), "bag"),

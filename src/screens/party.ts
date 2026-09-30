@@ -21,7 +21,7 @@ export function statText(stats: Record<string, number | undefined>): string {
 
 export function openParty(opts: { inDungeon: boolean; onChange?: () => void; select?: string }) {
   const g = app.game;
-  const m = openModal("Đội Hình", { wide: true, onClose: () => opts.onChange?.() });
+  const m = openModal("Đội Hình", { wide: true, cls: "no-autosearch", onClose: () => opts.onChange?.() });
   let current = opts.select ?? g.heroId;
   const render = () => renderParty(m, current, opts.inDungeon, (id) => { current = id; render(); });
   render();
