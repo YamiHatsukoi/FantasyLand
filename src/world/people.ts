@@ -1,5 +1,5 @@
 import { Rng, hashString } from "../core/rng";
-import { addItem, logMsg, makeCharacter, removeItem, type Character, type GameState, type NpcMemory, type RecruitOffer } from "../core/state";
+import { addItem, logMsg, makeCharacter, removeItem, syncLook, type Character, type GameState, type NpcMemory, type RecruitOffer } from "../core/state";
 import { CLASSES } from "../data/classes";
 import { ENEMIES } from "../data/enemies";
 import {
@@ -495,6 +495,7 @@ export function doRecruit(g: GameState, npc: NpcDef): Character | null {
   if (!chk.ok) return null;
   g.gold -= chk.wage;
   const ch = characterFromNpc(g, npc);
+  syncLook(ch);
   g.chars[ch.id] = ch;
   if (g.party.length < 4) g.party.push(ch.id);
   memOf(g, npc.id).recruited = true;
@@ -538,6 +539,7 @@ export function hireOffer(g: GameState, offerId: string): Character | null {
   ch.bio = o.bio;
   if (o.passive && !ch.passives.includes(o.passive)) ch.passives.push(o.passive);
   ch.equippedPassives = ch.passives.slice(0, 2);
+  syncLook(ch);
   g.chars[ch.id] = ch;
   if (g.party.length < 4) g.party.push(ch.id);
   g.tavern.offers = g.tavern.offers.filter((x) => x !== o);

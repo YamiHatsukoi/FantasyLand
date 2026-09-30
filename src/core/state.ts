@@ -123,6 +123,7 @@ export interface GameState {
 
 export function newGame(heroName: string, classId: string, seed: number): GameState {
   const hero = makeCharacter("hero", heroName, classId, `hero_${classId}`, 1);
+  syncLook(hero);
 
   return {
     v: SAVE_VERSION,
@@ -180,6 +181,7 @@ export function recruit(g: GameState, companionId: string): Character {
   ch.equipped = ch.skills.slice(0, 5);
   for (const p of def.extraPassives) if (!ch.passives.includes(p)) ch.passives.push(p);
   ch.equippedPassives = ch.passives.slice(0, 2);
+  syncLook(ch);
   g.chars[companionId] = ch;
   if (g.party.length < partySize(g)) g.party.push(companionId);
   return ch;
@@ -221,7 +223,7 @@ export function syncLook(ch: Character) {
   delete pal.a;
   delete pal.w;
   const arm = ch.gear.armor ? getItem(ch.gear.armor) : null;
-  if (arm?.equip) pal.a = `${arm.equip.kind ?? arm.shape}|${arm.col[0]}|${arm.col[2]}`;
+  pal.a = arm?.equip ? `${arm.equip.kind ?? arm.shape}|${arm.col[0]}|${arm.col[2]}` : "none";
   const wp = ch.gear.weapon ? getItem(ch.gear.weapon) : null;
   if (wp?.equip) pal.w = `${wp.equip.kind ?? wp.shape}|${wp.col[0]}|${wp.col[1]}|${wp.col[2]}`;
   ch.pal = Object.keys(pal).length ? pal : undefined;
