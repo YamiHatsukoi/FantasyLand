@@ -1,11 +1,11 @@
 import type { StatMods } from "../combat/types";
-import { GEAR_KEYS, addItem, charStats, equipGear, fitsGear, isTwoHanded, removeItem, syncLook, type Character, type GameState } from "../core/state";
+import { GEAR_KEYS, fitsGear, isTwoHanded, type Character, type GameState } from "../core/state";
 import { classStats } from "../data/classes";
 import { getItem, type GearKey } from "../data/items";
 
 /**
  * Small "smart" helpers for the UI: how good a piece of gear is for a given character,
- * whether something in the bag is an upgrade, and one-tap best-gear equipping.
+ * and whether something in the bag is an upgrade (shown as hints; the player equips by hand).
  */
 
 /** Stat weights, tilted towards the stat the character's class actually attacks with. */
@@ -66,22 +66,6 @@ export function planBestGear(g: GameState, ch: Character): GearPlan[] {
     if (b && b.score > have + 0.5) { plan.push({ key, id: b.id, gain: b.score - have }); take(b.id); cur[key] = b.id; }
   }
   return plan;
-}
-
-/** Equips the best gear from the bag; returns how many slots changed. */
-export function autoEquip(g: GameState, ch: Character): number {
-  const plan = planBestGear(g, ch);
-  for (const p of plan) {
-    if (!removeItem(g, p.id, 1)) continue;
-    for (const x of equipGear(ch, p.key, p.id)) addItem(g, x, 1);
-  }
-  if (plan.length) {
-    syncLook(ch);
-    const s = charStats(ch);
-    ch.hp = Math.min(ch.hp, s.hp);
-    ch.mp = Math.min(ch.mp, s.mp);
-  }
-  return plan.length;
 }
 
 /** Party members for whom this bag item would be an upgrade. */
