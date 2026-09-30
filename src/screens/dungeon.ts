@@ -332,6 +332,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     const e = entityAt(nx, ny);
     if (e) {
       player.path = [];
+      keys.clear(); // bumping into something stops the walk; press again to keep going
       void interact(e);
       return;
     }
@@ -410,15 +411,20 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   const keys = new Set<string>();
   const DIRS: Record<string, [number, number]> = { ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1], ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] };
   const onKey = (e: KeyboardEvent) => {
+    // a key let go while a window was open still counts, or the hero keeps "holding" it and
+    // walks straight back into whoever opened that window
+    if (e.type === "keyup") { keys.delete(e.code); return; }
     if (topModalOpen() || e.target instanceof HTMLInputElement) return;
     if (DIRS[e.code]) {
       e.preventDefault();
-      if (e.type === "keydown") { keys.add(e.code); player.path = []; } else keys.delete(e.code);
+      keys.add(e.code); player.path = [];
     }
-    if (e.type === "keydown" && e.code === "KeyM") openMinimap();
+    if (e.code === "KeyM") openMinimap();
   };
+  const releaseKeys = () => keys.clear();
   window.addEventListener("keydown", onKey);
   window.addEventListener("keyup", onKey);
+  window.addEventListener("blur", releaseKeys);
 
   // ------------------------------------------------------------ interactions
   const battle = (group: string[], level: number, opts: Partial<BattleSpec> & { elite?: boolean } = {}): Promise<BattleOutcome> =>
@@ -1320,6 +1326,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
       setFieldSpecial(null);
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keyup", onKey);
+      window.removeEventListener("blur", releaseKeys);
       view.destroy();
       el.remove();
       if (import.meta.env.DEV) delete (window as unknown as Record<string, unknown>).__dungeon;

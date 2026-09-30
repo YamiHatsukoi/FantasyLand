@@ -319,12 +319,16 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
 
   const keys = new Set<string>();
   const onKey = (e: KeyboardEvent) => {
+    // always register a release, even one that happens while a window is open
+    if (e.type === "keyup") { keys.delete(e.code); return; }
     if (topModalOpen() || e.target instanceof HTMLInputElement) return;
     const map: Record<string, [number, number]> = { ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1], ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] };
-    if (map[e.code]) { e.preventDefault(); if (e.type === "keydown") keys.add(e.code); else keys.delete(e.code); }
+    if (map[e.code]) { e.preventDefault(); keys.add(e.code); }
   };
+  const releaseKeys = () => keys.clear();
   window.addEventListener("keydown", onKey);
   window.addEventListener("keyup", onKey);
+  window.addEventListener("blur", releaseKeys);
 
   // ------------------------------------------------------------ render
   let last = performance.now();
@@ -492,6 +496,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     destroy: () => {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keyup", onKey);
+      window.removeEventListener("blur", releaseKeys);
       view.destroy();
       el.remove();
     },
