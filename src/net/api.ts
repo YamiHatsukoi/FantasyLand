@@ -140,6 +140,50 @@ export async function visitPlayer(s: Session, username: string): Promise<PlayerV
   return rpc<PlayerVisit>("game_visit", { p_token: s.token, p_username: username });
 }
 
+// ------------------------------------------------------------ gifts between players
+export interface Gift {
+  id: number;
+  sender: string;
+  items: Record<string, number>;
+  gold: number;
+  note: string | null;
+  created_at: string;
+}
+
+export interface SentGift {
+  id: number;
+  recipient: string;
+  items: Record<string, number>;
+  gold: number;
+  note: string | null;
+  created_at: string;
+  claimed_at: string | null;
+}
+
+export interface GiftBox {
+  inbox: Gift[];
+  sent: SentGift[];
+}
+
+const needServer = () => new ApiError("offline", "Đang chơi ngoại tuyến: cần máy chủ để tặng quà.");
+
+export async function sendGift(s: Session, to: string, items: Record<string, number>, gold: number, note: string): Promise<number> {
+  if (s.offline) throw needServer();
+  return (await rpc<{ id: number }>("game_gift_send", { p_token: s.token, p_to: to, p_items: items, p_gold: gold, p_note: note })).id;
+}
+
+export async function giftBox(s: Session): Promise<GiftBox> {
+  if (s.offline) throw needServer();
+  const r = await rpc<Partial<GiftBox>>("game_gift_inbox", { p_token: s.token });
+  return { inbox: r.inbox ?? [], sent: r.sent ?? [] };
+}
+
+/** Marks gifts as received and returns their contents. `id` null takes every waiting gift. */
+export async function claimGifts(s: Session, id: number | null): Promise<{ id: number; items: Record<string, number>; gold: number }[]> {
+  if (s.offline) throw needServer();
+  return (await rpc<{ gifts: { id: number; items: Record<string, number>; gold: number }[] }>("game_gift_claim", { p_token: s.token, p_id: id })).gifts ?? [];
+}
+
 export function cachedSession(): Session | null {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
@@ -166,6 +210,10 @@ export function errorText(e: unknown): string {
       case "conflict": return "Dữ liệu đã được lưu từ một thiết bị khác.";
       case "too_large": return "Dữ liệu lưu quá lớn.";
       case "not_found": return "Không tìm thấy người chơi này.";
+      case "self_gift": return "Không thể tự gửi quà cho chính mình.";
+      case "bad_gift": return "Gói quà không hợp lệ (tối đa 8 loại vật phẩm).";
+      case "rate_limited": return "Bạn gửi quà hơi nhiều, nghỉ tay một lát rồi gửi tiếp nhé.";
+      case "inbox_full": return "Hòm quà của người này đã đầy (50 gói chưa nhận).";
       default: return e.message;
     }
   }

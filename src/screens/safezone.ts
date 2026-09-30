@@ -27,6 +27,7 @@ import { fold } from "../ui/smart";
 import { PET, petSpec } from "../data/pets";
 import { creatureSmall } from "../render/creatures";
 import { openPlayers } from "./players";
+import { checkGifts, giftsWaiting, openGifts } from "./gifts";
 import type { PlayerVisit } from "../net/api";
 
 const SPROUT_TIPS = [
@@ -131,6 +132,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     badges.party.textContent = String(partyN || "");
     badges.res.textContent = String(list.filter((t) => t.kind === "resident").length || "");
     badges.bag.textContent = String(gg.newItems?.length || "");
+    badges.gift.textContent = String(giftsWaiting() || "");
   }
   function walkToResident(id: string) {
     const a = sim.get(id);
@@ -152,10 +154,13 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     dockBtn("💞", "Cư dân", () => openResidentList({ find: walkToResident, onClose: updateHud }), "res"),
     dockBtn("🌀", "Vực Sâu", () => { const gate = app.game.buildings.find((b) => b.type === "gate"); if (gate) openB(gate); }),
     dockBtn("📜", "Nhật ký", () => openJournal()),
+    dockBtn("🎁", "Quà", () => openGifts({ onChange: updateHud }), "gift"),
     dockBtn("🌐", "Người chơi", () => openPlayers(hooks.visit)),
     dockBtn("⚙️", "Menu", () => openMenu()),
   );
   el.append(dock);
+  // one cheap, throttled look at the gift box when arriving home
+  void checkGifts().then((n) => { if (badges.gift.isConnected) badges.gift.textContent = String(n || ""); });
   const placeBar = h("div", { class: "place-bar hidden" });
   el.append(placeBar);
   updateHud();

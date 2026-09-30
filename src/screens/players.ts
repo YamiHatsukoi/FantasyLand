@@ -9,6 +9,7 @@ import { h, nn, openModal, toast } from "../ui/dom";
 import { GEAR_ICONS, GEAR_NAMES, rarityClass } from "../ui/gear";
 import { itemImg } from "../ui/icon";
 import { itemTip } from "../ui/tooltip";
+import { openGifts } from "./gifts";
 
 /** "vừa xong", "5 phút trước", "3 ngày trước" */
 export function ago(iso: string): string {
@@ -55,7 +56,8 @@ function playerRow(p: PlayerSummary, visit: (p: PlayerVisit) => void) {
       h("div", { class: "desc muted" }, `🏘️ ${RANK_NAMES[p.rank] ?? ""} · ${p.buildings} công trình · Ngày ${p.day} · ${ago(p.updated_at)}`)),
     h("div", { class: "col", style: "gap:4px" },
       h("button", { class: "btn small", onclick: () => openProfile(p.username, visit) }, "👤 Hồ sơ"),
-      h("button", { class: "btn small primary", onclick: () => goVisit(p.username, visit) }, "🏡 Thăm")));
+      h("button", { class: "btn small primary", onclick: () => goVisit(p.username, visit) }, "🏡 Thăm"),
+      h("button", { class: "btn small", onclick: () => openGifts({ to: p.username }) }, "🎁 Tặng")));
 }
 
 async function load(username: string): Promise<PlayerVisit | null> {
