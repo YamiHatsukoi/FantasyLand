@@ -1,3 +1,4 @@
+import { power } from "../core/levels";
 import { makeRoom } from "../world/town";
 import { MARK_BONUS, isMilestone } from "../core/state";
 import { Rng } from "../core/rng";
@@ -120,7 +121,7 @@ export function giveToGame(g: GameState, items: Record<string, number>): string[
  */
 export function applyEffect(e: Effect, ctx: StoryCtx): string[] {
   const g = ctx.g;
-  const lb = levelBase(Math.max(1, ctx.floor));
+  const lb = power(levelBase(Math.max(1, ctx.floor)));
   if ("give" in e) return giveToGame(g, e.give);
   if ("take" in e) {
     const out: string[] = [];

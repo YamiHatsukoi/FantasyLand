@@ -1,3 +1,4 @@
+import { LEVEL_STEP } from "../core/levels";
 import { app, type Screen } from "../app";
 import { Rng, hashString } from "../core/rng";
 import { XP_RATE, charStats, giveXp, logMsg, removeItem, ensureFloorState, type GameState } from "../core/state";
@@ -317,7 +318,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     }
   }
 
-  const levelHere = () => def.levelBase + Math.min(3, Math.floor((player.x / map.w) * 4));
+  const levelHere = () => def.levelBase + LEVEL_STEP * Math.min(3, Math.floor((player.x / map.w) * 4));
 
   // ------------------------------------------------------------ movement
   function tryStep(nx: number, ny: number) {
@@ -543,7 +544,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
           vars: { floorName: def.name, boss: bossDef?.name ?? "", floorFlag: `f${floorN}_cleared` },
           battle: (spec) => {
             const group = spec.group ?? (e.kind === "guardian" ? def.boss : rng.pick(def.groups));
-            const lvl = spec.level ?? (e.kind === "guardian" ? e.level! : levelHere()) + (spec.levelAdd ?? 0);
+            const lvl = spec.level ?? (e.kind === "guardian" ? e.level! : levelHere()) + LEVEL_STEP * (spec.levelAdd ?? 0);
             return battle(group, lvl, spec);
           },
         });
@@ -632,7 +633,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         const fd = getFloor(f);
         floors.append(h("button", { class: "item-row", onclick: () => { finish(f); m.close(); } },
           h("span", { class: "ico" }, g.floors[f]?.cleared ? "✅" : "🌀"),
-          h("div", { class: "meta" }, h("div", { class: "name" }, `Tầng ${f}: ${fd.name}`), h("div", { class: "desc" }, `Cấp quái ~${fd.levelBase}–${fd.levelBase + 4}`))));
+          h("div", { class: "meta" }, h("div", { class: "name" }, `Tầng ${f}: ${fd.name}`), h("div", { class: "desc" }, `Cấp quái ~${fd.levelBase}–${fd.levelBase + 4 * LEVEL_STEP}`))));
       }
       m.body.append(
         h("button", { class: "btn primary block", onclick: () => { finish(0); m.close(); } }, "🏡 Trở về Thánh Địa (mang theo toàn bộ chiến lợi phẩm)"),
@@ -786,7 +787,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     const title = `${sagaDef.icon} ${saga.name}`;
     if (!st.seen) { st.seen = true; updateHud(); }
     if (st.done) return showLoot(title, ["Nơi này giờ đã yên bình. Bạn đã hoàn thành Đại Sự Kiện của tầng."]);
-    const lv = def.levelBase + 3;
+    const lv = def.levelBase + 3 * LEVEL_STEP;
     const nodes = sagaNodes();
     const n = nodes.filter(nodeDone).length;
     const markDone = (x: MapEntity) => { if (!fs.done.includes(x.id)) fs.done.push(x.id); savePos(); updateHud(); };

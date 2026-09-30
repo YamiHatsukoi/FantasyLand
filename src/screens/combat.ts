@@ -1,3 +1,4 @@
+import { power } from "../core/levels";
 import { app } from "../app";
 import { chooseAction } from "../combat/ai";
 import { AFFIX, makeElite } from "../combat/elite";
@@ -789,8 +790,8 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
       const loot: Record<string, number> = {};
       for (const u of enemies) {
         const def = ENEMIES[u.enemyId!];
-        xp += Math.round(11 * XP_RATE * u.level * (u.boss ? 6 : 1));
-        gold += Math.round(rng.range(3, 6) * u.level * (u.boss ? 6 : 1));
+        xp += Math.round(11 * XP_RATE * power(u.level) * (u.boss ? 6 : 1));
+        gold += Math.round(rng.range(3, 6) * power(u.level) * (u.boss ? 6 : 1));
         // ordinary monsters drop a lot less than they used to; bosses keep their full table
         const f = u.boss ? 1 : 0.4;
         for (const d of def.drops) if (rng.next() < d.ch * f) loot[d.item] = (loot[d.item] ?? 0) + (u.boss ? rng.int(d.min ?? 1, d.max ?? 1) : 1);

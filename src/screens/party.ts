@@ -1,6 +1,6 @@
 import { app } from "../app";
 import { describeSkill, skillCostText, passiveText } from "../combat/describe";
-import { GEAR_KEYS, POINTS_PER_LEVEL, POINT_CAP, POINT_VALUE, addItem, allocPoint, resetCost, resetPoints, dismiss, charPassives, charStats, dualWielding, equipGear, fitsGear, isTwoHanded, syncLook, partySize, passiveSlots, removeItem, skillSlots, type Character } from "../core/state";
+import { GEAR_KEYS, POINT_CAP, POINT_VALUE, addItem, allocPoint, resetCost, resetPoints, dismiss, charPassives, charStats, dualWielding, equipGear, fitsGear, isTwoHanded, syncLook, partySize, passiveSlots, removeItem, skillSlots, type Character } from "../core/state";
 import { CLASSES, COMPANIONS, xpForLevel } from "../data/classes";
 import { enhLevel, getItem, type GearKey, type ItemDef } from "../data/items";
 import { getPassive } from "../data/passives";
@@ -131,7 +131,7 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
           isHero && pts > 0 ? h("button", { class: "btn small primary pt-btn", disabled: capped, title: POINT_VALUE[k] < 1 ? `2 điểm = +1 (tối đa ${POINT_CAP[k]} điểm)` : `1 điểm = +${POINT_VALUE[k]}`, onclick: () => { if (allocPoint(ch, k)) { clampVitals(ch); rerender(); } } }, "+") : null));
     }));
     const pointsBar = isHero ? h("div", { class: "row between", style: "margin:0 0 6px" },
-      h("span", { class: pts ? "gold" : "muted small" }, pts ? `✨ ${pts} điểm chưa dùng` : `+${POINTS_PER_LEVEL} điểm mỗi cấp`),
+      h("span", { class: pts ? "gold" : "muted small" }, pts ? `✨ ${pts} điểm chưa dùng` : "+3 điểm mỗi 2 cấp"),
       Object.keys(ch.alloc ?? {}).length ? h("button", {
         class: "btn small",
         onclick: async () => {

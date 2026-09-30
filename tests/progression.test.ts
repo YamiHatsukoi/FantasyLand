@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { POINTS_PER_LEVEL, allocPoint, charStats, giveXp, makeCharacter, migrate, newGame, resetPoints } from "../src/core/state";
-import { CLASSES } from "../src/data/classes";
+import { allocPoint, charStats, giveXp, makeCharacter, migrate, newGame, resetPoints } from "../src/core/state";
+import { MAX_LEVEL, pointsAtLevel } from "../src/core/levels";
+import { CLASSES, classStats, xpForLevel } from "../src/data/classes";
+import { getFloor } from "../src/world/floors";
 import { SKILLS } from "../src/data/skills";
 import { isPerson } from "../src/render/people";
 
@@ -9,14 +11,14 @@ describe("hero stat points", () => {
     const g = newGame("An", "warrior", 1);
     const hero = g.chars.hero;
     giveXp(hero, 100000);
-    expect(hero.points).toBe((hero.level - 1) * POINTS_PER_LEVEL);
+    expect(hero.points).toBe(pointsAtLevel(hero.level));
     const atk = charStats(hero).atk;
     expect(allocPoint(hero, "atk", 5)).toBe(true);
     expect(charStats(hero).atk).toBe(atk + 5);
     for (let i = 0; i < 100; i++) allocPoint(hero, "crit");
     expect(hero.alloc!.crit).toBeLessThanOrEqual(40);
     resetPoints(hero);
-    expect(hero.points).toBe((hero.level - 1) * POINTS_PER_LEVEL);
+    expect(hero.points).toBe(pointsAtLevel(hero.level));
     expect(charStats(hero).atk).toBe(atk);
     // companions do not get points
     const c = makeCharacter("lyra", "Lyra", "ranger", "lyra", 1);
@@ -28,7 +30,31 @@ describe("hero stat points", () => {
     g.chars.hero.level = 11;
     delete g.chars.hero.points;
     const m = migrate(JSON.parse(JSON.stringify(g)));
-    expect(m.chars.hero.points).toBe(10 * POINTS_PER_LEVEL);
+    expect(m.chars.hero.points).toBe(pointsAtLevel(11));
+  });
+  it("stretches old 1–99 levels onto 1–200 without changing strength", () => {
+    const g = newGame("An", "warrior", 1);
+    const oldStats = charStats(g.chars.hero); // level 1 either way
+    g.v = 3;
+    g.chars.hero.level = 20;
+    g.chars.hero.xp = Math.round(30 * Math.pow(20, 1.55) / 2); // halfway to 21 on the old curve
+    const m = migrate(JSON.parse(JSON.stringify(g)));
+    expect(m.chars.hero.level).toBe(39);
+    expect(m.chars.hero.xp / xpForLevel(39)).toBeCloseTo(0.5, 1);
+    // the old formula at level 20
+    const b = CLASSES.warrior.base, k = 1 + 0.1 * 19;
+    const old20 = { hp: Math.round(b.hp * k), mp: Math.round(b.mp * (1 + 0.06 * 19)), atk: Math.round(b.atk * k), mag: Math.round(b.mag * k), def: Math.round(b.def * k), res: Math.round(b.res * k), spd: Math.round(b.spd + 0.8 * 19), crit: b.crit, eva: b.eva };
+    expect(classStats("warrior", 39)).toEqual(old20);
+    expect(oldStats.hp).toBeGreaterThan(0);
+  });
+  it("levels go up to 200 and the last gatekeeper stands there", () => {
+    const c = makeCharacter("x", "X", "warrior", "hero", 1);
+    giveXp(c, 1e12);
+    expect(c.level).toBe(MAX_LEVEL);
+    expect(getFloor(100).levelBase + 8).toBe(200);
+    expect(getFloor(1).levelBase).toBe(1);
+    // about two levels per floor, smoothly
+    for (let n = 2; n <= 100; n++) expect(getFloor(n).levelBase - getFloor(n - 1).levelBase).toBeGreaterThanOrEqual(1);
   });
 });
 
