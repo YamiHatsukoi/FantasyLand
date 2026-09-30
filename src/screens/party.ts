@@ -10,6 +10,7 @@ import { bar, confirmBox, h, nn, openModal, toast, type ModalHandle } from "../u
 import { itemImg } from "../ui/icon";
 import { GEAR_ICONS, GEAR_NAMES, gearTags, rarityClass, scaleStats, statDiff } from "../ui/gear";
 import { planBestGear } from "../ui/smart";
+import { itemTip, passiveTip, skillTip } from "../ui/tooltip";
 import { critChance, dodgeChance, pctLabel } from "../combat/rates";
 import { openAppearance } from "./appearance";
 
@@ -96,11 +97,12 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
       const it = id ? getItem(id) : null;
       const locked = key === "offhand" && !it && isTwoHanded(ch.gear.weapon);
       const enh = ch.enh?.[key];
-      return h("button", { class: `gtile ${it ? "filled" : ""} ${it ? rarityClass(it) : ""}`, title: it ? `${it.name}\n${statText(it.equip!.stats)}` : GEAR_NAMES[key], onclick: () => pickGear(ch, key, rerender) },
+      const tile = h("button", { class: `gtile ${it ? "filled" : ""} ${it ? rarityClass(it) : ""}`, title: GEAR_NAMES[key], onclick: () => pickGear(ch, key, rerender) },
         h("div", { class: "gt-ico" }, it ? itemImg(it.id) : h("span", { class: "gt-empty" }, GEAR_ICONS[key])),
         h("div", { class: "gt-name" }, it ? it.name : locked ? "(hai tay)" : GEAR_NAMES[key]),
         enh ? h("span", { class: "gt-enh" }, `+${enh}`) : null,
         better.has(key) ? h("span", { class: "gt-up" }, "⬆") : null);
+      return it ? itemTip(tile, it.id, { enh, slot: key }) : tile;
     }));
     body = [summary, gear, dualWielding(ch) ? h("p", { class: "muted small" }, "⚔️⚔️ Song kiếm: tay trái 50% chỉ số, đánh thường chém thêm 1 nhát.") : null];
   } else if (partyTab === "stats") {
@@ -131,8 +133,8 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
     const skillList = h("div", { class: "list" }, ch.skills.map((id) => {
       const sk = getSkill(id);
       const on = ch.equipped.includes(id);
-      const detail = h("div", { class: "desc hidden" }, describeSkill(sk).join(" "));
-      const row = h("div", { class: `item-row ${on ? "sel" : ""}`, title: "Chạm để xem chi tiết" },
+      const detail = h("div", { class: "desc muted" }, describeSkill(sk).join(" "));
+      const row = h("div", { class: `item-row ${on ? "sel" : ""}` },
         h("span", { class: "ico" }, sk.icon),
         h("div", { class: "meta" }, h("div", { class: "name" }, sk.name), h("div", { class: "desc" }, skillCostText(sk)), detail),
         h("button", {
@@ -145,14 +147,16 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
             rerender();
           },
         }, on ? "Bỏ" : "Dùng"));
-      row.addEventListener("click", () => detail.classList.toggle("hidden"));
-      return row;
+      return skillTip(row, id);
     }));
     const tomeList = tomes.length ? h("div", { class: "list" }, tomes.map((it) => {
       const known = it.skill ? ch.skills.includes(it.skill) : ch.passives.includes(it.passive!);
-      return h("div", { class: "item-row" },
+      const teach = it.skill ? getSkill(it.skill) : getPassive(it.passive!);
+      return itemTip(h("div", { class: "item-row" },
         h("span", { class: "ico" }, itemImg(it.id)),
-        h("div", { class: "meta" }, h("div", { class: "name" }, it.name, h("span", { class: "qty" }, ` ×${g.inventory[it.id]}`))),
+        h("div", { class: "meta" }, h("div", { class: "name" }, it.name, h("span", { class: "qty" }, ` ×${g.inventory[it.id]}`)),
+          h("div", { class: "desc" }, `${teach.icon} ${it.skill ? "Kỹ năng" : "Nội tại"}: ${teach.name}`),
+          h("div", { class: "desc muted" }, it.skill ? describeSkill(getSkill(it.skill)).join(" ") : getPassive(it.passive!).desc)),
         h("button", {
           class: "btn small primary", disabled: known,
           onclick: () => {
@@ -162,7 +166,7 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
             toast(`${ch.name} đã học ${it.name.replace(/^.*?: /, "")}!`, "good");
             rerender();
           },
-        }, known ? "Đã biết" : "Học"));
+        }, known ? "Đã biết" : "Học")), it.id, { qty: g.inventory[it.id] });
     })) : null;
     body = [skillList, tomeList ? h("div", { class: "section-title" }, "📕 Học từ sách") : null, tomeList];
   } else {
@@ -170,7 +174,7 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
     const passiveList = h("div", { class: "list" }, ch.passives.map((id) => {
       const p = getPassive(id);
       const on = ch.equippedPassives.includes(id);
-      return h("div", { class: `item-row ${on ? "sel" : ""}` },
+      return passiveTip(h("div", { class: `item-row ${on ? "sel" : ""}` },
         h("span", { class: "ico" }, p.icon),
         h("div", { class: "meta" }, h("div", { class: "name" }, p.name), h("div", { class: "desc" }, p.desc)),
         h("button", {
@@ -181,9 +185,10 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
             else ch.equippedPassives.push(id);
             rerender();
           },
-        }, on ? "Bỏ" : "Dùng"));
+        }, on ? "Bỏ" : "Dùng")), id);
     }));
-    body = [passiveList, gearPassives.length ? h("p", { class: "muted small" }, `Từ trang bị: ${gearPassives.map((p) => getPassive(p).name).join(", ")}`) : null];
+    body = [passiveList, gearPassives.length ? h("div", { class: "section-title" }, "✦ Từ trang bị") : null,
+      gearPassives.length ? h("div", { class: "list" }, gearPassives.map((id) => { const p = getPassive(id); return h("div", { class: "item-row" }, h("span", { class: "ico" }, p.icon), h("div", { class: "meta" }, h("div", { class: "name" }, p.name), h("div", { class: "desc" }, p.desc))); })) : null];
   }
 
   m.body.replaceChildren(...nn(tabs, header, secTabs, ...body));
@@ -215,7 +220,7 @@ function pickGear(ch: Character, key: GearKey, done: () => void) {
     let warn = "";
     if (key === "weapon" && it.equip!.hands === 2 && ch.gear.offhand) warn = ` · sẽ tháo ${getItem(ch.gear.offhand).name}`;
     if (key === "offhand" && isTwoHanded(ch.gear.weapon)) warn = ` · sẽ tháo ${getItem(ch.gear.weapon!).name}`;
-    list.append(h("button", {
+    list.append(itemTip(h("button", {
       class: "item-row",
       onclick: () => {
         if (!removeItem(g, it.id, 1)) return;
@@ -226,7 +231,7 @@ function pickGear(ch: Character, key: GearKey, done: () => void) {
       h("div", { class: "name" }, h("span", { class: rarityClass(it) }, it.name), h("span", { class: "qty" }, ` ×${g.inventory[it.id]}`)),
       h("div", { class: "desc muted" }, gearTags(it).join(" · "), warn),
       h("div", { class: "desc good" }, statText(eff(it, key)), it.equip!.passive ? ` · ✦ ${getPassive(it.equip!.passive).name}: ${getPassive(it.equip!.passive).desc}` : ""),
-      cur && diff.length ? h("div", { class: "desc" }, "So với đang dùng:", ...diff) : null)));
+      cur && diff.length ? h("div", { class: "desc" }, "So với đang dùng:", ...diff) : null)), it.id, { slot: key, qty: g.inventory[it.id] }));
   }
   if (!items.length && !cur) list.append(h("p", { class: "muted" }, "Chưa có trang bị nào cho ô này. Hãy rèn ở Lò Rèn / Xưởng May, mua ở thị trấn hoặc tìm trong Vực Sâu."));
   m.body.append(list);

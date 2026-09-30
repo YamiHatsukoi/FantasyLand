@@ -372,6 +372,73 @@ const D: Record<string, Drawer> = {
   rope: (p) => { for (let r = 5; r >= 2; r -= 1) p.ellipse(8, 8, r + 1, r, r % 2 ? p.a : p.al); p.px(8, 8, p.ad); p.line(12, 10, 14, 14, p.a); },
   glass: (p) => { p.rect(3, 3, 10, 10, p.a); p.rect(3, 3, 10, 1, p.al); p.line(5, 11, 11, 5, "#ffffff"); p.line(6, 12, 12, 6, shade(p.a, 0.5)); },
   nail: (p) => { for (const x of [4, 8, 12]) { p.rect(x - 1, 3, 3, 2, p.a); p.line(x, 5, x, 13, p.al); } },
+
+  // ------------------------------------------------------------ map markers (world map)
+  m_house: (p) => {
+    for (let i = 0; i < 6; i++) p.rect(7 - i, 2 + i, 2 + i * 2, 1, i < 2 ? p.al : p.a); // roof
+    p.rect(2, 7, 12, 1, p.ad);
+    p.rect(3, 8, 10, 6, p.c); p.rect(3, 8, 10, 1, p.cd);
+    p.rect(7, 10, 2, 4, p.cd); p.rect(4, 9, 2, 2, p.e); p.rect(10, 9, 2, 2, p.e);
+    p.rect(11, 2, 2, 3, p.cd); p.px(11, 1, "#d8d8e0");
+    p.rect(2, 14, 12, 1, p.ad);
+  },
+  m_skull: (p) => {
+    p.ball(8, 7, 6, p.a);
+    p.rect(4, 11, 8, 3, p.a); p.rect(4, 13, 8, 1, p.ad);
+    p.rect(4, 6, 3, 3, p.e); p.rect(9, 6, 3, 3, p.e); p.px(5, 7, "#fff6a0"); p.px(10, 7, "#fff6a0");
+    p.px(7, 10, p.ad); p.px(8, 10, p.ad);
+    for (const x of [5, 7, 9]) p.px(x, 12, p.ad);
+    // crown
+    p.rect(3, 0, 10, 2, p.c); for (const x of [3, 7, 11]) p.px(x + 1, 0, p.cl);
+  },
+  m_stairs: (p) => {
+    for (let i = 0; i < 4; i++) { p.rect(2 + i * 3, 11 - i * 3, 12 - i * 3, 3, i % 2 ? p.a : p.al); p.rect(2 + i * 3, 13 - i * 3, 12 - i * 3, 1, p.ad); }
+    p.line(8, 1, 8, 4, p.e); p.line(6, 3, 8, 1, p.e); p.line(10, 3, 8, 1, p.e);
+  },
+  m_portal: (p) => {
+    p.ellipse(8, 8, 6, 7, p.ad); p.ellipse(8, 8, 5, 6, p.a); p.ellipse(8, 8, 3, 4, p.al); p.ellipse(8, 8, 1, 2, "#ffffff");
+    p.px(3, 3, p.e); p.px(13, 12, p.e); p.px(12, 2, p.e);
+  },
+  m_chest: (p) => {
+    p.rect(2, 5, 12, 4, p.a); p.rect(3, 4, 10, 1, p.al); p.rect(2, 8, 12, 1, p.ad);
+    p.rect(2, 9, 12, 5, p.a); p.rect(2, 13, 12, 1, p.ad);
+    p.rect(2, 5, 1, 9, p.c); p.rect(13, 5, 1, 9, p.c); p.rect(2, 9, 12, 1, p.c);
+    p.rect(7, 8, 2, 3, p.e); p.px(7, 8, "#fff6a0");
+  },
+  m_flame: (p) => {
+    p.line(3, 14, 13, 12, p.c, 2); p.line(3, 12, 13, 14, p.cd, 2);
+    p.ellipse(8, 9, 4, 4, p.a); p.rect(7, 2, 2, 5, p.a); p.px(6, 4, p.a); p.px(10, 5, p.a);
+    p.ellipse(8, 10, 2, 3, p.al); p.px(8, 6, p.al);
+    p.ellipse(8, 11, 1, 1, "#fff6c0");
+  },
+  m_star: (p) => {
+    const pts: [number, number][] = [];
+    for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 5; const r = i % 2 ? 3 : 7; pts.push([8 + Math.cos(a) * r, 8 + Math.sin(a) * r]); }
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+      let inside = false;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const [xi, yi] = pts[i], [xj, yj] = pts[j];
+        if ((yi > y + 0.5) !== (yj > y + 0.5) && x + 0.5 < ((xj - xi) * (y + 0.5 - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      if (inside) p.px(x, y, x + y < 15 ? p.al : x + y > 17 ? p.ad : p.a);
+    }
+    p.rect(7, 5, 2, 4, p.e); p.rect(7, 10, 2, 1, p.e);
+  },
+  m_mystery: (p) => {
+    p.ball(8, 8, 6, p.a);
+    p.rect(6, 4, 4, 1, "#ffffff"); p.px(5, 5, "#ffffff"); p.px(10, 5, "#ffffff"); p.px(10, 6, "#ffffff");
+    p.px(9, 7, "#ffffff"); p.px(8, 8, "#ffffff"); p.px(8, 9, "#ffffff"); p.px(8, 11, "#ffffff");
+  },
+  m_hero: (p) => {
+    p.disc(8, 8, 7, p.c);
+    p.disc(8, 8, 6, p.a);
+    p.rect(7, 2, 2, 12, p.al); p.rect(2, 7, 12, 2, p.al);
+    p.disc(8, 8, 2, p.e); p.px(8, 1, p.e);
+  },
+  m_ore: (p) => {
+    p.ellipse(8, 10, 6, 4, p.ad); p.ellipse(7, 9, 5, 3, p.a);
+    p.rect(5, 7, 2, 2, p.e); p.rect(9, 9, 2, 2, p.e); p.px(5, 7, "#ffffff");
+  },
 };
 
 function clearCenter(p: Pen, x: number, y: number) {
@@ -415,3 +482,19 @@ export function iconURL(shape: string, pal: Palette, scale = 2): string {
 }
 
 export const ICON_SHAPES = Object.keys(D);
+
+// ------------------------------------------------------------ world-map pins
+export type MapPin = "hero" | "town" | "event" | "boss" | "stairs" | "portal" | "chest" | "camp" | "mystery" | "ore";
+const PINS: Record<MapPin, [string, Palette]> = {
+  hero: ["m_hero", ["#3a8ae0", "#ffffff", "#ffe14a"]],
+  town: ["m_house", ["#c8503a", "#e8d8b0", "#ffe38a"]],
+  event: ["m_star", ["#ffd23a", "#ffffff", "#7a3a10"]],
+  boss: ["m_skull", ["#ece6d8", "#e8c040", "#c01a2a"]],
+  stairs: ["m_stairs", ["#b08aff", "#6a4ab0", "#ffffff"]],
+  portal: ["m_portal", ["#3a8ae0", "#ffffff", "#bfe8ff"]],
+  chest: ["m_chest", ["#b8743a", "#e8c040", "#e8c040"]],
+  camp: ["m_flame", ["#ff7a2a", "#7a4a2a", "#ffffff"]],
+  mystery: ["m_mystery", ["#5ab8d8", "#ffffff", "#ffffff"]],
+  ore: ["m_ore", ["#8a8a96", "#ffffff", "#6ae0ff"]],
+};
+export const mapPinURL = (k: MapPin) => iconURL(PINS[k][0], PINS[k][1], 2);

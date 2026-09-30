@@ -5,17 +5,19 @@ import "./ui/style.css";
 import { app } from "./app";
 import { hashString } from "./core/rng";
 import { newGame } from "./core/state";
-import { ApiError, cachedSession, clearSession, errorText, type Session } from "./net/api";
+import { ApiError, cachedSession, clearSession, errorText, type PlayerVisit, type Session } from "./net/api";
 import { SaveManager } from "./net/save";
 import { openAppearance } from "./screens/appearance";
 import { mountDungeon, startExpedition } from "./screens/dungeon";
 import { mountLogin } from "./screens/login";
 import { mountSafeZone } from "./screens/safezone";
+import { mountVisit } from "./screens/visit";
 import { playStory } from "./screens/story";
 import { closeAllModals, h, toast } from "./ui/dom";
 
 app.root = document.getElementById("app")!;
 if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__fl = app;
+if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__visit = (v: PlayerVisit) => goVisit(v);
 
 function showLogin(err = "") {
   app.show((root) => mountLogin(root, (s) => startSession(s), err));
@@ -52,7 +54,12 @@ async function startSession(s: Session) {
 
 function goSafeZone() {
   closeAllModals();
-  app.show((root) => mountSafeZone(root, { enterDungeon: (f) => enterDungeon(f) }));
+  app.show((root) => mountSafeZone(root, { enterDungeon: (f) => enterDungeon(f), visit: goVisit }));
+}
+
+function goVisit(v: PlayerVisit) {
+  closeAllModals();
+  app.show((root) => mountVisit(root, v, { leave: goSafeZone }));
 }
 
 function enterDungeon(floor: number) {

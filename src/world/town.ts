@@ -1,5 +1,5 @@
 import { Rng, hashString } from "../core/rng";
-import { addItem, charStats, giveXp, healParty, logMsg, removeItem, type CropState, type GameState, type PlacedBuilding, type PlotState, type Weather } from "../core/state";
+import { XP_RATE, addItem, charStats, giveXp, healParty, logMsg, removeItem, type CropState, type GameState, type PlacedBuilding, type PlotState, type Weather } from "../core/state";
 import { BUILDINGS, MAX_TERRITORY_FOR_RANK, RANK_NAMES } from "../data/buildings";
 import { BIOME_MATS, CROPS, CROP_LIST, METALS, cropSeconds, getItem, metalTierForFloor, seasonOf, type CropDef } from "../data/items";
 import { getFloor } from "../world/floors";
@@ -344,7 +344,7 @@ export function advanceDay(g: GameState): DayReport {
   // --- academy trains benched companions
   const academy = g.buildings.find((b) => b.type === "academy");
   if (academy) {
-    const xp = Math.round(15 * academy.level * Math.max(1, g.maxFloor) * eff);
+    const xp = Math.round(15 * XP_RATE * academy.level * Math.max(1, g.maxFloor) * eff);
     const bench = Object.values(g.chars).filter((c) => !g.party.includes(c.id));
     for (const ch of bench) for (const m of giveXp(ch, xp)) lines.push(`🎓 ${m}`);
     if (bench.length) lines.push(`🎓 Học Viện huấn luyện ${bench.length} người ở nhà (+${xp} EXP).`);

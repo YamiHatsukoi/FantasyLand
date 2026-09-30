@@ -6,7 +6,7 @@ import { unitFromCharacter, unitFromEnemy } from "../combat/factory";
 import { ELEMENTS, STATUSES } from "../combat/statuses";
 import type { BattleEvent, Eff, Skill, Unit } from "../combat/types";
 import { Rng } from "../core/rng";
-import { charStats, giveXp, logMsg, partyBuffs } from "../core/state";
+import { XP_RATE, charStats, giveXp, logMsg, partyBuffs } from "../core/state";
 import { ENEMIES } from "../data/enemies";
 import { BIOME_MATS, ESSENCES, LEGENDARY_BY_BIOME, gearForFloor, getItem, type ItemDef } from "../data/items";
 import { iconURL } from "../render/icons";
@@ -445,7 +445,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
       const loot: Record<string, number> = {};
       for (const u of enemies) {
         const def = ENEMIES[u.enemyId!];
-        xp += Math.round(11 * u.level * (u.boss ? 6 : 1));
+        xp += Math.round(11 * XP_RATE * u.level * (u.boss ? 6 : 1));
         gold += Math.round(rng.range(3, 6) * u.level * (u.boss ? 6 : 1));
         // ordinary monsters drop a lot less than they used to; bosses keep their full table
         const f = u.boss ? 1 : 0.4;

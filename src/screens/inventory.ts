@@ -1,3 +1,4 @@
+import { itemTip } from "../ui/tooltip";
 import { app } from "../app";
 import { charStats, removeItem } from "../core/state";
 import { TYPE_NAMES, getItem, type ItemDef, type ItemType } from "../data/items";
@@ -108,7 +109,7 @@ function itemRow(it: ItemDef, canSell: boolean, rerender: () => void) {
   const desc = it.equip
     ? `${statText(it.equip.stats)}${it.equip.passive ? ` · ✦ ${getPassive(it.equip.passive).name}: ${getPassive(it.equip.passive).desc}` : ""}`
     : it.desc;
-  return h("div", { class: "item-row" },
+  return itemTip(h("div", { class: "item-row" },
     h("span", { class: "ico" }, itemImg(it.id)),
     h("div", { class: "meta" },
       h("div", { class: "name" }, h("span", { class: it.equip ? rarityClass(it) : "" }, it.name), fresh.has(it.id) ? h("span", { class: "new-tag" }, "MỚI") : null, h("span", { class: "tag" }, TYPE_NAMES[it.type]), it.tier ? h("span", { class: "tag" }, `Bậc ${it.tier}`) : null),
@@ -117,7 +118,7 @@ function itemRow(it: ItemDef, canSell: boolean, rerender: () => void) {
       it.meal ? h("div", { class: "desc good" }, `Bữa ăn: ${it.meal.name} (${statText(it.meal.mods as Record<string, number>)}) tới khi về nhà`) : null,
       h("div", { class: "desc" }, desc)),
     h("span", { class: "qty" }, `×${n}`),
-    actions);
+    actions), it.id, { qty: n });
 }
 
 /** Using a consumable outside of battle (heal, revive, cleanse...). */

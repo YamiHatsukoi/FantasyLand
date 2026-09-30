@@ -42,7 +42,7 @@ async function describeHttpError(res: Response, fn: string): Promise<string> {
   let body: { code?: string; message?: string; hint?: string } = {};
   try { body = (await res.json()) as typeof body; } catch { /* not JSON */ }
   if (body.code === "PGRST202" || (res.status === 404 && body.message?.includes("function"))) {
-    return `Supabase chưa có hàm ${fn}. Hãy chạy lại 3 file trong thư mục supabase/ (SQL Editor), sau đó chạy: notify pgrst, 'reload schema';`;
+    return `Supabase chưa có hàm ${fn}. Hãy chạy lại các file trong thư mục supabase/ (SQL Editor), sau đó chạy: notify pgrst, 'reload schema';`;
   }
   if (res.status === 404) return "Máy chủ trả lỗi 404: SUPABASE_URL có vẻ sai (cần dạng https://xxxx.supabase.co).";
   if (res.status === 401 || res.status === 403) return `Máy chủ từ chối truy cập (${res.status}): kiểm tra SUPABASE_ANON_KEY và quyền execute của hàm ${fn}.`;
@@ -83,6 +83,63 @@ export async function logout(s: Session): Promise<void> {
   }
 }
 
+// ------------------------------------------------------------ other players (read only)
+export interface PublicChar {
+  id: string;
+  name: string;
+  classId: string;
+  sprite: string;
+  level: number;
+  pal?: Record<string, string>;
+  gear?: Record<string, string>;
+  enh?: Record<string, number>;
+  bond?: string;
+}
+
+export interface PlayerSummary {
+  username: string;
+  updated_at: string;
+  hero: PublicChar | null;
+  max_floor: number;
+  day: number;
+  territory: number;
+  buildings: number;
+  rank: number;
+}
+
+export interface VisitBuilding {
+  type: string;
+  x: number;
+  y: number;
+  level: number;
+  plot?: { soil: number; crop?: { id: string; growth: number; harvests: number; perfect: boolean } };
+}
+
+export interface PlayerVisit {
+  username: string;
+  updated_at: string;
+  heroId: string;
+  party: (PublicChar | null)[];
+  residents: number;
+  day: number;
+  maxFloor: number;
+  territory: number;
+  settlers: number;
+  weather: string;
+  stats: { battles?: number; kills?: number; deaths?: number; steps?: number; goldSpent?: number } | null;
+  buildings: VisitBuilding[];
+}
+
+export async function listPlayers(s: Session): Promise<PlayerSummary[]> {
+  if (s.offline) throw new ApiError("offline", "Đang chơi ngoại tuyến: cần máy chủ để xem người chơi khác.");
+  return (await rpc<{ players: PlayerSummary[] }>("game_players", { p_token: s.token })).players ?? [];
+}
+
+export async function visitPlayer(s: Session, username: string): Promise<PlayerVisit> {
+  if (s.offline) throw new ApiError("offline", "Đang chơi ngoại tuyến: cần máy chủ để sang thăm.");
+  return rpc<PlayerVisit>("game_visit", { p_token: s.token, p_username: username });
+}
+
 export function cachedSession(): Session | null {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
@@ -108,6 +165,7 @@ export function errorText(e: unknown): string {
       case "invalid_session": return "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
       case "conflict": return "Dữ liệu đã được lưu từ một thiết bị khác.";
       case "too_large": return "Dữ liệu lưu quá lớn.";
+      case "not_found": return "Không tìm thấy người chơi này.";
       default: return e.message;
     }
   }

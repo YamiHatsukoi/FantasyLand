@@ -6,6 +6,8 @@ import { ITEM_LIST, getItem } from "../data/items";
 import { PLAYER_SKILLS } from "../data/skills";
 import { MapView } from "../render/mapview";
 import { drawParticles } from "../render/particles";
+import { mapPinURL, type MapPin } from "../render/icons";
+import { tip } from "../ui/tooltip";
 import { spriteCanvas } from "../render/pixel";
 import { creatureSmall, parseCreature } from "../render/creatures";
 import { isPerson, personCanvas, type Dir } from "../render/people";
@@ -604,16 +606,34 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
       c.fillStyle = col[map.tiles[idx(x, y)]];
       c.fillRect(x * s, y * s, s, s);
     }
-    const mark: Record<string, string> = { town: "#ffffff", event: "#ffe14a", guardian: "#ff4a4a", stairs: "#c08aff", portal: "#6ab8ff", chest: "#f2a23a", camp: "#ff7a3a", random: "#8fd8ff" };
+    // markers are pixel icons laid over the map at a fixed size, so they stay readable on phones
+    const wrap = h("div", { class: "mm-wrap" }, cv);
+    const pin = (kind: MapPin, x: number, y: number, label: string, cls = "") => {
+      const el = h("div", { class: `mm-pin ${cls}`, style: `left:${((x + 0.5) / map.w) * 100}%;top:${((y + 0.5) / map.h) * 100}%` },
+        h("img", { class: "pix", src: mapPinURL(kind), alt: label }));
+      wrap.append(tip(el, () => h("div", { class: "tip-name" }, label)));
+    };
+    const PIN: Partial<Record<string, [MapPin, string]>> = {
+      event: ["event", "Sự kiện"], guardian: ["boss", "Boss Canh Cửa"], stairs: ["stairs", "Cầu thang xuống tầng sau"], portal: ["portal", "Cổng về Thánh Địa"],
+      chest: ["chest", "Rương báu"], camp: ["camp", "Lửa trại (nghỉ ngơi)"], random: ["mystery", "Điều bí ẩn"],
+    };
     for (const e of ents) {
-      if (!alive(e) || !fog[idx(e.x, e.y)] || !mark[e.kind]) continue;
-      c.fillStyle = mark[e.kind];
-      c.fillRect(e.x * s - 1, e.y * s - 1, s + 2, s + 2);
+      const p = PIN[e.kind];
+      if (!p || !alive(e) || !fog[idx(e.x, e.y)]) continue;
+      pin(p[0], e.x, e.y, p[1], e.kind === "guardian" ? "big" : "");
     }
-    c.fillStyle = "#fff";
-    c.fillRect(player.x * s - 2, player.y * s - 2, s + 4, s + 4);
+    for (const t of map.towns) {
+      const cx = t.x + Math.floor(t.w / 2), cy = t.y + Math.floor(t.h / 2);
+      if (!fog[idx(cx, cy)] && !fog[idx(t.x, t.y)] && !fog[idx(t.x + t.w - 1, t.y + t.h - 1)]) continue;
+      const s = getSettlement(floorN, t.i);
+      pin("town", cx, cy, s.name, "big");
+      wrap.append(h("div", { class: "mm-label", style: `left:${((cx + 0.5) / map.w) * 100}%;top:${((cy + 0.5) / map.h) * 100}%` }, s.name));
+    }
+    pin("hero", player.x, player.y, "Bạn đang ở đây", "hero");
     const explored = fog.reduce((a, b) => a + b, 0);
-    m.body.append(cv, h("p", { class: "muted small" }, `Đã khám phá ${Math.round((explored / (map.w * map.h)) * 100)}%. ⬜ Bạn  🟨 Sự kiện  🟥 Boss Canh Cửa  🏘️(trắng) Làng/Thành phố  🟪 Cầu thang  🟦 Cổng về  🟧 Rương/Lửa trại`),
+    const legend = h("div", { class: "mm-legend" }, ([["hero", "Bạn"], ["town", "Làng"], ["event", "Sự kiện"], ["boss", "Boss"], ["stairs", "Cầu thang"], ["portal", "Cổng về"], ["chest", "Rương"], ["camp", "Lửa trại"], ["mystery", "Bí ẩn"]] as [MapPin, string][])
+      .map(([k, l]) => h("span", null, h("img", { class: "pix", src: mapPinURL(k), alt: "" }), l)));
+    m.body.append(wrap, h("p", { class: "muted small" }, `Đã khám phá ${Math.round((explored / (map.w * map.h)) * 100)}%.`), legend,
       h("div", { class: "col", style: "gap:3px" }, def.regions.map((r, i) => h("div", { class: "small" }, `${i === region ? "📍" : "·"} ${r}`))));
   }
 
@@ -908,7 +928,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   reveal();
   checkRegion();
   savePos();
-  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__dungeon = { ents, interact, player, tryStep, map, reveal };
+  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__dungeon = { ents, interact, player, tryStep, map, reveal, fog, updateFog };
 
   if (fresh) {
     busy = true;
