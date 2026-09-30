@@ -1,6 +1,6 @@
 import { app, type Screen } from "../app";
 import { Rng, hashString } from "../core/rng";
-import { XP_RATE, charStats, giveXp, logMsg, removeItem, type FloorState, type GameState } from "../core/state";
+import { XP_RATE, charStats, giveXp, logMsg, removeItem, ensureFloorState, type GameState } from "../core/state";
 import { ENEMIES } from "../data/enemies";
 import { ITEM_LIST, gearForFloor, getItem } from "../data/items";
 import { PLAYER_SKILLS } from "../data/skills";
@@ -58,15 +58,7 @@ export function floorMap(n: number, seed: number): FloorMap {
   return m;
 }
 
-export function ensureFloorState(g: GameState, n: number): { fs: FloorState; fresh: boolean } {
-  let fs = g.floors[n];
-  const fresh = !fs;
-  if (!fs) {
-    fs = { seed: hashString(`${g.flags.seed}:${n}`), done: [], fog: "", cleared: Boolean(g.flags[`f${n}_cleared`]) };
-    g.floors[n] = fs;
-  }
-  return { fs, fresh };
-}
+export { ensureFloorState, sharedFloorSeed } from "../core/state";
 
 export function startExpedition(g: GameState, floor: number) {
   const temple = g.buildings.find((b) => b.type === "temple");
@@ -120,7 +112,8 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   const randomOf = new Map<string, string>();
   {
     const recent = new Set(String(g.flags.rev_recent ?? "").split(",").filter(Boolean));
-    const r2 = new Rng(fs.seed ^ 0x3a7e);
+    // on a shared map each player still meets their own roadside encounters
+    const r2 = new Rng((fs.seed ^ 0x3a7e ^ (fs.shared ? hashString(String(g.flags.seed)) : 0)) >>> 0);
     const order = RANDOM_POOL.map((p) => ({ id: p.id, k: -Math.log(1 - r2.next()) / (p.rare ? 0.2 : 1) })).sort((a, b) => a.k - b.k).map((p) => p.id);
     const deck = [...order.filter((id) => !recent.has(id)), ...order.filter((id) => recent.has(id))];
     map.entities.filter((e) => e.kind === "random").sort((a, b) => a.id.localeCompare(b.id)).forEach((e, i) => randomOf.set(e.id, deck[i % deck.length]));
