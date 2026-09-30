@@ -47,6 +47,27 @@ function R(id: string, title: string, look: string, text: string, opts: Opt[], r
   return { id, title, start: "a", scenes };
 }
 
+/** The cracked wall in front of a hidden room: breaking it through removes it for good. */
+export const SECRET_WALL: StoryEvent = {
+  id: "secret_wall",
+  title: "Bức Tường Nứt",
+  start: "a",
+  scenes: {
+    a: {
+      text: "Vách đá chỗ này có một vết nứt chạy dọc. Ghé tai vào, bạn nghe tiếng gió lùa từ phía bên kia — sau lớp đá là một khoảng trống.",
+      choices: [
+        { text: "💪 Dùng sức đập vỡ", check: { attr: "str", dc: 11, pass: "open", fail: "fail" } },
+        { text: "💣 Nhét Bom Lửa vào khe", cond: { has: "fire_bomb", n: 1 }, fx: [{ take: { fire_bomb: 1 } }], next: "boom" },
+        { text: "💎 Cho nổ bằng Tinh Thể Ma Lực", cond: { has: "mana_crystal", n: 1 }, fx: [{ take: { mana_crystal: 1 } }], next: "boom" },
+        { text: "Để sau.", end: true, keep: true },
+      ],
+    },
+    open: { text: "Rầm! Bức tường đổ sập, bụi bay mù mịt. Phía sau là một căn phòng nhỏ bị lãng quên." },
+    boom: { text: "ẦM! Vách đá vỡ tung. Khi bụi lắng xuống, một căn phòng bí mật hiện ra." },
+    fail: { text: "Bạn đấm vào tường tới tê cả tay. Vết nứt rộng thêm chút ít, nhưng chưa đủ.", fx: [{ hurt: 0.05 }], keep: true },
+  },
+};
+
 export const ROADSIDE: StoryEvent[] = [
   // ---------------------------------------------------------------- wanderers and traders
   R("r_tinker", "Thợ Hàn Rong", "person:tinker", "Một ông thợ hàn lưng còng đẩy xe đồ nghề kêu lách cách. \"Kiếm mẻ? Giáp thủng? Ta vá hết, rẻ thôi!\"", [
@@ -64,6 +85,7 @@ export const ROADSIDE: StoryEvent[] = [
     { t: "Mua Túi Bí Ẩn", cost: 180, ok: "Bạn mở túi. Hắn cười khẽ: \"Vận may của ngươi đấy.\"", okfx: [{ loot: 6 }], again: true },
     { t: "Mua 3 Tinh Thể Ma Lực", cost: 150, ok: "Ba viên tinh thể vo ve trong lòng bàn tay.", okfx: [{ give: { mana_crystal: 3 } }], again: true },
     { t: "Mua Lõi Quái Vật", cost: 200, ok: "Một khối đá đen còn âm ấm.", okfx: [{ give: { monster_core: 1 } }], again: true },
+    { t: "Mua Trứng Thú Cưng", cost: 350, ok: "\"Trứng này... đã chờ ngươi lâu rồi.\"", okfx: [{ give: { pet_egg: 1 } }], again: true },
   ], true),
   R("r_cartographer", "Người Vẽ Bản Đồ", "person:cartographer", "Một cô gái đeo kính dày đang vẽ nguệch ngoạc lên cuộn da. \"Tôi đổi bản đồ lấy tin tức. Anh chị đã đi qua những đâu rồi?\"", [
     { t: "Kể cho cô nghe đường đã đi", check: ["int", 9], ok: "Cô ghi chép lia lịa rồi đưa bạn một cuộn bản đồ vẽ tay.", okfx: [{ give: { scroll_map: 1 } }], bad: "Bạn kể lộn xộn tới mức cô bỏ cả bút xuống." },
@@ -216,7 +238,7 @@ export const ROADSIDE: StoryEvent[] = [
     { t: "Đốt mạng nhện", ok: "Mạng nhện cháy rụi. Bên trong là những thứ nó từng bắt được.", okfx: [{ loot: 2 }] },
   ]),
   R("r_dragon_egg", "Quả Trứng Kỳ Lạ", "nest", "Một quả trứng to bằng đầu người, vỏ ấm và phập phồng như đang thở.", [
-    { t: "Ấp trứng một lúc", check: ["wil", 12], ok: "Vỏ trứng nứt, một làn khói ấm bay ra. Trong vỏ còn lại những tinh thể lạ.", okfx: [{ give: { mana_crystal: 2 } }, { xpF: 5 }], bad: "Trứng lạnh dần. Bạn thấy tiếc." },
+    { t: "Ôm trứng về", check: ["wil", 12], ok: "Quả trứng cựa quậy trong tay bạn như đã chọn được chủ. Mang về ấp ở mục Thú cưng nhé.", okfx: [{ give: { pet_egg: 1 } }, { xpF: 5 }], bad: "Trứng lạnh dần. Bạn thấy tiếc." },
     { t: "Để yên nó", ok: "Bạn lặng lẽ rời đi, để lại chút hơi ấm quanh tổ.", okfx: [{ xpF: 2 }] },
   ]),
   R("r_lost_pet", "Chú Chó Lạc", "bushes", "Một chú chó nhỏ vẫy đuôi chạy tới, cổ đeo thẻ tên. Nó cứ kéo gấu áo bạn về một hướng.", [

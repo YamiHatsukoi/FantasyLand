@@ -46,6 +46,8 @@ export class Battle {
   /** Builds a unit for reinforcements (set by the battle screen). */
   spawner?: (enemyId: string, level: number, index: number) => Unit;
   private spawned = 0;
+  /** A phoenix pet brings the first fallen ally back, once. */
+  petRevive = false;
   private extraTurn = false;
 
   constructor(allies: Unit[], enemies: Unit[], seed = Date.now()) {
@@ -656,6 +658,15 @@ export class Battle {
     return { mult, extra, splash };
   }
 
+  /** A pet's attack: flat damage of an element, which also chips weakness shields. */
+  petHit(t: Unit, el: Element, amount: number) {
+    if (t.hp <= 0) return;
+    let dmg = amount * (t.resist[el] ?? 1);
+    if (t.broken) dmg *= BREAK_BONUS;
+    if (dmg > 0) this.damage(t, Math.max(1, Math.round(dmg)), el, {});
+    this.chip(t, el);
+  }
+
   // ------------------------------------------------------------ shields, break, intents
   isWeak(u: Unit, el: Element) { return (u.resist[el] ?? 1) > 1; }
 
@@ -808,6 +819,13 @@ export class Battle {
           low[k]!(this, u);
         }
       }
+    }
+    if (u.hp <= 0 && u.side === "ally" && this.petRevive) {
+      this.petRevive = false;
+      u.hp = Math.round(this.maxHp(u) * 0.3);
+      this.emit({ t: "reaction", uid: u.uid, name: "Phượng Hoàng Hồi Sinh!" });
+      this.emit({ t: "revive", uid: u.uid });
+      return;
     }
     if (u.hp <= 0) {
       u.statuses = [];

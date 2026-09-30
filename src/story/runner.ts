@@ -1,4 +1,5 @@
 import { makeRoom } from "../world/town";
+import { MARK_BONUS, isMilestone } from "../core/state";
 import { Rng } from "../core/rng";
 import { XP_RATE, addItem, charStats, giveXp, logMsg, makeCharacter, recruit, removeItem, syncLook, type GameState } from "../core/state";
 import { CLASSES, COMPANIONS } from "../data/classes";
@@ -181,7 +182,20 @@ export function applyEffect(e: Effect, ctx: StoryCtx): string[] {
     g.flags[`f${ctx.floor}_cleared`] = true;
     g.maxFloor = Math.max(g.maxFloor, Math.min(100, ctx.floor + 1));
     logMsg(g, `Đánh bại Boss Canh Cửa tầng ${ctx.floor}.`);
-    return [`🔓 Mở đường xuống tầng ${ctx.floor + 1}`];
+    const out = [`🔓 Mở đường xuống tầng ${ctx.floor + 1}`];
+    // every tenth floor is a milestone: a trophy chest and a lasting mark for the whole party
+    if (isMilestone(ctx.floor) && !g.flags[`mile_${ctx.floor}`]) {
+      g.flags[`mile_${ctx.floor}`] = true;
+      g.flags.marks = Number(g.flags.marks ?? 0) + 1;
+      out.push(`⭐ Tầng Mốc ${ctx.floor}! Dấu Ấn thứ ${g.flags.marks}: cả đội vĩnh viễn +${MARK_BONUS * 100}% mọi chỉ số (tổng +${Math.round(Number(g.flags.marks) * MARK_BONUS * 100)}%).`);
+      out.push(...giveToGame(g, { ...randomLoot(ctx, 8), mana_crystal: 5, monster_core: 3 }));
+      const gold = 400 * (ctx.floor / 10);
+      g.gold += gold;
+      if (g.expedition) g.expedition.bagGold += gold;
+      out.push(`+${gold} vàng từ rương báu của Tầng Mốc`);
+      logMsg(g, `Chinh phục Tầng Mốc ${ctx.floor}.`);
+    }
+    return out;
   }
   if ("setClass" in e) {
     const hero = g.chars[g.heroId];

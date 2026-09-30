@@ -24,6 +24,8 @@ import { sceneReady } from "../world/residents";
 import { openTodo, todoBadge, todoList } from "./todo";
 import { openSanctuaryMarket } from "./settlement";
 import { fold } from "../ui/smart";
+import { PET, petSpec } from "../data/pets";
+import { creatureSmall } from "../render/creatures";
 import { openPlayers } from "./players";
 import type { PlayerVisit } from "../net/api";
 
@@ -86,6 +88,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   const hero = { x: 35, y: 37, px: 35, py: 37, path: [] as { x: number; y: number }[], t: 0, flip: false, dir: 0 as Dir };
   view.camX = hero.x;
   view.camY = hero.y;
+  const petPos = { x: hero.x - 1, y: hero.y };
   let placing: { type: string; moving?: PlacedBuilding; x: number; y: number } | null = null;
   const sim = new ResidentSim(g);
   let ground: HTMLCanvasElement | null = null;
@@ -425,6 +428,14 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
       if (isPerson(ch.sprite)) view.img(personCanvas(ch.sprite, ch.pal, hero.dir, frame), hero.px, hero.py - 1, { h: 2, flip: hero.dir === 2 && hero.flip });
       else view.img(spriteCanvas(ch.sprite, ch.pal), hero.px, hero.py, { flip: hero.flip });
     } });
+    // the pet trots after the hero
+    const pet = g.pet ? PET[g.pet] : undefined;
+    if (pet) {
+      const tx = hero.px + (hero.flip ? 0.9 : -0.9) * (hero.dir === 2 ? 1 : 0.4), ty = hero.py + (hero.dir === 1 ? 0.8 : hero.dir === 0 ? -0.2 : 0.3);
+      petPos.x += (tx - petPos.x) * Math.min(1, dt * 5);
+      petPos.y += (ty - petPos.y) * Math.min(1, dt * 5);
+      draw.push({ y: petPos.y + 0.95, fn: () => view.img(creatureSmall(petSpec(pet)), petPos.x + 0.1, petPos.y + 0.15, { w: 0.8, h: 0.8, flip: hero.flip, dy: Math.sin(t / 160) * 0.04 }) });
+    }
     draw.sort((a, b) => a.y - b.y);
     for (const d of draw) d.fn();
     for (const b of bubbles) b();

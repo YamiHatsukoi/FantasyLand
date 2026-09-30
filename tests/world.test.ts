@@ -175,3 +175,26 @@ describe("roadside encounters", () => {
     expect(RANDOM_POOL.filter((p) => p.rare).length).toBeGreaterThan(3);
   });
 });
+
+describe("secrets", () => {
+  it("hides a room behind a cracked wall and seals a vault with three runes", () => {
+    let rooms = 0, vaults = 0;
+    for (let n = 2; n <= 100; n++) {
+      const m = generateFloor(getFloor(n), 99);
+      const walls = m.entities.filter((e) => e.kind === "secret");
+      rooms += walls.length;
+      for (const wl of walls) {
+        // a secret chest lies two tiles past the wall
+        expect(m.entities.some((e) => e.kind === "chest" && e.ref === "secret" && Math.abs(e.x - wl.x) + Math.abs(e.y - wl.y) === 2), `floor ${n}`).toBe(true);
+      }
+      const v = m.entities.find((e) => e.kind === "vault");
+      if (v) {
+        vaults++;
+        expect(m.entities.filter((e) => e.kind === "rune").length).toBe(3);
+        expect(v.ref!.split("").sort().join("")).toBe("012");
+      }
+    }
+    expect(rooms).toBeGreaterThan(80);
+    expect(vaults).toBeGreaterThan(35);
+  }, 60000);
+});

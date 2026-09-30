@@ -84,3 +84,22 @@ describe("forge enhancement", () => {
     expect(m.chars[m.heroId].enh).toBeUndefined();
   });
 });
+
+describe("milestone floors", () => {
+  it("clearing a tenth floor once grants a lasting mark and a trophy chest", async () => {
+    const { newGame, partyBuffs } = await import("../src/core/state");
+    const { applyEffect } = await import("../src/story/runner");
+    const { Rng } = await import("../src/core/rng");
+    const g = newGame("An", "warrior", 1);
+    const ctx = { g, floor: 10, vars: {}, rng: new Rng(1) } as Parameters<typeof applyEffect>[1];
+    const gold0 = g.gold;
+    const lines = applyEffect({ clearFloor: true }, ctx);
+    expect(lines.some((l) => l.includes("Tầng Mốc"))).toBe(true);
+    expect(g.gold).toBeGreaterThan(gold0);
+    expect(partyBuffs(g).atk).toBeCloseTo(0.02);
+    applyEffect({ clearFloor: true }, ctx);
+    expect(g.flags.marks).toBe(1);
+    applyEffect({ clearFloor: true }, { ...ctx, floor: 11 });
+    expect(g.flags.marks).toBe(1);
+  });
+});

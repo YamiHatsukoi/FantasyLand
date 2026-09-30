@@ -2,7 +2,7 @@ import { app, type Screen } from "../app";
 import { Rng, hashString } from "../core/rng";
 import { charStats, logMsg, removeItem, type FloorState, type GameState } from "../core/state";
 import { ENEMIES } from "../data/enemies";
-import { ITEM_LIST, getItem } from "../data/items";
+import { ITEM_LIST, gearForFloor, getItem } from "../data/items";
 import { PLAYER_SKILLS } from "../data/skills";
 import { MapView } from "../render/mapview";
 import { drawParticles } from "../render/particles";
@@ -26,13 +26,20 @@ import { decodeFog, encodeFog, findPath, generateFloor, type FloorMap, type MapE
 import { confirmBox, h, nn, openModal, toast, topModalOpen } from "../ui/dom";
 import { runBattle, type BattleOutcome } from "./combat";
 import { isElitePack } from "../combat/elite";
+import { PET, petSpec } from "../data/pets";
 import { openJournal, openMenu, partyMini, saveDot, showBanner } from "./common";
 import { openInventory, setFieldSpecial } from "./inventory";
 import { openParty } from "./party";
 import { playStory } from "./story";
 
 const mapCache = new Map<string, FloorMap>();
-const SIGHT = 8;
+const BASE_SIGHT = 8;
+/** The three rune stones of a sealed vault, and the riddle words for each. */
+const RUNE = [
+  { icon: "🌙", name: "Trăng", clue: "kẻ canh giấc ngủ của muôn loài" },
+  { icon: "☀️", name: "Mặt Trời", clue: "kẻ đánh thức buổi sớm" },
+  { icon: "⭐", name: "Sao", clue: "kẻ dẫn đường cho người lạc lối" },
+];
 /** Seconds to walk one tile; movement glides at constant speed from tile to tile. */
 const STEP = 0.15;
 /** Terrain chunk size in tiles. */
@@ -76,6 +83,8 @@ export interface DungeonHooks {
 export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   const g = app.game;
   const ex = g.expedition!;
+  // a night-eyed cat lets the party see further
+  const SIGHT = BASE_SIGHT + (g.pet && PET[g.pet]?.hook === "sight" ? 3 : 0);
   const floorN = ex.floor;
   const def: FloorDef = getFloor(floorN);
   const biome = BIOMES[def.biome];
@@ -92,6 +101,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     if (e.kind === "guardian") return !fs.cleared;
     // townsfolk who joined the party live in the sanctuary now, not in their village
     if (e.kind === "npc") return !g.chars[`npc_${e.ref}`];
+    if (e.kind === "rune") return !fs.done.some((d) => d.startsWith("vault_"));
     if (e.kind === "stairs" || e.kind === "portal" || e.kind === "town" || e.kind === "building" || e.kind === "deco") return true;
     return !fs.done.includes(e.id);
   };
@@ -110,7 +120,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     const deck = [...order.filter((id) => !recent.has(id)), ...order.filter((id) => recent.has(id))];
     map.entities.filter((e) => e.kind === "random").sort((a, b) => a.id.localeCompare(b.id)).forEach((e, i) => randomOf.set(e.id, deck[i % deck.length]));
   }
-  const eventIdOf = (e: MapEntity) => (e.kind === "random" ? randomOf.get(e.id) ?? RANDOM_EVENTS[0].id : e.ref!);
+  const eventIdOf = (e: MapEntity) => (e.kind === "random" ? randomOf.get(e.id) ?? RANDOM_EVENTS[0].id : e.kind === "secret" ? "secret_wall" : e.ref!);
   const rememberRandom = (id: string) => {
     const list = String(g.flags.rev_recent ?? "").split(",").filter((x) => x && x !== id);
     list.push(id);
@@ -426,15 +436,54 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
       case "monster":
         return fightMonster(e, true);
       case "node": {
-        const n = rng.chance(0.3) ? 2 : 1;
+        const n = (rng.chance(0.3) ? 2 : 1) * (g.pet && PET[g.pet]?.hook === "dig" ? 2 : 1);
         const lines = giveToGame(g, { [e.ref!]: n, ...(rng.chance(0.04) ? { mana_crystal: 1 } : {}) });
         ex.done.push(e.id);
         toast(`Thu thập: ${lines.join(", ")}`, "good");
         updateHud();
         return savePos();
       }
+      case "rune": {
+        const vault = ents.find((v) => v.kind === "vault");
+        if (!vault || !alive(vault)) return;
+        const want = vault.ref!;
+        const k = e.ref!;
+        const got = fs.puzzle ?? "";
+        if (got.includes(k)) { toast(`${RUNE[+k].icon} Phiến đá này đang sáng rồi.`); return; }
+        if (want[got.length] === k) {
+          fs.puzzle = got + k;
+          if (fs.puzzle.length === 3) showBanner(el, "Kho Ấn đã mở khoá!", "Ba phiến đá đồng loạt rực sáng");
+          else toast(`${RUNE[+k].icon} Phiến đá ${RUNE[+k].name} sáng lên. (${fs.puzzle.length}/3)`, "good");
+        } else {
+          fs.puzzle = "";
+          toast(`${RUNE[+k].icon} Sai thứ tự... mọi phiến đá tắt ngấm.`, "bad");
+        }
+        return savePos();
+      }
+      case "vault": {
+        if ((fs.puzzle ?? "") !== e.ref) {
+          const clue = e.ref!.split("").map((d, i) => `${["", "rồi ", "cuối cùng là "][i]}${RUNE[+d].clue}`).join(", ");
+          showLoot("🔒 Kho Ấn Cổ", [`Trên cửa đá khắc: "Đánh thức theo thứ tự — ${clue}."`, "Quanh đây có ba phiến đá rune: 🌙 Trăng, ☀️ Mặt Trời, ⭐ Sao. Chạm vào chúng đúng thứ tự để mở cửa. Sai một bước là phải làm lại."]);
+          return;
+        }
+        const loot = randomLoot({ g, floor: floorN, vars: {}, rng }, 8);
+        loot.mana_crystal = (loot.mana_crystal ?? 0) + 3;
+        loot.monster_core = (loot.monster_core ?? 0) + 1;
+        for (let k = 0; k < 2; k++) { const id = gearForFloor(floorN, (xs) => rng.pick(xs), 1).id; loot[id] = (loot[id] ?? 0) + 1; }
+        if (rng.chance(0.3)) loot.pet_egg = 1;
+        const gold = rng.int(60, 90) * floorN;
+        g.gold += gold;
+        ex.bagGold += gold;
+        const lines = giveToGame(g, loot);
+        fs.done.push(e.id);
+        showLoot("🏛️ Kho Ấn Cổ", [`💰 ${gold} vàng`, ...lines]);
+        updateHud();
+        return savePos();
+      }
       case "chest": {
-        const loot = randomLoot({ g, floor: floorN, vars: {}, rng }, 2);
+        // chests in hidden rooms hold a lot more
+        const loot = randomLoot({ g, floor: floorN, vars: {}, rng }, e.ref === "secret" ? 6 : 2);
+        if (e.ref === "secret") { loot.mana_crystal = (loot.mana_crystal ?? 0) + 2; if (rng.chance(0.5)) { const id = gearForFloor(floorN, (xs) => rng.pick(xs), 1).id; loot[id] = (loot[id] ?? 0) + 1; } }
         if (rng.chance(0.2)) {
           const maxTier = Math.min(5, 1 + Math.floor(floorN / 2));
           const pool = PLAYER_SKILLS.filter((s) => s.tier <= maxTier);
@@ -445,12 +494,12 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
           const seeds = ITEM_LIST.filter((i) => (i.type === "seed" || i.type === "sapling") && (i.tier ?? 1) <= 1 + Math.floor(floorN / 3));
           loot[rng.pick(seeds).id] = rng.int(1, 3);
         }
-        const gold = rng.int(15, 35) * floorN;
+        const gold = rng.int(15, 35) * floorN * (e.ref === "secret" ? 3 : 1);
         g.gold += gold;
         ex.bagGold += gold;
         const lines = giveToGame(g, loot);
         fs.done.push(e.id);
-        showLoot("🎁 Rương Báu", [`💰 ${gold} vàng`, ...lines]);
+        showLoot(e.ref === "secret" ? "💎 Kho Báu Bí Mật" : "🎁 Rương Báu", [`💰 ${gold} vàng`, ...lines]);
         updateHud();
         return savePos();
       }
@@ -467,6 +516,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         updateHud();
         return savePos();
       }
+      case "secret":
       case "event":
       case "random":
       case "guardian": {
@@ -684,8 +734,8 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
       if ((next || keys.size) && bx === player.x && by === player.y) player.t = 0.2;
     }
     for (const e of ents) glide(e, e.x, e.y);
-    // companions glide along the trail too
-    for (let i = 0; i < 3; i++) {
+    // companions (and the pet) glide along the trail too
+    for (let i = 0; i < 4; i++) {
       const tr = trail[i] ?? { x: player.x, y: player.y };
       const f = (followers[i] ??= { px: tr.x, py: tr.y, dir: 0 as Dir, flip: false });
       if (Math.abs(tr.x - f.px) + Math.abs(tr.y - f.py) > 3) { f.px = tr.x; f.py = tr.y; }
@@ -852,6 +902,40 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         }
         return;
       }
+      if (e.kind === "secret") {
+        // a cracked patch of rock; a thin draught of dust gives it away
+        const x0 = view.sx(e.x), y0 = view.sy(e.y);
+        c.fillStyle = biome.wall[0];
+        c.fillRect(x0, y0, TL, TL);
+        c.strokeStyle = "rgba(0,0,0,0.55)";
+        c.lineWidth = Math.max(1, TL / 16);
+        c.beginPath();
+        c.moveTo(x0 + TL * 0.5, y0 + TL * 0.1); c.lineTo(x0 + TL * 0.4, y0 + TL * 0.4); c.lineTo(x0 + TL * 0.6, y0 + TL * 0.55); c.lineTo(x0 + TL * 0.45, y0 + TL * 0.9);
+        c.moveTo(x0 + TL * 0.4, y0 + TL * 0.4); c.lineTo(x0 + TL * 0.15, y0 + TL * 0.5);
+        c.stroke();
+        if (seen) { c.fillStyle = `rgba(230,220,200,${0.25 + Math.sin(t / 400 + e.x) * 0.2})`; c.fillRect(x0 + TL * 0.55, y0 + TL * 0.6 - ((t / 40) % (TL * 0.4)), 2, 2); }
+        return;
+      }
+      if (e.kind === "vault" || e.kind === "rune") {
+        const x0 = view.sx(e.x), y0 = view.sy(e.y);
+        const lit = e.kind === "rune" && (fs.puzzle ?? "").includes(e.ref!);
+        const solved = e.kind === "vault" && fs.puzzle === e.ref;
+        c.fillStyle = "rgba(0,0,0,0.3)";
+        c.beginPath(); c.ellipse(x0 + TL / 2, y0 + TL * 0.92, TL * 0.4, TL * 0.12, 0, 0, Math.PI * 2); c.fill();
+        c.fillStyle = e.kind === "vault" ? "#6a6a7a" : "#7a7a88";
+        c.strokeStyle = "#2a2a34";
+        c.lineWidth = 2;
+        if (e.kind === "vault") { c.fillRect(x0 + TL * 0.08, y0 - TL * 0.5, TL * 0.84, TL * 1.4); c.strokeRect(x0 + TL * 0.08, y0 - TL * 0.5, TL * 0.84, TL * 1.4); }
+        else { c.beginPath(); c.roundRect(x0 + TL * 0.2, y0 + TL * 0.05, TL * 0.6, TL * 0.85, TL * 0.2); c.fill(); c.stroke(); }
+        if (lit || solved) { c.fillStyle = `rgba(255,220,120,${0.35 + Math.sin(t / 200) * 0.15})`; c.beginPath(); c.arc(x0 + TL / 2, y0 + TL * 0.35, TL * 0.6, 0, Math.PI * 2); c.fill(); }
+        c.font = `${Math.round(TL * (e.kind === "vault" ? 0.5 : 0.42))}px sans-serif`;
+        c.textAlign = "center";
+        c.globalAlpha = lit || solved || e.kind === "vault" ? 1 : 0.55;
+        c.fillText(e.kind === "vault" ? (solved ? "🔓" : "🔒") : RUNE[+e.ref!].icon, x0 + TL / 2, y0 + TL * (e.kind === "vault" ? 0.35 : 0.62));
+        c.globalAlpha = 1;
+        c.textAlign = "start";
+        return;
+      }
       if (e.kind === "deco") {
         view.img(propCanvas(e.sprite, propCtx), e.x - 0.5, e.y - 1, { w: 2, h: 2, alpha: seen ? 1 : 0.7 });
         return;
@@ -893,8 +977,11 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
       else view.img(spriteCanvas(ch.sprite, ch.pal), pos.x, pos.y, { flip, alpha: ch.hp <= 0 ? 0.4 : 1 });
     };
 
-    // party (companions follow the trail)
+    // party (companions follow the trail, the pet trots at the back)
     const members = g.party.map((id) => g.chars[id]);
+    const pet = g.pet ? PET[g.pet] : undefined;
+    const pf = followers[members.length - 1];
+    if (pet && pf) drawables.push({ y: pf.py + 0.95, fn: () => view.img(creatureSmall(petSpec(pet)), pf.px + 0.1, pf.py + 0.15, { w: 0.8, h: 0.8, flip: pf.flip, dy: Math.sin(t / 160) * 0.04 }) });
     for (let i = members.length - 1; i >= 0; i--) {
       const ch = members[i];
       const f = followers[i - 1];
@@ -972,7 +1059,11 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
 
   if (fresh) {
     busy = true;
-    void showIntro(def).then(() => { busy = false; showBanner(el, `Tầng ${floorN}`, def.name); });
+    void showIntro(def).then(() => {
+      busy = false;
+      if (floorN % 10 === 0) showBanner(el, `⭐ Tầng Mốc ${floorN}`, `${def.name} · Chúa tể nơi đây mạnh hơn hẳn, nhưng phần thưởng xứng đáng`);
+      else showBanner(el, `Tầng ${floorN}`, def.name);
+    });
   } else showBanner(el, `Tầng ${floorN}`, def.name);
 
   return {

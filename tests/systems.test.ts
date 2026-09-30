@@ -169,3 +169,26 @@ describe("beds for companions", () => {
     expect(dismiss(g, "lyra")).toBe(false);
   });
 });
+
+describe("pets", () => {
+  it("15 pets with unique gifts; eggs exist; the phoenix revives once and pets can strike", async () => {
+    const { PETS, PET_EGG } = await import("../src/data/pets");
+    const { getItem } = await import("../src/data/items");
+    expect(PETS.length).toBe(15);
+    expect(new Set(PETS.map((p) => p.hook)).size).toBe(PETS.length);
+    expect(getItem(PET_EGG).name).toBe("Trứng Thú Cưng");
+    const { Battle } = await import("../src/combat/engine");
+    const mk = (side: "ally" | "enemy", uid: string) => ({ uid, side, name: uid, sprite: "slime", level: 1, base: { hp: 100, mp: 10, atk: 10, mag: 10, def: 0, res: 0, spd: 100, crit: 0, eva: 0 }, hp: 100, mp: 10, statuses: [], skills: [], passives: [], cooldowns: {}, av: 0, tags: [], resist: {} });
+    const a = mk("ally", "a"), e = mk("enemy", "e");
+    const b = new Battle([a as never], [{ ...e, resist: { fire: 1.5 }, shield: 1, shieldMax: 1 } as never], 1);
+    b.petRevive = true;
+    b.damage(a as never, 999, "physical", {});
+    expect(a.hp).toBe(30);
+    b.damage(a as never, 999, "physical", {});
+    expect(a.hp).toBe(0);
+    const foe = b.enemies[0];
+    b.petHit(foe, "fire", 20);
+    expect(foe.hp).toBe(70);
+    expect(foe.broken).toBe(true);
+  });
+});

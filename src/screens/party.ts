@@ -13,6 +13,8 @@ import { planBestGear } from "../ui/smart";
 import { itemTip, passiveTip, skillTip } from "../ui/tooltip";
 import { critChance, dodgeChance, pctLabel } from "../combat/rates";
 import { openAppearance } from "./appearance";
+import { PET, PETS, PET_EGG, petSpec } from "../data/pets";
+import { creatureCanvas } from "../render/creatures";
 
 const STAT_NAMES: Record<string, string> = { hp: "Máu", mp: "MP", atk: "Công", mag: "Phép", def: "Thủ", res: "Kháng", spd: "Tốc", crit: "Chí mạng", eva: "Né" };
 
@@ -20,7 +22,7 @@ export function statText(stats: Record<string, number | undefined>): string {
   return Object.entries(stats).filter(([, v]) => v).map(([k, v]) => `${STAT_NAMES[k] ?? k} ${v! > 0 ? "+" : ""}${v}`).join(", ");
 }
 
-type PartyTab = "gear" | "stats" | "skills" | "passives";
+type PartyTab = "gear" | "stats" | "skills" | "passives" | "pets";
 let partyTab: PartyTab = "gear";
 
 export function openParty(opts: { inDungeon: boolean; onChange?: () => void; select?: string }) {
@@ -93,9 +95,11 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
     ["stats", "📊 Chỉ số", pts ? String(pts) : ""],
     ["skills", "✨ Kỹ năng", `${ch.equipped.length}/${slots}`],
     ["passives", "🔮 Nội tại", `${ch.equippedPassives.length}/${pslots}`],
+    ["pets", "🐾 Thú cưng", g.inventory[PET_EGG] ? "🥚" : ""],
   ];
   const secTabs = h("div", { class: "tabs party-tabs" }, TABS.map(([id, label, badge]) =>
-    h("button", { class: partyTab === id ? "on" : "", onclick: () => { partyTab = id; select(ch.id); } }, label, badge ? h("span", { class: "tab-badge" }, badge) : null)));
+    h("button", { class: partyTab === id ? "on" : "", title: label.slice(label.indexOf(" ") + 1), onclick: () => { partyTab = id; select(ch.id); } },
+      h("span", { class: "pt-ico" }, label.slice(0, label.indexOf(" "))), h("span", { class: "pt-label" }, label.slice(label.indexOf(" ") + 1)), badge ? h("span", { class: "tab-badge" }, badge) : null)));
 
   let body: (HTMLElement | null)[] = [];
   if (partyTab === "gear") {
@@ -178,6 +182,8 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
         }, known ? "Đã biết" : "Học")), it.id, { qty: g.inventory[it.id] });
     })) : null;
     body = [skillList, tomeList ? h("div", { class: "section-title" }, "📕 Học từ sách") : null, tomeList];
+  } else if (partyTab === "pets") {
+    body = [petPanel(() => select(ch.id))];
   } else {
     const gearPassives = charPassives(ch).filter((p) => !ch.equippedPassives.includes(p));
     const passiveList = h("div", { class: "list" }, ch.passives.map((id) => {
@@ -201,6 +207,35 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
   }
 
   m.body.replaceChildren(...nn(tabs, header, secTabs, ...body));
+}
+
+/** Pets: hatch eggs, pick the one that travels with the party. */
+function petPanel(rerender: () => void): HTMLElement {
+  const g = app.game;
+  const owned = (g.pets ?? []).map((id) => PET[id]).filter(Boolean);
+  const eggs = g.inventory[PET_EGG] ?? 0;
+  const hatch = () => {
+    if (!removeItem(g, PET_EGG, 1)) return;
+    const left = PETS.filter((p) => !(g.pets ?? []).includes(p.id));
+    if (!left.length) { g.gold += 150; toast("Quả trứng rỗng... bạn đã có đủ mọi thú cưng. Bán vỏ trứng được 150 vàng.", "info"); app.dirty(); return rerender(); }
+    const p = left[Math.floor(Math.random() * left.length)];
+    g.pets = [...(g.pets ?? []), p.id];
+    g.pet ??= p.id;
+    toast(`🐣 Trứng nở ra ${p.name}! Món quà: ${p.gift}.`, "good", 5000);
+    app.dirty(true);
+    rerender();
+  };
+  return h("div", { class: "col", style: "gap:8px" },
+    h("div", { class: "row between" },
+      h("span", { class: "muted small" }, `Mang theo một thú cưng để nhận món quà đặc biệt của nó. Đã có ${owned.length}/${PETS.length}.`),
+      h("button", { class: "btn small primary", disabled: !eggs, onclick: hatch }, `🥚 Ấp trứng (${eggs})`)),
+    owned.length ? h("div", { class: "list no-search" }, owned.map((p) => {
+      const on = g.pet === p.id;
+      return h("div", { class: `item-row ${on ? "sel" : ""}` },
+        h("img", { class: "pix", src: creatureCanvas(petSpec(p)).toDataURL(), alt: "", style: "width:48px;height:48px" }),
+        h("div", { class: "meta" }, h("div", { class: "name" }, p.name, h("span", { class: "tag" }, p.gift)), h("div", { class: "desc" }, p.desc)),
+        h("button", { class: `btn small ${on ? "" : "primary"}`, onclick: () => { g.pet = on ? undefined : p.id; app.dirty(); rerender(); } }, on ? "Để ở nhà" : "Mang theo"));
+    })) : h("p", { class: "muted" }, "Chưa có thú cưng nào. Trứng Thú Cưng thỉnh thoảng rơi từ quái Tinh Anh, thường rơi từ Boss Canh Cửa, và chắc chắn có ở boss mỗi 10 tầng."));
 }
 
 function pickGear(ch: Character, key: GearKey, done: () => void) {
