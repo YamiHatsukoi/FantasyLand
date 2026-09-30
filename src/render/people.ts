@@ -173,6 +173,12 @@ function applyCustom(L: Look, pal: Record<string, string>) {
   if (pal.ft) L.shoes = pal.ft;
 }
 
+/** Blend two #rrggbb colours (t = share of b). */
+function mixHex(a: string, b: string, t: number): string {
+  const [ar, ag, ab] = rgba(a), [br, bg, bb] = rgba(b);
+  const f = (x: number, y: number) => Math.round(x + (y - x) * t).toString(16).padStart(2, "0");
+  return `#${f(ar, br)}${f(ag, bg)}${f(ab, bb)}`;
+}
 // ------------------------------------------------------------ grid painter
 const rgbaCache = new Map<string, [number, number, number, number]>();
 /** "#rrggbb" / "#rgb" / "rgba(r,g,b,a)" → bytes. */
@@ -426,17 +432,27 @@ function drawHead(g: G, L: Look, dir: Dir, bob: number) {
     if (style === "braids" && dir === 0) { g.rect(2, top + 8, 2, 7, hair); g.rect(12, top + 8, 2, 7, hd); g.px(2, top + 14, L.accent); g.px(13, top + 14, L.accent); }
     if (style === "curly") for (const [x, y] of [[3, 3], [12, 3], [2, 6], [13, 6]]) g.px(x, top + y, hl);
   }
-  // face features
+  // face features: Stardew-like eyes (white + iris, dark lash on top), blush at the sides, a small smile below
+  const lip = mixHex(hs(skin, -0.38), "#c0504a", 0.45);
   if (dir === 0) {
-    const eye = L.glow ? L.eyes : "#1e1a2a";
-    g.rect(5, top + 6, 2, 2, eye); g.rect(9, top + 6, 2, 2, eye);
-    g.px(6, top + 6, L.glow ? "#ffffff" : L.eyes); g.px(10, top + 6, L.glow ? "#ffffff" : L.eyes);
-    g.px(5, top + 9, "rgba(230,110,110,0.55)"); g.px(10, top + 9, "rgba(230,110,110,0.55)");
-    if (L.beard) { g.rect(5, top + 9, 6, 3, L.hair); g.rect(6, top + 12, 4, 1, hd); }
-    else g.px(8, top + 9, hs(skin, -0.35));
+    const iris = L.glow ? L.eyes : mixHex(L.eyes, "#1e1a2a", 0.35);
+    for (const [wx, ix] of [[5, 6], [10, 9]]) {
+      g.px(ix, top + 6, "#1e1a2a"); // pupil
+      g.px(ix, top + 7, iris);
+      g.px(wx, top + 7, L.glow ? L.eyes : "#f4f0ea"); // white of the eye
+      if (L.fem) g.px(wx, top + 6, "#1e1a2a"); // lashes
+    }
+    if (L.beard) { g.rect(4, top + 9, 8, 2, L.hair); g.rect(5, top + 11, 6, 1, L.hair); g.rect(6, top + 12, 4, 1, hd); g.rect(7, top + 9, 2, 1, lip); }
+    else {
+      g.px(4, top + 8, mixHex(skin, "#e86a6a", 0.35)); g.px(11, top + 8, mixHex(skin, "#e86a6a", 0.35));
+      g.rect(7, top + 9, 2, 1, lip);
+    }
   } else if (dir === 2) {
-    g.rect(10, top + 6, 2, 2, L.glow ? L.eyes : "#1e1a2a"); g.px(11, top + 6, L.eyes);
+    const iris = L.glow ? L.eyes : mixHex(L.eyes, "#1e1a2a", 0.35);
+    g.px(11, top + 6, "#1e1a2a"); g.px(12, top + 6, "#1e1a2a");
+    g.px(11, top + 7, iris); g.px(12, top + 7, L.glow ? L.eyes : "#f4f0ea");
     if (L.beard) g.rect(9, top + 9, 4, 3, L.hair);
+    else { g.px(10, top + 8, mixHex(skin, "#e86a6a", 0.35)); g.px(12, top + 9, lip); }
   }
   if (L.ears === "beast") { g.rect(3, top - 2, 3, 3, hair); g.rect(10, top - 2, 3, 3, hair); g.px(4, top - 1, "#f0b0b0"); g.px(11, top - 1, "#f0b0b0"); }
   drawHat(g, L, dir, top);
@@ -553,10 +569,11 @@ export function portraitCanvas(id: string, pal?: Record<string, string>): HTMLCa
   // brows
   g.rect(10, 11, 4, 1, hd); g.rect(19, 11, 4, 1, hd);
   // nose, mouth, blush
-  g.px(16, 17, sd); g.px(16, 18, sd);
-  g.rect(14, 20, 4, 1, hs(skin, -0.45)); g.px(13, 19, hs(skin, -0.3));
-  g.rect(8, 18, 3, 1, "rgba(235,120,120,0.5)"); g.rect(21, 18, 3, 1, "rgba(235,120,120,0.5)");
-  if (L.beard) { for (let y = 18; y < 25; y++) { const w = y < 21 ? 8 : 8 - (y - 21) * 1.5; g.span(Math.round(16 - w), Math.round(15 + w), y, hair); } g.rect(14, 20, 4, 1, hs(skin, -0.45)); }
+  const lipP = mixHex(hs(skin, -0.38), "#c0504a", 0.45);
+  g.px(16, 18, sd);
+  g.rect(8, 18, 3, 1, mixHex(skin, "#e86a6a", 0.4)); g.rect(21, 18, 3, 1, mixHex(skin, "#e86a6a", 0.4));
+  if (L.beard) { for (let y = 18; y < 25; y++) { const w = y < 21 ? 8 : 8 - (y - 21) * 1.5; g.span(Math.round(16 - w), Math.round(15 + w), y, hair); } g.rect(14, 20, 4, 1, lipP); }
+  else { g.px(13, 19, lipP); g.rect(14, 20, 4, 1, lipP); g.px(18, 19, lipP); }
   // hair
   if (L.hairStyle !== "bald") {
     for (let y = 2; y < 11; y++) { const w = y < 4 ? 6 + (y - 2) * 2.5 : 11; g.span(Math.round(16 - w), Math.round(15 + w), y, hair); }
