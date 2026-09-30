@@ -2,7 +2,7 @@ import { app } from "../app";
 import { GEAR_KEYS } from "../core/state";
 import { RANK_NAMES } from "../data/buildings";
 import { CLASSES } from "../data/classes";
-import { getItem, type GearKey } from "../data/items";
+import { enhLevel, enhancedId, getItem, type GearKey } from "../data/items";
 import { errorText, listPlayers, visitPlayer, type PlayerSummary, type PlayerVisit, type PublicChar } from "../net/api";
 import { spriteImg } from "../render/pixel";
 import { h, nn, openModal, toast } from "../ui/dom";
@@ -96,15 +96,17 @@ export async function openProfile(username: string, visit?: (p: PlayerVisit) => 
         h("div", { class: "grow" }, h("b", { style: "font-size:17px" }, ch.name), h("div", { class: "muted small" }, classLine(ch)),
           ch.bond ? h("div", { class: "small gold" }, ch.bond === "beloved" ? "💍 Người thương" : "🤝 Tri kỷ") : null)) : null,
       ch ? h("div", { class: "gear-tiles" }, GEAR_KEYS.map((key: GearKey) => {
-        const id = ch.gear?.[key];
+        // saves from before item-bound enhancement still keep the level per slot
+        const raw = ch.gear?.[key];
+        const id = raw && ch.enh?.[key] && !enhLevel(raw) ? enhancedId(raw, ch.enh[key]!) : raw;
         let it = null;
         try { it = id ? getItem(id) : null; } catch { it = null; }
-        const enh = ch.enh?.[key];
+        const enh = id ? enhLevel(id) : 0;
         const tile = h("div", { class: `gtile ${it ? `filled ${rarityClass(it)}` : ""}` },
           h("div", { class: "gt-ico" }, it ? itemImg(it.id) : h("span", { class: "gt-empty" }, GEAR_ICONS[key])),
           h("div", { class: "gt-name" }, it ? it.name : GEAR_NAMES[key]),
           enh ? h("span", { class: "gt-enh" }, `+${enh}`) : null);
-        return it ? itemTip(tile, it.id, { enh, slot: key }) : tile;
+        return it ? itemTip(tile, it.id, { slot: key }) : tile;
       })) : null,
       visit ? h("div", { class: "row end", style: "margin-top:10px" }, h("button", { class: "btn primary", onclick: () => { m.close(); visit(v); } }, "🏡 Sang thăm Thánh Địa")) : null,
     ));

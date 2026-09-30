@@ -1,7 +1,7 @@
 import type { StatMods, Stats } from "../combat/types";
 import { PARTY_SIZE, costFor, type Cost, passiveSlotsFor, skillSlotsFor } from "../data/buildings";
 import { CLASSES, COMPANIONS, classStats, xpForLevel } from "../data/classes";
-import { getItem, type GearKey, type MealBuff } from "../data/items";
+import { enhLevel, enhancedId, getItem, type GearKey, type MealBuff } from "../data/items";
 
 export const SAVE_VERSION = 3;
 
@@ -25,7 +25,7 @@ export interface Character {
   /** Hero only: unspent stat points and where the spent ones went. */
   points?: number;
   alloc?: Partial<Record<keyof Stats, number>>;
-  /** Forge enhancement per gear slot (+1..+10); it stays with the slot when gear is swapped. */
+  /** @deprecated old saves: enhancement per slot. Now the level is part of the item id ("sword+4"). */
   enh?: Partial<Record<GearKey, number>>;
   /** Earned in the sanctuary: 10-heart friendship or marriage. */
   bond?: "kindred" | "beloved";
@@ -309,7 +309,7 @@ export function charStats(ch: Character): Stats {
     if (!id) continue;
     const eq = getItem(id).equip;
     if (!eq) continue;
-    const f = (key === "offhand" && eq.slot === "weapon" ? 0.5 : 1) * (1 + ENH_BONUS * (ch.enh?.[key] ?? 0));
+    const f = key === "offhand" && eq.slot === "weapon" ? 0.5 : 1;
     for (const [k, v] of Object.entries(eq.stats)) s[k as keyof Stats] += Math.round((v as number) * f);
   }
   return s;
@@ -317,22 +317,22 @@ export function charStats(ch: Character): Stats {
 
 // ------------------------------------------------------------ forge enhancement (a gold sink)
 export const ENH_MAX = 10;
-/** Each enhancement level adds this fraction to the stats of whatever sits in the slot. */
-export const ENH_BONUS = 0.06;
 const ENH_CHANCE = [1, 1, 1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3];
 /** Gold for going from `lvl` to `lvl + 1`: steep, and scaled by how deep the player has been. */
 export const enhanceCost = (g: GameState, lvl: number) => Math.round(80 * (lvl + 1) ** 2.2 * (1 + Math.max(1, g.maxFloor) / 8));
 export const enhanceChance = (lvl: number) => ENH_CHANCE[Math.min(lvl, ENH_CHANCE.length - 1)];
-/** Pays and rolls one enhancement. A failure only costs the gold. */
-export function tryEnhance(g: GameState, ch: Character, key: GearKey, roll: number): "ok" | "fail" | "max" | "gold" {
-  const lvl = ch.enh?.[key] ?? 0;
+/** Pays and rolls one enhancement of the item worn in `key`. A failure only costs the gold. */
+export function tryEnhance(g: GameState, ch: Character, key: GearKey, roll: number): "ok" | "fail" | "max" | "gold" | "empty" {
+  const id = ch.gear[key];
+  if (!id) return "empty";
+  const lvl = enhLevel(id);
   if (lvl >= ENH_MAX) return "max";
   const cost = enhanceCost(g, lvl);
   if (g.gold < cost) return "gold";
   g.gold -= cost;
   g.stats.goldSpent = (g.stats.goldSpent ?? 0) + cost;
   if (roll >= enhanceChance(lvl)) return "fail";
-  ch.enh = { ...(ch.enh ?? {}), [key]: lvl + 1 };
+  ch.gear[key] = enhancedId(id, lvl + 1);
   return "ok";
 }
 
@@ -505,7 +505,18 @@ export function migrate(raw: unknown): GameState {
   g.learnedRecipes ??= [];
   g.floors ??= {};
   g.bonds ??= {};
-  for (const ch of Object.values(g.chars)) { fixGear(g, ch); syncLook(ch); }
+  for (const ch of Object.values(g.chars)) {
+    // per-slot enhancement moves onto the item that was in the slot
+    if (ch.enh) {
+      for (const [k, lvl] of Object.entries(ch.enh) as [GearKey, number][]) {
+        const id = ch.gear[k];
+        if (id && lvl > 0 && !enhLevel(id)) ch.gear[k] = enhancedId(id, Math.min(ENH_MAX, lvl));
+      }
+      delete ch.enh;
+    }
+    fixGear(g, ch);
+    syncLook(ch);
+  }
   const hero = g.chars[g.heroId];
   if (hero && hero.points === undefined) hero.points = (hero.level - 1) * POINTS_PER_LEVEL; // points for levels gained before allocation existed
   // crit / dodge points above the (lowered) caps are refunded

@@ -613,3 +613,10 @@ img.iicon.lg { width: 48px; height: 48px; }
   .arena .plate .st { font-size: 10px; line-height: 12px; }
   .arena .fighter .intent { font-size: 9px; padding: 1px 5px; }
 }
+/* painted scenery behind the arena; the rest of the battle screen stays dark */
+.combat { background: #0a0e0c; }
+.cb-stage.arena { background-color: #0a0e0c; background-position: center bottom; background-size: cover; background-repeat: no-repeat; image-rendering: pixelated; }
+.cb-top { background: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,0)); position: relative; z-index: 3; margin-bottom: -46px; }
+.arena::before { display: none; }
+.cb-top { margin-bottom: 0; background: #0a0e0c; }
+.cb-stage.arena { background-position: center 62%; }
