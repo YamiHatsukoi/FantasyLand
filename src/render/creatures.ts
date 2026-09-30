@@ -77,7 +77,95 @@ export interface CreatureSpec {
   eye?: string;
   seed: number;
   boss?: boolean;
+  /** Element of the floor: flames, frost spikes, sparks, drips... */
+  el?: string;
+  /** Material family of the floor: mushrooms, coral, bone plates, crystals, vines... */
+  fam?: string;
 }
+
+// ------------------------------------------------------------ regional features
+/** Top-most filled pixel per column (-1 when empty) and the body's filled pixels. */
+function silhouette(g: Grid) {
+  const top: number[] = [], bottom: number[] = [];
+  const body: [number, number][] = [];
+  for (let x = 0; x < S; x++) {
+    top[x] = -1; bottom[x] = -1;
+    for (let y = 0; y < S; y++) if (g.g[y][x]) { if (top[x] < 0) top[x] = y; bottom[x] = y; body.push([x, y]); }
+  }
+  return { top, bottom, body };
+}
+
+const EL_FX: Record<string, (g: Grid, r: Rng) => void> = {
+  fire: (g, r) => {
+    const { top } = silhouette(g);
+    for (let x = 1; x < S - 1; x++) {
+      if (top[x] < 3 || !r.chance(0.35)) continue;
+      const h = r.int(2, 4);
+      for (let k = 1; k <= h; k++) g.px(x, top[x] - k, k === h ? "#fff0a0" : k > h / 2 ? "#ffb02a" : "#ff5a1a");
+    }
+  },
+  ice: (g, r) => {
+    const { top } = silhouette(g);
+    for (let x = 2; x < S - 2; x += r.int(3, 5)) {
+      if (top[x] < 4) continue;
+      const h = r.int(2, 4);
+      for (let k = 0; k < h; k++) { g.px(x, top[x] - 1 - k, k === h - 1 ? "#ffffff" : "#a8e0ff"); if (k === 0) { g.px(x - 1, top[x] - 1, "#6ab8e8"); g.px(x + 1, top[x] - 1, "#6ab8e8"); } }
+    }
+  },
+  lightning: (g, r) => {
+    for (let i = 0; i < 3; i++) {
+      let x = r.int(2, S - 3), y = r.int(2, 10);
+      for (let k = 0; k < 5; k++) { g.px(x, y, k % 2 ? "#fff6a0" : "#ffd23a"); x += r.pick([-1, 1]); y++; }
+    }
+  },
+  water: (g, r) => {
+    const { bottom } = silhouette(g);
+    for (let x = 3; x < S - 3; x += r.int(4, 7)) if (bottom[x] > 0 && bottom[x] < S - 3) { g.px(x, bottom[x] + 1, "#6ac0ff"); g.px(x, bottom[x] + 2, "#a8e0ff"); }
+  },
+  earth: (g, r) => {
+    const { body } = silhouette(g);
+    for (let i = 0; i < 6 && body.length; i++) { const [x, y] = r.pick(body); g.px(x, y, "#7a6040"); g.px(x + 1, y, "#9a7a50"); g.px(x, y + 1, "#5a4a30"); }
+  },
+  wind: (g, r) => {
+    for (let i = 0; i < 3; i++) { const y = r.int(8, 26), x0 = r.int(0, 4); for (let k = 0; k < r.int(4, 7); k++) g.px(x0 + k, y + (k > 3 ? -1 : 0), "#e6fff0"); }
+  },
+  light: (g, r) => {
+    const { top } = silhouette(g);
+    const ys = top.filter((y) => y >= 0);
+    const t = Math.max(1, Math.min(...ys) - 3);
+    for (let x = 11; x <= 21; x++) if (x < 13 || x > 19 || r.chance(0.9)) g.px(x, t + (x === 11 || x === 21 ? 1 : 0), "#fff6b0");
+  },
+  dark: (g, r) => {
+    const { bottom } = silhouette(g);
+    for (let x = 2; x < S - 2; x++) if (bottom[x] > 0 && r.chance(0.4)) for (let k = 1; k <= r.int(1, 3); k++) g.px(x + r.int(-1, 1), Math.min(S - 1, bottom[x] + k - 3), k === 1 ? "#5a2a8a" : "#3a1a5a");
+  },
+  poison: (g, r) => {
+    const { bottom, body } = silhouette(g);
+    for (let x = 3; x < S - 3; x += r.int(3, 6)) if (bottom[x] > 0 && bottom[x] < S - 3) { g.px(x, bottom[x] + 1, "#8be04e"); g.px(x, bottom[x] + 2, "#5aa82a"); }
+    for (let i = 0; i < 3 && body.length; i++) { const [x, y] = r.pick(body); g.px(x, y, "#b8ff6a"); }
+  },
+  arcane: (g, r) => {
+    for (let i = 0; i < 4; i++) { const x = r.int(1, S - 2), y = r.int(1, 14); if (g.get(x, y)) continue; g.px(x, y, "#ff8cf0"); g.px(x + 1, y, "#ffc8f8"); g.px(x, y + 1, "#c85ac0"); }
+  },
+};
+
+const FAM_FX: Record<string, (g: Grid, r: Rng) => void> = {
+  fungal: (g, r) => { const { top } = silhouette(g); for (let x = 3; x < S - 4; x += r.int(5, 9)) if (top[x] > 3) { g.rect(x - 1, top[x] - 2, 4, 2, "#c83a5a"); g.px(x, top[x] - 2, "#ffffff"); g.px(x, top[x] - 1 + 1, "#e8dcc0"); } },
+  crystal: (g, r) => { const { top } = silhouette(g); for (let i = 0; i < 3; i++) { const x = r.int(5, S - 6); if (top[x] < 4) continue; for (let k = 0; k < 4; k++) g.px(x + (k > 1 ? 1 : 0), top[x] - k, k < 2 ? "#b88aff" : "#e8d8ff"); } },
+  bonewaste: (g, r) => { const { body } = silhouette(g); const ys = [...new Set(body.map(([, y]) => y))]; for (const y of ys.filter((_, i) => i % 4 === 2)) for (const [x, yy] of body) if (yy === y && r.chance(0.7)) g.px(x, y, "#e8e0cc"); },
+  volcano: (g, r) => { const { body } = silhouette(g); for (let i = 0; i < 4 && body.length; i++) { let [x, y] = r.pick(body); for (let k = 0; k < 4; k++) { if (g.get(x, y)) g.px(x, y, k % 2 ? "#ffb02a" : "#ff5a1a"); x += r.int(-1, 1); y += 1; } } },
+  reef: (g, r) => { const { top } = silhouette(g); for (let i = 0; i < 2; i++) { const x = r.int(6, S - 7); if (top[x] < 5) continue; g.line(x, top[x], x, top[x] - 4, "#ff7a8a"); g.line(x, top[x] - 2, x - 2, top[x] - 4, "#ff7a8a"); g.line(x, top[x] - 3, x + 2, top[x] - 5, "#ffb0b8"); } },
+  sakura: (g, r) => { for (let i = 0; i < 6; i++) { const x = r.int(1, S - 2), y = r.int(1, S - 2); if (!g.get(x, y)) { g.px(x, y, "#ffb8d8"); g.px(x + 1, y, "#ff8ab8"); } } },
+  jungle: (g, r) => { const { bottom } = silhouette(g); for (let x = 4; x < S - 4; x += r.int(5, 8)) if (bottom[x] > 0) for (let k = 0; k < r.int(2, 5); k++) g.px(x + (k % 2), Math.max(0, bottom[x] - 6 + k * 2), "#3a8a2a"); },
+  ruins: (g, r) => { const { body } = silhouette(g); const ys = [...new Set(body.map(([, y]) => y))]; const band = ys[Math.floor(ys.length * 0.45)]; for (const [x, y] of body) if (y === band || y === band + 1) g.px(x, y, y === band ? "#a8a8b8" : "#6a6a7a"); void r; },
+  tundra: (g, r) => { const { top } = silhouette(g); for (let x = 0; x < S; x++) if (top[x] >= 0 && r.chance(0.5)) g.px(x, top[x], "#ffffff"); },
+  glacier: (g, r) => { const { top } = silhouette(g); for (let x = 0; x < S; x++) if (top[x] >= 0 && r.chance(0.6)) { g.px(x, top[x], "#e8f8ff"); if (r.chance(0.3)) g.px(x, top[x] + 1, "#a8d8f0"); } },
+  autumn: (g, r) => { for (let i = 0; i < 5; i++) { const x = r.int(1, S - 2), y = r.int(1, S - 2); if (!g.get(x, y)) g.px(x, y, r.pick(["#e8702a", "#c8401a", "#f2b52a"])); } },
+  bamboo: (g, r) => { const { body } = silhouette(g); for (const [x, y] of body) if (y % 5 === 0 && r.chance(0.6)) g.px(x, y, "#4a7a2a"); },
+  desert: (g, r) => { const { body } = silhouette(g); const ys = [...new Set(body.map(([, y]) => y))]; for (const y of ys.filter((_, i) => i % 5 === 1)) for (const [x, yy] of body) if (yy === y && r.chance(0.8)) g.px(x, y, "#d8c8a0"); },
+  swamp: (g, r) => { const { top } = silhouette(g); for (let x = 2; x < S - 2; x++) if (top[x] >= 0 && r.chance(0.3)) { g.px(x, top[x], "#5a8a3a"); g.px(x, top[x] + 1, "#3a6a2a"); } },
+  forest: (g, r) => { for (let i = 0; i < 3; i++) { const x = r.int(2, S - 3), y = r.int(2, 12); if (!g.get(x, y)) { g.px(x, y, "#4a9a3a"); g.px(x + 1, y + 1, "#2c6b33"); } } },
+};
 
 type Drawer = (g: Grid, c: string, a: string, e: string, r: Rng) => void;
 
@@ -188,13 +276,13 @@ export function creatureSmall(s: CreatureSpec): HTMLCanvasElement {
 }
 
 export function creatureKey(s: CreatureSpec) {
-  return `cr:${s.plan}:${s.c}:${s.c2 ?? ""}:${s.eye ?? ""}:${s.seed}:${s.boss ? 1 : 0}`;
+  return `cr:${s.plan}:${s.c}:${s.c2 ?? ""}:${s.eye ?? ""}:${s.seed}:${s.boss ? 1 : 0}:${s.el ?? ""}:${s.fam ?? ""}`;
 }
 
 export function parseCreature(id: string): CreatureSpec | null {
   if (!id.startsWith("cr:")) return null;
-  const [, plan, c, c2, eye, seed, boss] = id.split(":");
-  return { plan, c, c2: c2 || undefined, eye: eye || undefined, seed: Number(seed), boss: boss === "1" };
+  const [, plan, c, c2, eye, seed, boss, el, fam] = id.split(":");
+  return { plan, c, c2: c2 || undefined, eye: eye || undefined, seed: Number(seed), boss: boss === "1", el: el || undefined, fam: fam || undefined };
 }
 
 export function creatureCanvas(s: CreatureSpec): HTMLCanvasElement {
@@ -206,6 +294,9 @@ export function creatureCanvas(s: CreatureSpec): HTMLCanvasElement {
   const a = s.c2 ?? sh(s.c, 0.45);
   const e = s.eye ?? (rng.chance(0.5) ? "#ffe14a" : "#ff4a4a");
   (D[s.plan] ?? D.blob)(g, s.c, a, e, rng);
+  // the region leaves its mark: family first (body), then the element (aura)
+  if (s.fam) FAM_FX[s.fam]?.(g, new Rng(s.seed ^ 0x5eed));
+  if (s.el) EL_FX[s.el]?.(g, new Rng(s.seed ^ 0xe1e));
   if (s.boss) {
     // bosses get a crown of accent spikes and a glowing core
     for (let x = 9; x <= 23; x += 3) if (g.get(x, 3) === null) g.line(x, 3, x, 0, a);

@@ -5,6 +5,8 @@ import { I, ITEMS } from "../data/items/core";
 import { registerRelic } from "../data/items/equipment";
 import { BIOME_MATS, METALS, metalTierForFloor } from "../data/items/materials";
 import { creatureKey, type Plan } from "../render/creatures";
+import { SKILLS } from "../data/skills";
+import { PASSIVES } from "../data/passives";
 import { mix, sh } from "../render/tiles";
 import { BIOMES, type Biome, type LiquidKind, type ParticleKind } from "./biomes";
 
@@ -163,6 +165,14 @@ function statsFor(role: Role, boss: boolean, floor: number): Stats {
   return out;
 }
 
+/** Signature moves per family (skill ids are r_<family>_<name>). */
+const REGION_SKILLS: Partial<Record<Family, [string, string]>> = {
+  forest: ["thorn", "canopy"], desert: ["scorch", "mirage"], swamp: ["mire", "miasma"], tundra: ["bite", "whiteout"],
+  fungal: ["bloom", "mycel"], volcano: ["magma", "harden"], reef: ["tide", "pearl"], bamboo: ["slash", "step"],
+  crystal: ["prism", "ward"], autumn: ["harvest", "leaves"], ruins: ["curse", "guard"], sakura: ["blade", "petal"],
+  bonewaste: ["rattle", "reassemble"], jungle: ["venom", "ambush"], glacier: ["lance", "shell"],
+};
+
 export const mobId = (n: number, i: number) => `m${n}_${i}`;
 export const bossId = (n: number) => `boss${n}`;
 
@@ -180,9 +190,13 @@ export function registerMonsters(s: FloorSpec) {
     if (tags.includes("spirit")) resist.physical = 0.7;
     const skills = [...new Set([...(PLAN_SKILLS[plan] ?? ["bite"]), ...(role === "caster" || role === "support" ? elSkills.slice(0, 1) : elSkills.slice(1, 2))])];
     if (role === "support") skills.push("regenerate");
+    // one of the region's two signature moves, and the region's trait
+    const regional = `r_${s.fam}_${REGION_SKILLS[s.fam]?.[i % 2] ?? ""}`;
+    if (SKILLS[regional]) skills.push(regional);
+    const trait = PASSIVES[`r_${s.fam}`] ? `r_${s.fam}` : "";
     ENEMIES[id] = {
-      id, name, sprite: creatureKey({ plan, c, c2, seed: hashString(id) }), tags, base: statsFor(role, false, s.n), resist,
-      skills: skills.filter((k) => k), passives: tags.includes("flying") ? ["e_flying"] : role === "tank" && i % 2 ? ["e_thorny"] : [],
+      id, name, sprite: creatureKey({ plan, c, c2, seed: hashString(id), el: s.el, fam: s.fam }), tags, base: statsFor(role, false, s.n), resist,
+      skills: skills.filter((k) => k), passives: [...(tags.includes("flying") ? ["e_flying"] : role === "tank" && i % 2 ? ["e_thorny"] : []), ...(trait && i % 3 !== 2 ? [trait] : [])],
       drops: [
         { item: [mats.hide, mats.fiber, mats.herb, mats.wood, mats.stone, mats.hide][i], ch: 0.6, min: 1, max: 2 },
         { item: sigId(s.n), ch: 0.06 },
@@ -198,10 +212,10 @@ export function registerMonsters(s: FloorSpec) {
   const resist: EnemyDef["resist"] = { [s.el]: 0.3 };
   if (weak) resist[weak] = 1.35;
   ENEMIES[id] = {
-    id, name, sprite: creatureKey({ plan, c, c2, seed: hashString(id), boss: true }), tags: PLAN_TAGS[plan] ?? ["beast"],
+    id, name, sprite: creatureKey({ plan, c, c2, seed: hashString(id), boss: true, el: s.el, fam: s.fam }), tags: PLAN_TAGS[plan] ?? ["beast"],
     base: statsFor(role, true, s.n), resist,
-    skills: [...new Set([...(PLAN_SKILLS[plan] ?? ["bite"]), ...elSkills, s.n % 3 === 0 ? "cataclysm" : s.n % 3 === 1 ? "roar" : "rage"])],
-    passives: ["e_boss", "e_enrage", ...(s.n >= 30 ? ["e_regen"] : [])], boss: true, scale: 2, ai: "smart",
+    skills: [...new Set([...(PLAN_SKILLS[plan] ?? ["bite"]), ...elSkills, ...(REGION_SKILLS[s.fam] ?? []).map((k) => `r_${s.fam}_${k}`).filter((k) => SKILLS[k]), s.n % 3 === 0 ? "cataclysm" : s.n % 3 === 1 ? "roar" : "rage"])],
+    passives: ["e_boss", "e_enrage", ...(PASSIVES[`r_${s.fam}`] ? [`r_${s.fam}`] : []), ...(s.n >= 30 ? ["e_regen"] : [])], boss: true, scale: 2, ai: "smart",
     drops: [
       { item: sigId(s.n), ch: 1, min: 2, max: 4 }, { item: relicId(s.n), ch: 1 }, { item: mats.gem, ch: 1, min: 1, max: 2 },
       { item: "mana_crystal", ch: 1, min: 3, max: 5 }, { item: "monster_core", ch: 1, min: 2, max: 3 },

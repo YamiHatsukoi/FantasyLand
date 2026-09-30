@@ -317,6 +317,38 @@ M("rage", "Phẫn Nộ", "💢", "physical", "support", "self", 6, 5, { self: fx
 M("crushing_blow", "Đòn Nghiền Nát", "🔨", "physical", "physical", "enemy", 8, 2, { power: 2.2, fx: fx({ s: "armorBreak", t: 2 }) });
 M("cataclysm", "Đại Hồng Thủy Ma Lực", "🌋", "arcane", "magical", "enemies", 14, 4, { power: 1.5, sp: sp({ k: "randomElement" }) });
 
+// regional signatures: every family of floors fights in its own way
+M("r_forest_thorn", "Gai Rừng Già", "🌿", "earth", "physical", "enemy", 4, 2, { power: 1.1, fx: fx({ s: "bleed", ch: 0.5, t: 3 }) });
+M("r_forest_canopy", "Tán Lá Che Chở", "🍃", "earth", "support", "allies", 6, 4, { fx: fx({ s: "evade", t: 2 }) });
+M("r_desert_mirage", "Ảo Ảnh Sa Mạc", "🏜️", "fire", "magical", "enemies", 6, 3, { power: 0.5, fx: fx({ s: "blind", ch: 0.45, t: 2 }) });
+M("r_desert_scorch", "Nắng Thiêu", "☀️", "fire", "magical", "enemy", 5, 2, { power: 1.2, fx: fx({ s: "burn", ch: 0.6, t: 3 }) });
+M("r_swamp_mire", "Kéo Xuống Bùn", "🟤", "water", "physical", "enemy", 5, 2, { power: 1, fx: fx({ s: "rooted", ch: 0.6, t: 2 }, { s: "wet", t: 2 }) });
+M("r_swamp_miasma", "Chướng Khí", "🫧", "poison", "magical", "enemies", 7, 3, { power: 0.4, fx: fx({ s: "poison", ch: 0.7, t: 3 }, { s: "weaken", ch: 0.3, t: 2 }) });
+M("r_tundra_bite", "Cắn Tê Cóng", "🥶", "ice", "physical", "enemy", 4, 1, { power: 1.1, fx: fx({ s: "chill", t: 3, st: 2 }) });
+M("r_tundra_whiteout", "Bão Tuyết Trắng Xoá", "🌨️", "ice", "magical", "enemies", 8, 4, { power: 0.6, fx: fx({ s: "slow", ch: 0.6, t: 2 }, { s: "chill", ch: 0.6, t: 2 }) });
+M("r_fungal_bloom", "Nở Bung Bào Tử", "🍄", "poison", "magical", "enemies", 7, 3, { power: 0.3, fx: fx({ s: "confuse", ch: 0.2, t: 1 }, { s: "poison", ch: 0.6, t: 3 }) });
+M("r_fungal_mycel", "Mạng Nấm Hồi Sinh", "🕸️", "poison", "support", "allies", 8, 5, { heal: 0.5, fx: fx({ s: "regen", t: 3, p: 0.2 }) });
+M("r_volcano_magma", "Phun Dung Nham", "🌋", "fire", "magical", "enemies", 9, 3, { power: 0.9, fx: fx({ s: "burn", ch: 0.7, t: 3 }) });
+M("r_volcano_harden", "Nham Thạch Hoá", "🪨", "earth", "support", "self", 5, 4, { self: fx({ s: "defUp", t: 3 }, { s: "thorns", t: 3 }) });
+M("r_reef_tide", "Sóng Ngầm", "🌊", "water", "magical", "enemies", 7, 3, { power: 0.7, fx: fx({ s: "wet", t: 2 }, { s: "slow", ch: 0.3, t: 2 }) });
+M("r_reef_pearl", "Ngọc Trai Hộ Thân", "🫧", "water", "support", "ally", 6, 4, { fx: fx({ s: "shield", t: 3, p: 0.8 }) });
+M("r_bamboo_slash", "Trúc Phong Trảm", "🎋", "wind", "physical", "enemy", 4, 1, { power: 0.55, hits: 3 });
+M("r_bamboo_step", "Bộ Pháp Trúc Lâm", "💨", "wind", "support", "self", 4, 4, { self: fx({ s: "haste", t: 2 }, { s: "evade", t: 1 }) });
+M("r_crystal_prism", "Tia Lăng Kính", "🔷", "arcane", "magical", "enemy", 6, 2, { power: 1.3, sp: sp({ k: "randomElement" }) });
+M("r_crystal_ward", "Kết Giới Pha Lê", "💠", "arcane", "support", "allies", 8, 5, { fx: fx({ s: "barrier", t: 2 }) });
+M("r_autumn_leaves", "Lá Thu Cuốn Xoáy", "🍂", "wind", "magical", "enemies", 6, 3, { power: 0.6, fx: fx({ s: "blind", ch: 0.3, t: 2 }) });
+M("r_autumn_harvest", "Mùa Gặt", "🌾", "earth", "physical", "enemy", 6, 3, { power: 1.4, sp: sp({ k: "execute", below: 0.3, mult: 1.8 }) });
+M("r_ruins_curse", "Lời Nguyền Cổ Tích", "🏛️", "dark", "magical", "enemy", 6, 3, { power: 0.8, fx: fx({ s: "silence", ch: 0.4, t: 1 }, { s: "curse", t: 3 }) });
+M("r_ruins_guard", "Lính Gác Ngàn Năm", "🛡️", "physical", "support", "allies", 7, 5, { fx: fx({ s: "defUp", t: 2 }, { s: "taunt", ch: 0.5, t: 1 }) });
+M("r_sakura_petal", "Mưa Cánh Hoa", "🌸", "wind", "magical", "enemies", 6, 3, { power: 0.5, fx: fx({ s: "sleep", ch: 0.2, t: 1 }) });
+M("r_sakura_blade", "Kiếm Hoa Đào", "🗡️", "physical", "physical", "enemy", 5, 2, { power: 1.4, fx: fx({ s: "bleed", ch: 0.4, t: 2 }) });
+M("r_bone_rattle", "Tiếng Xương Rền", "💀", "dark", "magical", "enemies", 6, 3, { power: 0.4, fx: fx({ s: "weaken", ch: 0.5, t: 2 }) });
+M("r_bone_reassemble", "Ráp Xương", "🦴", "dark", "support", "self", 6, 4, { heal: 1.4 });
+M("r_jungle_venom", "Nọc Rừng Rậm", "🐍", "poison", "physical", "enemy", 4, 1, { power: 0.9, fx: fx({ s: "poison", t: 3, st: 2 }) });
+M("r_jungle_ambush", "Phục Kích", "🌴", "physical", "physical", "enemy", 6, 3, { power: 1.8, fx: fx({ s: "vulnerable", ch: 0.5, t: 2 }) });
+M("r_glacier_lance", "Thương Băng Hà", "🧊", "ice", "magical", "enemy", 6, 2, { power: 1.4, fx: fx({ s: "frozen", ch: 0.2, t: 1 }) });
+M("r_glacier_shell", "Vỏ Băng Vĩnh Cửu", "❄️", "ice", "support", "self", 5, 4, { self: fx({ s: "shield", t: 3, p: 1 }, { s: "defUp", t: 2 }) });
+
 export const SKILLS: Record<string, Skill> = Object.fromEntries(list.map((s) => [s.id, s]));
 export const PLAYER_SKILLS = list.filter((s) => !s.enemy && s.tier > 0);
 

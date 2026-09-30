@@ -206,3 +206,54 @@ describe("balance smoke tests", () => {
     expect(rate).toBeLessThan(0.98);
   });
 });
+
+describe("elites and boss tricks", () => {
+  it("an elite is much tougher, carries affixes, and a volatile one explodes", async () => {
+    const { makeElite, isElitePack, eliteChance } = await import("../src/combat/elite");
+    const a = dummy("ally", "a");
+    const e = dummy("enemy", "e");
+    const b = new Battle([a], [e], 3);
+    makeElite(b, e, 30, 7);
+    expect(e.name.startsWith("★")).toBe(true);
+    expect(e.elite!.length).toBe(2);
+    expect(e.hp).toBeGreaterThan(2000);
+    e.elite = ["volatile"];
+    const hp0 = a.hp;
+    b.damage(e, 1e9, "physical", {});
+    expect(a.hp).toBeLessThan(hp0);
+    expect(eliteChance(1)).toBe(0);
+    let n = 0;
+    for (let i = 0; i < 2000; i++) if (isElitePack(42, `monster_${i}`, 40)) n++;
+    expect(n / 2000).toBeGreaterThan(0.05);
+    expect(n / 2000).toBeLessThan(0.2);
+  });
+
+  it("boss tricks: summons at 60%, the countdown hits everyone, rebirth once", async () => {
+    const { mechForFloor, MECHS } = await import("../src/combat/bossMech");
+    const mk = () => { const a = dummy("ally", "a"); const boss = dummy("enemy", "boss", { boss: true, enemyId: "x" }); return { a, boss, b: new Battle([a], [boss], 5) }; };
+    // summon
+    let { a, boss, b } = mk();
+    b.spawner = (id, lvl, idx) => dummy("enemy", `m${idx}`, { enemyId: id, level: lvl });
+    b.initBoss(boss, "summon", "mob");
+    b.damage(boss, 450, "physical", {});
+    expect(b.enemies.length).toBe(2);
+    expect(b.drainEvents().some((e) => e.t === "spawn")).toBe(true);
+    // countdown: five boss turns later the whole party is hit
+    ({ a, boss, b } = mk());
+    b.initBoss(boss, "countdown");
+    const hp0 = a.hp;
+    for (let i = 0; i < 5; i++) (b as unknown as { startTurn(u: Unit): boolean }).startTurn(boss);
+    expect(a.hp).toBeLessThan(hp0 * 0.6);
+    // rebirth
+    ({ a, boss, b } = mk());
+    b.initBoss(boss, "rebirth");
+    b.damage(boss, 1e9, "physical", {});
+    expect(boss.hp).toBeGreaterThan(0);
+    b.damage(boss, 1e9, "physical", {});
+    expect(boss.hp).toBe(0);
+    // every floor has a trick, and neighbours differ
+    for (let n = 2; n <= 100; n++) expect(mechForFloor(n).id, `floor ${n}`).not.toBe(mechForFloor(n - 1).id);
+    expect(new Set(Array.from({ length: 100 }, (_, i) => mechForFloor(i + 1).id)).size).toBeGreaterThanOrEqual(MECHS.length - 2);
+    void a;
+  });
+});

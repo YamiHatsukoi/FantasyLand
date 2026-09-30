@@ -656,3 +656,38 @@ img.iicon.lg { width: 48px; height: 48px; }
   .arena .plate { width: 104px; padding: 3px 5px 4px; }
 }
 .btn.danger { background: #5a1f1f; border-color: #c85a5a; color: #ffd8d8; }
+/* elites */
+.arena .fighter.elite .plate { border-color: #ffd23a; box-shadow: 0 0 10px rgba(255,210,58,.45), 0 3px 8px rgba(0,0,0,.4); }
+.arena .fighter.elite .pl-name span { color: #ffd23a; }
+.arena .fighter.elite .body img { filter: drop-shadow(0 0 8px rgba(255,200,40,.9)) drop-shadow(0 4px 3px rgba(0,0,0,.45)); }
+.affixes { display: flex; flex-wrap: wrap; gap: 3px; }
+.affix { font-size: 10px; padding: 1px 5px; border-radius: 6px; background: rgba(120, 80, 10, .55); border: 1px solid #c8962a; color: #ffe8a8; white-space: nowrap; }
+@media (max-width: 759px) { .affix { font-size: 8px; padding: 0 3px; } }
+.affix.mech { background: rgba(110, 20, 20, .6); border-color: #e05a4a; color: #ffd0c8; }
+.arena .fighter.gone { display: none; }
+.arena .fighter.arrive .body { animation: arrive .55s ease-out; }
+@keyframes arrive { 0% { opacity: 0; transform: translateY(-40px) scale(.6); } 70% { opacity: 1; transform: translateY(4px) scale(1.05); } }
+/* bigger, readable gauge numbers */
+.cb-track { height: 26px; border-radius: 6px; }
+.cbar.mp .cb-track { height: 18px; }
+.cb-num { font: 800 20px/1 "Be Vietnam Pro", system-ui, sans-serif; letter-spacing: .3px; text-shadow: 0 2px 0 #000, 2px 0 0 #000, -2px 0 0 #000, 0 -2px 0 #000, 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; }
+.cbar.mp .cb-num { font-size: 14px; display: flex; }
+.cbar .cb-tag { font-size: 13px; width: 26px; }
+.arena .plate { width: clamp(150px, 16vw, 210px); }
+.arena .fighter.enemy.boss .cb-track { height: 30px; }
+.arena .fighter.enemy.boss .cb-num { font-size: 22px; }
+@media (max-width: 759px) {
+  .cb-track { height: 18px; }
+  .cbar.mp .cb-track { height: 12px; }
+  .cb-num { font-size: 14px; }
+  .cbar.mp .cb-num { display: flex; font-size: 10px; }
+  .cbar .cb-tag { font-size: 9px; width: 16px; }
+  .arena .plate { width: 118px; }
+  .arena .fighter.enemy.boss .cb-track { height: 20px; }
+  .arena .fighter.enemy.boss .cb-num { font-size: 15px; }
+}
+@media (max-width: 759px) {
+  .arena .fighter.escort { --sz: clamp(34px, 6vh, 56px); }
+  .arena .fighter.escort .plate { width: 104px; }
+  .arena .fighter.escort .statuses { display: none; }
+}

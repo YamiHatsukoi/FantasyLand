@@ -165,6 +165,17 @@ export interface Unit {
   /** Bosses: gathering power; the next action hits much harder unless they are broken first. */
   charged?: boolean;
   chargeCd?: number;
+  /** Elite affix ids (see combat/elite.ts). */
+  elite?: string[];
+  /** Boss signature mechanic (see combat/bossMech.ts) and its bookkeeping. */
+  mech?: string;
+  mechT?: number;
+  mechCount?: number;
+  mechLow?: string[];
+  mechUsed?: boolean;
+  /** Enemy id the boss calls in as reinforcements; set on units it summoned. */
+  minion?: string;
+  minionOf?: string;
 }
 
 export interface Intent {
@@ -190,4 +201,5 @@ export type BattleEvent =
   | { t: "recover"; uid: string }
   | { t: "boost"; uid: string; n: number }
   | { t: "charge"; uid: string }
-  | { t: "scan"; uid: string; el: Element };
+  | { t: "scan"; uid: string; el: Element }
+  | { t: "spawn"; uid: string };

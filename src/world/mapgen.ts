@@ -227,12 +227,13 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
       const p = near(start.x + dx, start.y + dy, 1, 1);
       if (p) place({ kind, x: p.x, y: p.y, sprite, ref: kind === "node" ? biome.nodes.find((n) => n.node === sprite)?.item ?? biome.nodes[0].item : undefined });
     }
-    const m = near(start.x + 9, start.y, 1, 1);
+    const m = near(start.x + 14, start.y + 3, 1, 1);
     if (m) place({ kind: "monster", x: m.x, y: m.y, sprite: "", group: [def.enemies[0]], level: 1 });
   }
   const NEAR_START = new Set(def.n === 1 ? ["f1_lyra", "f1_whisper"] : []);
   for (const ev of def.events) {
-    const c = NEAR_START.has(ev.id) ? { x: start.x + (ev.id === "f1_lyra" ? 5 : 11), y: start.y + (ev.id === "f1_lyra" ? -1 : 3) } : centers[ev.region % centers.length];
+    // Lyra waits a short walk from the portal (twice as far as she first stood)
+    const c = NEAR_START.has(ev.id) ? { x: start.x + (ev.id === "f1_lyra" ? 10 : 11), y: start.y + (ev.id === "f1_lyra" ? -2 : 4) } : centers[ev.region % centers.length];
     const p = (NEAR_START.has(ev.id) ? near(c.x, c.y, 1, 1) : near(c.x, c.y, 3)) ?? randomSpot(6);
     if (p) place({ kind: "event", x: p.x, y: p.y, sprite: "marker", ref: ev.id });
   }

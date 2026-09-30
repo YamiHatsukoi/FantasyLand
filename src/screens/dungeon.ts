@@ -25,6 +25,7 @@ import { openSettlement, openShop } from "./settlement";
 import { decodeFog, encodeFog, findPath, generateFloor, type FloorMap, type MapEntity } from "../world/mapgen";
 import { confirmBox, h, nn, openModal, toast, topModalOpen } from "../ui/dom";
 import { runBattle, type BattleOutcome } from "./combat";
+import { isElitePack } from "../combat/elite";
 import { openJournal, openMenu, partyMini, saveDot, showBanner } from "./common";
 import { openInventory, setFieldSpecial } from "./inventory";
 import { openParty } from "./party";
@@ -387,14 +388,15 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   window.addEventListener("keyup", onKey);
 
   // ------------------------------------------------------------ interactions
-  const battle = (group: string[], level: number, opts: Partial<BattleSpec> = {}): Promise<BattleOutcome> =>
-    runBattle({ enemies: group.map((id) => ({ id, level })), floor: floorN, biome: def.biome, enemyFx: opts.enemyFx, noFlee: opts.noFlee });
+  const battle = (group: string[], level: number, opts: Partial<BattleSpec> & { elite?: boolean } = {}): Promise<BattleOutcome> =>
+    runBattle({ enemies: group.map((id) => ({ id, level })), floor: floorN, biome: def.biome, enemyFx: opts.enemyFx, noFlee: opts.noFlee, elite: opts.elite, seed: fs.seed });
+  const elite = (e: MapEntity) => e.kind === "monster" && isElitePack(fs.seed, e.id, floorN);
 
   async function fightMonster(m: (typeof ents)[number], ambush: boolean) {
     if (busy || destroyed) return;
     busy = true;
     player.path = [];
-    const out = await battle(m.group!, m.level!, ambush ? { enemyFx: [{ s: "slow", t: 1 }] } : {});
+    const out = await battle(m.group!, m.level!, { ...(ambush ? { enemyFx: [{ s: "slow" as const, t: 1 }] } : {}), elite: elite(m) });
     busy = false;
     if (out === "win") ex.done.push(m.id);
     else if (out === "flee") m.stun = 5;
@@ -738,7 +740,24 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         c.ellipse(view.sx(e.px) + TL / 2, view.sy(e.py) + TL * 0.92, TL * 0.3, TL * 0.09, 0, 0, Math.PI * 2);
         c.fill();
         const small = parseCreature(ed.sprite);
+        const isElite = elite(e);
+        if (isElite) {
+          // golden aura and a star: an elite leads this pack
+          const pulse = 0.5 + Math.sin(t / 220) * 0.2;
+          const cx = view.sx(e.px) + TL / 2, cy = view.sy(e.py) + TL * 0.6;
+          const gr = c.createRadialGradient(cx, cy, TL * 0.1, cx, cy, TL * 0.75);
+          gr.addColorStop(0, `rgba(255,210,60,${0.45 * pulse})`);
+          gr.addColorStop(1, "rgba(255,160,20,0)");
+          c.fillStyle = gr;
+          c.fillRect(cx - TL, cy - TL, TL * 2, TL * 2);
+        }
         view.img(small ? creatureSmall(small) : spriteCanvas(ed.sprite, ed.palette), e.px, e.py, { dy: bob(e.x) - 0.05, flip: player.x < e.x });
+        if (isElite) {
+          c.font = `${Math.round(TL * 0.34)}px sans-serif`;
+          c.textAlign = "center";
+          c.fillText("⭐", view.sx(e.px) + TL / 2, view.sy(e.py) - TL * 0.12 + Math.sin(t / 300) * 2);
+          c.textAlign = "start";
+        }
         if (e.group!.length > 1) {
           c.font = `bold ${Math.round(view.tile * 0.28)}px sans-serif`;
           c.fillStyle = "#fff";
