@@ -1,4 +1,5 @@
 import { Rng, hashString } from "../core/rng";
+import { hairDef, portraitBack, portraitFront, spriteBack, spriteFront } from "./hair";
 import { hs, outline } from "./palette";
 
 /**
@@ -7,7 +8,7 @@ import { hs, outline } from "./palette";
  * detailed 32x32 portrait bust for menus and dialogue.
  */
 
-export type HairStyle = "short" | "spiky" | "long" | "ponytail" | "bob" | "bun" | "braids" | "mohawk" | "bald" | "curly";
+export type HairStyle = string; // an id from HAIR_STYLES (render/hair.ts)
 export type Outfit = "tunic" | "robe" | "armor" | "vest" | "dress" | "cloak" | "uniform" | "jacket" | "apron";
 export type Hat = "none" | "wizard" | "witch" | "hood" | "helmet" | "circlet" | "bandana" | "cap" | "mushroom" | "straw" | "crown" | "flower";
 export type Ears = "none" | "elf" | "beast" | "fin";
@@ -55,6 +56,16 @@ const PRESETS: Record<string, Partial<Look>> = {
   hero_necromancer: { skin: "#e0dcd8", hair: "#e8e8f0", hairStyle: "long", eyes: "#8ad8ff", top: "#2a2030", accent: "#8ad8ff", pants: "#1a1420", outfit: "robe", hat: "hood", hatCol: "#1a1420" },
   hero_druid: { hair: "#6a8a3a", hairStyle: "braids", top: "#6a8a3a", accent: "#c8a060", pants: "#5a4a2a", outfit: "cloak", hat: "flower", hatCol: "#f090b8", cape: "#4a6a2a" },
   hero_spellblade: { hair: "#3a4a8a", hairStyle: "ponytail", top: "#4a3a6a", accent: "#8ad8ff", pants: "#2a2a3a", outfit: "jacket", cape: "#6a3aa0" },
+  hero_samurai: { hair: "#1a1a24", hairStyle: "ponytail", top: "#3a4a7a", accent: "#e8e0d0", pants: "#2a2a3a", outfit: "uniform", cape: "#8a2a3a" },
+  hero_ninja: { hair: "#2a2a34", hairStyle: "spiky", top: "#2a2a3a", accent: "#c83a3a", pants: "#1a1a24", outfit: "vest", hat: "bandana", hatCol: "#2a2a3a" },
+  hero_alchemist: { hair: "#c8904a", hairStyle: "curly", top: "#6a8a4a", accent: "#e0c060", pants: "#4a3a2a", outfit: "apron", hat: "cap", hatCol: "#4a5a3a" },
+  hero_summoner: { hair: "#e0d8f8", hairStyle: "long", top: "#4a3a8a", accent: "#e8c040", pants: "#2a2050", outfit: "robe", hat: "circlet", hatCol: "#b08aff", fem: true },
+  hero_berserker: { hair: "#c8401a", hairStyle: "mohawk", top: "#7a5a3a", accent: "#c83a3a", pants: "#4a3020", outfit: "vest", beard: true },
+  hero_shaman: { hair: "#3a2a1a", hairStyle: "braids", top: "#8a6a3a", accent: "#3ab0a0", pants: "#5a4a2a", outfit: "cloak", hat: "flower", hatCol: "#e8a040", cape: "#6a4a2a" },
+  hero_chronomancer: { hair: "#8ab0d8", hairStyle: "bob", top: "#2a3a5a", accent: "#e8c040", pants: "#1a2a40", outfit: "robe", hat: "wizard", hatCol: "#2a3a6a", eyes: "#e8c040" },
+  hero_beastmaster: { hair: "#6a4a2a", hairStyle: "curly", top: "#6a5a3a", accent: "#a0a0a0", pants: "#4a3a2a", outfit: "cloak", hat: "hood", hatCol: "#5a4a3a", cape: "#8a6a4a", ears: "beast" },
+  hero_dancer: { hair: "#e04a6a", hairStyle: "ponytail", top: "#e04a6a", accent: "#f0d060", pants: "#8a2a4a", outfit: "dress", hat: "flower", hatCol: "#f0d060", fem: true },
+  hero_astromancer: { hair: "#f0e8ff", hairStyle: "long", top: "#1a2050", accent: "#f0e060", pants: "#10142a", outfit: "robe", hat: "wizard", hatCol: "#1a2050", eyes: "#8ad8ff" },
   hero_dragoon: { hair: "#8a2a2a", hairStyle: "spiky", top: "#6a2a2a", accent: "#e0a040", pants: "#3a2a2a", outfit: "armor", hat: "helmet", hatCol: "#8a3a3a" },
   lyra: { skin: "#f5d8bc", hair: "#e4ecf2", hairStyle: "long", eyes: "#3a8a5a", top: "#2f7a4a", accent: "#9a6a3a", pants: "#2a4a32", outfit: "cloak", ears: "elf", cape: "#5a4a2a", fem: true },
   bram: { skin: "#efe0c0", hair: "#b0763a", hairStyle: "short", top: "#c8a878", accent: "#7a4a22", pants: "#6a4a2a", outfit: "tunic", hat: "mushroom", hatCol: "#d83a2a" },
@@ -68,7 +79,8 @@ const PRESETS: Record<string, Partial<Look>> = {
 
 export const isPerson = (id: string) => id in PRESETS;
 
-const STYLES: HairStyle[] = ["short", "spiky", "long", "ponytail", "bob", "bun", "braids", "curly", "mohawk", "short"];
+const STYLES: HairStyle[] = ["short", "spiky", "messy", "undercut", "curtain", "hero", "wolf", "slick", "crew", "samurai", "man_bun", "mullet", "curly", "emo", "bedhead", "shaggy", "low_pony"];
+const FEM_STYLES: HairStyle[] = ["long", "bob", "hime", "ponytail", "twintails", "side_pony", "bun", "odango", "braids", "braid_side", "wavy_long", "long_side", "drills", "low_twintails", "pixie", "layered", "half_up", "ribbon", "curly_long", "very_long"];
 const EYES = ["#2a3a6a", "#3a2a1a", "#2a6a3a", "#6a3aa0", "#1a1a1a", "#3a6ab0"];
 
 /** Builds a look from a sprite id plus the palette overrides stored on characters / NPCs. */
@@ -87,7 +99,7 @@ export function lookFor(id: string, pal?: Record<string, string>): Look {
   if (pal.t) L.hatCol = pal.t;
   if (generic || id === "villager") {
     L.fem = pal.g ? pal.g === "f" : r.chance(0.5);
-    L.hairStyle = L.fem ? r.pick<HairStyle>(["long", "ponytail", "bob", "bun", "braids", "curly"]) : r.pick(STYLES);
+    L.hairStyle = L.fem ? r.pick(FEM_STYLES) : r.pick(STYLES);
     L.eyes = r.pick(EYES);
     L.beard = !L.fem && r.chance(0.2);
   } else if (pal.g) L.fem = pal.g === "f";
@@ -396,12 +408,9 @@ function drawHeld(g: G, w: Held, dir: Dir, frame: number, behind: boolean, off: 
 function drawHead(g: G, L: Look, dir: Dir, bob: number) {
   const top = 3 + bob; // head top
   const skin = L.skin, sk2 = hs(skin, -0.18);
-  const hair = L.hair, hl = hs(hair, 0.28), hd = hs(hair, -0.25);
+  const hair = L.hair, hd = hs(hair, -0.25);
   const style = L.hairStyle;
-  // long hair behind the head
-  if (["long", "braids", "curly"].includes(style) && dir === 0) { const h = style === "long" ? 9 : 6; g.rect(3, top + 5, 2, h, hd); g.rect(11, top + 5, 2, h, hd); }
-  if (["long", "braids", "curly"].includes(style) && dir === 1) g.rect(3, top + 5, 10, style === "long" ? 9 : 6, hd);
-  if (["long", "braids"].includes(style) && dir === 2) g.rect(3, top + 5, 5, 9, hd);
+  spriteBack(g, hairDef(style), hair, L.accent, dir, top);
   // face
   if (dir === 2) {
     g.rect(5, top + 3, 8, 8, skin); g.rect(6, top + 11, 5, 1, sk2); g.px(13, top + 7, skin);
@@ -411,27 +420,6 @@ function drawHead(g: G, L: Look, dir: Dir, bob: number) {
   // ears
   if (L.ears === "elf") { if (dir !== 2) { g.px(2, top + 6, skin); g.px(1, top + 5, skin); g.px(13, top + 6, sk2); g.px(14, top + 5, sk2); } else g.px(4, top + 5, skin); }
   if (L.ears === "fin") { if (dir !== 2) { g.rect(1, top + 5, 2, 3, "#5ab0c8"); g.rect(13, top + 5, 2, 3, "#5ab0c8"); } }
-  // hair
-  if (style !== "bald") {
-    if (dir === 1) {
-      g.rect(3, top + 1, 10, 10, hair); g.rect(4, top, 8, 1, hair); g.rect(4, top + 1, 3, 2, hl); g.rect(3, top + 8, 10, 3, hd);
-    } else if (dir === 2) {
-      g.rect(4, top + 1, 8, 3, hair); g.rect(5, top, 6, 1, hair); g.rect(3, top + 2, 4, 7, hair); g.rect(4, top + 1, 3, 1, hl);
-      g.rect(10, top + 3, 3, 1, hair);
-    } else {
-      g.rect(4, top, 8, 1, hair); g.rect(3, top + 1, 10, 3, hair); g.rect(3, top + 4, 2, 3, hair); g.rect(11, top + 4, 2, 3, hd);
-      g.rect(5, top + 1, 3, 1, hl); g.rect(4, top + 4, 1, 1, hl);
-      // fringe
-      if (style === "bob" || style === "long" || style === "braids") g.rect(5, top + 4, 6, 1, hair);
-      else { g.px(6, top + 4, hair); g.px(9, top + 4, hair); }
-    }
-    if (style === "spiky") for (let x = 3; x <= 12; x += 2) g.px(x, top - 1, hair);
-    if (style === "mohawk") g.rect(7, top - 2, 2, 3, hair);
-    if (style === "bun") g.rect(6, top - 2, 4, 2, hair);
-    if (style === "ponytail" && dir !== 0) { const x = dir === 2 ? 2 : 7; g.rect(x, top + 5, 2, 7, hair); g.px(x, top + 5, hl); }
-    if (style === "braids" && dir === 0) { g.rect(2, top + 8, 2, 7, hair); g.rect(12, top + 8, 2, 7, hd); g.px(2, top + 14, L.accent); g.px(13, top + 14, L.accent); }
-    if (style === "curly") for (const [x, y] of [[3, 3], [12, 3], [2, 6], [13, 6]]) g.px(x, top + y, hl);
-  }
   // face features: Stardew-like eyes (white + iris, dark lash on top), blush at the sides, a small smile below
   const lip = mixHex(hs(skin, -0.38), "#c0504a", 0.45);
   if (dir === 0) {
@@ -454,6 +442,7 @@ function drawHead(g: G, L: Look, dir: Dir, bob: number) {
     if (L.beard) g.rect(9, top + 9, 4, 3, L.hair);
     else { g.px(10, top + 8, mixHex(skin, "#e86a6a", 0.35)); g.px(12, top + 9, lip); }
   }
+  spriteFront(g, hairDef(style), hair, L.accent, dir, top);
   if (L.ears === "beast") { g.rect(3, top - 2, 3, 3, hair); g.rect(10, top - 2, 3, 3, hair); g.px(4, top - 1, "#f0b0b0"); g.px(11, top - 1, "#f0b0b0"); }
   drawHat(g, L, dir, top);
 }
@@ -531,8 +520,10 @@ export function portraitCanvas(id: string, pal?: Record<string, string>): HTMLCa
   const L = lookFor(id, pal);
   const g = new G(32, 32);
   const skin = L.skin, sl = hs(skin, 0.15), sd = hs(skin, -0.2);
-  const hair = L.hair, hl = hs(hair, 0.3), hd = hs(hair, -0.28);
+  const hair = L.hair, hd = hs(hair, -0.28);
   const top = L.top;
+  // hair that falls behind the shoulders
+  portraitBack(g, hairDef(L.hairStyle), hair, L.accent);
   // shoulders / clothes
   for (let y = 24; y < 32; y++) { const w = 10 + (y - 24) * 1.6; g.span(Math.round(16 - w), Math.round(15 + w), y, top); }
   if (L.cape) for (let y = 25; y < 32; y++) { g.px(Math.round(6 - (y - 25) * 0.5), y, L.cape); g.px(Math.round(25 + (y - 25) * 0.5), y, hs(L.cape, -0.2)); }
@@ -546,7 +537,6 @@ export function portraitCanvas(id: string, pal?: Record<string, string>): HTMLCa
   // neck
   g.rect(13, 21, 6, 3, sd);
   // long hair behind
-  if (["long", "braids", "curly"].includes(L.hairStyle)) { const h = L.hairStyle === "long" ? 18 : 13; g.rect(5, 10, 5, h, hd); g.rect(22, 10, 5, h, hd); }
   // head
   for (let y = 5; y < 23; y++) {
     const t = (y - 5) / 17;
@@ -574,20 +564,7 @@ export function portraitCanvas(id: string, pal?: Record<string, string>): HTMLCa
   g.rect(8, 18, 3, 1, mixHex(skin, "#e86a6a", 0.4)); g.rect(21, 18, 3, 1, mixHex(skin, "#e86a6a", 0.4));
   if (L.beard) { for (let y = 18; y < 25; y++) { const w = y < 21 ? 8 : 8 - (y - 21) * 1.5; g.span(Math.round(16 - w), Math.round(15 + w), y, hair); } g.rect(14, 20, 4, 1, lipP); }
   else { g.px(13, 19, lipP); g.rect(14, 20, 4, 1, lipP); g.px(18, 19, lipP); }
-  // hair
-  if (L.hairStyle !== "bald") {
-    for (let y = 2; y < 11; y++) { const w = y < 4 ? 6 + (y - 2) * 2.5 : 11; g.span(Math.round(16 - w), Math.round(15 + w), y, hair); }
-    g.rect(5, 8, 3, 8, hair); g.rect(24, 8, 3, 8, hd);
-    for (let i = 0; i < 5; i++) g.px(9 + i * 3, 10 + (i % 2), hair);
-    g.rect(10, 3, 6, 1, hl); g.rect(8, 4, 3, 1, hl);
-    if (L.hairStyle === "spiky") for (let x = 7; x < 26; x += 3) { g.px(x, 1, hair); g.px(x + 1, 0, hair); }
-    if (L.hairStyle === "bob" || L.hairStyle === "long") { g.rect(5, 10, 3, 10, hair); g.rect(24, 10, 3, 10, hd); g.rect(9, 9, 14, 2, hair); }
-    if (L.hairStyle === "bun") g.rect(12, 0, 8, 3, hair);
-    if (L.hairStyle === "mohawk") g.rect(14, 0, 4, 3, hair);
-    if (L.hairStyle === "ponytail") g.rect(25, 12, 3, 10, hd);
-    if (L.hairStyle === "braids") { g.rect(4, 18, 3, 12, hair); g.rect(25, 18, 3, 12, hd); }
-    if (L.hairStyle === "curly") for (const [x, y] of [[6, 5], [25, 5], [4, 9], [27, 9], [5, 14], [26, 14]]) g.rect(x, y, 2, 2, hl);
-  }
+  portraitFront(g, hairDef(L.hairStyle), hair, L.accent);
   if (L.ears === "beast") { g.rect(6, 0, 5, 5, hair); g.rect(21, 0, 5, 5, hair); g.rect(7, 1, 3, 3, "#f0b0b0"); g.rect(22, 1, 3, 3, "#f0b0b0"); }
   // hats (bust scale)
   const c = L.hatCol, cl = hs(c, 0.28), cd = hs(c, -0.25);

@@ -10,7 +10,7 @@ import { isPerson, personCanvas, type Dir } from "../render/people";
 import { T, tileSet } from "../render/tiles";
 import { BIOMES } from "../world/biomes";
 import { findPath } from "../world/mapgen";
-import { SPROUT, SZ_H, SZ_W, buildLimitReason, buildingAt, canPlace, inTerritory, territory } from "../world/sanctuary";
+import { SPROUT, SZ_H, SZ_W, blockerAt, buildLimitReason, buildingAt, canPlace, inTerritory, territory } from "../world/sanctuary";
 import { h, openModal, toast, topModalOpen } from "../ui/dom";
 import { costView, openBuilding, setMoveHook, showReport } from "./buildingPanels";
 import { WEATHER, advanceDay, cropStage, ensureSlots, housing, isReady, population, rankName, rankOf } from "../world/town";
@@ -228,7 +228,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   }
 
   // ------------------------------------------------------------ input
-  const walkable = (x: number, y: number) => inTerritory(g, x, y) && !buildingAt(g, x, y) && !(x === SPROUT.x && y === SPROUT.y);
+  const walkable = (x: number, y: number) => inTerritory(g, x, y) && !blockerAt(g, x, y) && !(x === SPROUT.x && y === SPROUT.y);
 
   view.onTap = (tx, ty) => {
     if (placing) {
@@ -241,7 +241,8 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     const agent = sim.agentAt(tx, ty);
     if (agent) return talkTo(agent.id);
     const b = buildingAt(g, tx, ty);
-    if (b) return openB(b);
+    // flat decor: walk onto it; tap it again while standing there to manage it
+    if (b && (!BUILDINGS[b.type].walkable || (hero.x === tx && hero.y === ty))) return openB(b);
     if (!walkable(tx, ty)) return;
     const path = findPath({ w: SZ_W, h: SZ_H }, walkable, hero.x, hero.y, tx, ty, 3000);
     if (path) hero.path = path;
@@ -321,7 +322,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     for (const b of g.buildings) {
       const [bw, bh] = BUILDINGS[b.type].size;
       if (placing?.moving === b) continue;
-      draw.push({ y: b.y + bh, fn: () => {
+      draw.push({ y: BUILDINGS[b.type].walkable ? b.y : b.y + bh, fn: () => {
         view.img(buildingCanvas(b.type, b.level), b.x, b.y - 1, { w: bw, h: bh + 1 });
         if (b.type === "farm" && b.plot?.watered) {
           c.fillStyle = "rgba(20,30,60,0.28)";

@@ -1,6 +1,7 @@
 import { BUILDINGS } from "../data/buildings";
 import { CROPS, getItem } from "../data/items";
 import { iconCanvas } from "./icons";
+import { DECOR_DRAW } from "./decor";
 import { hs, makeCanvas, mix, outline, rgba, type Paint } from "./palette";
 
 /**
@@ -303,6 +304,49 @@ const D: Record<string, Drawer> = {
     for (const x of [1, W - 9]) { p.rect(x, 2, 8, H - 6, "#e8e0d0"); walls(p, x, 6, 8, H - 10, "#e8e0d0", "stone"); roof(p, x - 1, 0, 10, 7, "#d8a830", "tile"); }
     p.rect(W / 2 - 1, 0, 2, 5, "#f2c230"); p.rect(W / 2 + 1, 0, 5, 3, "#c83a3a");
   },
+  orchard: (p, W, H) => {
+    p.rect(1, 18, W - 2, H - 20, "#5aa83a");
+    for (let i = 0; i < 24; i++) p.px(2 + ((i * 37) % (W - 4)), 19 + ((i * 17) % (H - 22)), "#4a9030");
+    for (const [x, y, f] of [[8, 22, "#e8303a"], [24, 20, "#f0902a"], [40, 22, "#e8303a"], [16, 34, "#d8d060"], [32, 34, "#e8303a"]] as const) {
+      p.g.fillStyle = "rgba(20,10,40,.25)"; p.g.beginPath(); p.g.ellipse(x, y + 12, 6, 2, 0, 0, Math.PI * 2); p.g.fill();
+      p.column(x - 1, y + 2, 3, 10, "#7a4a2a"); p.blob(x, y, 7, 6, "#3f8a3a"); p.blob(x - 2, y - 2, 3, 2.5, "#5aaa4a", { outline: false });
+      for (const [dx, dy] of [[-3, 0], [2, -2], [3, 2], [-1, 3]]) { p.px(x + dx, y + dy, f); p.px(x + dx, y + dy - 1, hs(f, 0.4)); }
+    }
+  },
+  windmill: (p, W, H) => {
+    shadowUnder(p, W, H);
+    for (let y = 14; y < H - 3; y++) { const w = 8 + (y - 14) * 0.35; p.rect(W / 2 - w, y, w * 2, 1, y % 3 ? "#e8dcc0" : "#d8c8a8"); }
+    p.rect(W / 2 - 9, H - 4, 18, 2, hs(STONE, -0.1)); door(p, W / 2 - 3, H - 13, DARKWOOD);
+    roof(p, W / 2 - 10, 6, 20, 9, "#8a3a2a");
+    p.g.save(); p.g.translate(W / 2, 14); p.g.rotate(0.35);
+    for (let i = 0; i < 4; i++) { p.g.rotate(Math.PI / 2); p.g.fillStyle = "#7a4a2a"; p.g.fillRect(-1, 0, 2, 14); p.g.fillStyle = "#f4efe6"; p.g.fillRect(1, 3, 4, 10); p.g.fillStyle = "#c8b890"; p.g.fillRect(1, 3, 4, 1); }
+    p.g.restore(); p.blob(W / 2, 14, 2, 2, "#5a3a1e");
+  },
+  fisherhut: (p, W, H) => {
+    p.g.fillStyle = "#4a9ad8"; p.g.fillRect(0, H - 9, W, 8); p.g.fillStyle = "#6ab8f0"; for (let x = 2; x < W; x += 6) p.g.fillRect(x, H - 7, 3, 1);
+    for (const x of [3, W - 5]) p.rect(x, H - 14, 2, 12, DARKWOOD);
+    p.rect(1, H - 15, W - 2, 2, WOOD);
+    p.rect(4, 8, 14, H - 23, WOOD); walls(p, 4, 8, 14, H - 23, WOOD, "log"); roof(p, 2, 1, 18, 8, "#8a6a3a", "thatch"); door(p, 8, H - 23 - 1 + 6, DARKWOOD, 5, 8);
+    p.line(W - 6, 6, W - 2, H - 8, "#c8a878"); p.line(W - 6, 6, W - 10, H - 16, "#8a5a2a", 1);
+  },
+  observatory: (p, W, H) => {
+    shadowUnder(p, W, H);
+    walls(p, 3, 20, W - 6, H - 23, "#b0b0b8", "stone"); foundation(p, 1, H - 4, W - 2, 4);
+    p.g.fillStyle = "#3a4a8a"; p.g.beginPath(); p.g.arc(W / 2, 21, W / 2 - 4, Math.PI, 0); p.g.fill();
+    p.g.fillStyle = "#5a6ab0"; p.g.beginPath(); p.g.arc(W / 2 - 3, 18, 6, Math.PI, 1.5 * Math.PI); p.g.fill();
+    p.rect(W / 2 - 2, 8, 4, 13, "#1a1a2a"); p.line(W / 2, 12, W / 2 + 9, 3, "#c8a040", 2); p.rect(W / 2 + 8, 2, 3, 3, "#e8c860");
+    for (const [x, y] of [[4, 6], [26, 4], [22, 10]]) p.px(x, y, "#fff6a0");
+    door(p, W / 2 - 3, H - 13, DARKWOOD);
+  },
+  treehouse: (p, W, H) => {
+    p.g.fillStyle = "rgba(20,10,40,.28)"; p.g.beginPath(); p.g.ellipse(W / 2, H - 3, 12, 3, 0, 0, Math.PI * 2); p.g.fill();
+    p.column(W / 2 - 3, 20, 7, H - 22, "#7a4a2a");
+    p.blob(W / 2, 12, 15, 11, "#3f8a3a"); p.blob(W / 2 - 6, 9, 6, 5, "#5aaa4a"); p.blob(W / 2 + 7, 14, 6, 5, "#3a7a32");
+    p.rect(8, 16, 16, 10, WOOD); walls(p, 8, 16, 16, 10, WOOD, "wood"); roof(p, 6, 9, 20, 8, "#b84a3a"); windowAt(p, 13, 18, false, true);
+    for (let y = 26; y < H - 3; y += 3) p.rect(W / 2 + 4, y, 5, 1, "#c8a070");
+    p.rect(W / 2 + 4, 26, 1, H - 29, DARKWOOD); p.rect(W / 2 + 8, 26, 1, H - 29, DARKWOOD);
+  },
+  ...DECOR_DRAW,
 };
 
 /** Look of the remaining (shop / housing / service) buildings. */

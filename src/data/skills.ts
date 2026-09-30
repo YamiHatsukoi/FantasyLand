@@ -212,6 +212,67 @@ S("corpse_blast", "Thi Bạo", "💀", "dark", "dark", "magical", "enemies", 3, 
 S("lich_form", "Hoá Thân Vu Yêu", "☠️", "dark", "dark", "support", "self", 5, 30, 6, { self: fx({ s: "magUp", t: 3 }, { s: "lifesteal", t: 3 }, { s: "barrier", t: 2 }) });
 S("elemental_edge", "Nguyên Tố Nhận", "🌀", "sword", "arcane", "physical", "enemy", 4, 20, 2, { power: 1.6, sp: sp({ k: "randomElement" }) });
 
+// ------------------------------------------------------------------ class kits (v3)
+// samurai
+S("iai_slash", "Bạt Kiếm Thuật", "🎴", "sword", "physical", "physical", "enemy", 1, 6, 1, { power: 1.5, fx: fx({ s: "bleed", ch: 0.3, t: 3 }), flavor: "Rút kiếm và chém trong một nhịp thở." });
+S("zen_stance", "Tĩnh Tâm Thế", "☯️", "sword", "physical", "support", "self", 1, 6, 3, { self: fx({ s: "focus", t: 2 }, { s: "counter", t: 2 }) });
+S("moon_slash", "Nguyệt Trảm", "🌙", "sword", "wind", "physical", "enemies", 3, 16, 2, { power: 1, fx: fx({ s: "bleed", ch: 0.4, t: 3 }) });
+S("thousand_petals", "Thiên Hoa Trảm", "🌸", "sword", "physical", "physical", "random", 5, 38, 5, { power: 0.42, hits: 7, fx: fx({ s: "bleed", ch: 0.2, t: 3 }) });
+// ninja
+S("shuriken", "Phi Tiêu", "✴️", "dagger", "physical", "physical", "random", 1, 5, 0, { power: 0.45, hits: 3 });
+S("kawarimi", "Thế Thân Thuật", "🪵", "dagger", "physical", "support", "self", 2, 8, 3, { self: fx({ s: "evade", t: 2 }, { s: "stealth", t: 1 }) });
+S("katon", "Hỏa Độn", "🔥", "dagger", "fire", "magical", "enemies", 2, 14, 2, { power: 0.8, fx: fx({ s: "burn", ch: 0.5, t: 3 }) });
+S("shadow_clone", "Ảnh Phân Thân", "👥", "dark", "dark", "support", "self", 3, 14, 4, { self: fx({ s: "empower", t: 2 }, { s: "evade", t: 2 }, { s: "haste", t: 2 }) });
+S("death_lotus", "Tử Liên Sát", "🪷", "dagger", "dark", "physical", "enemy", 5, 36, 5, { power: 2.1, fx: fx({ s: "poison", t: 3, st: 2 }), sp: sp({ k: "execute", below: 0.35, mult: 2 }) });
+// alchemist
+S("acid_flask", "Bình Axit", "🧪", "poison", "poison", "magical", "enemy", 1, 6, 0, { power: 1, fx: fx({ s: "armorBreak", ch: 0.6, t: 2 }, { s: "poison", ch: 0.4, t: 3 }) });
+S("healing_elixir", "Thuốc Tiên", "⚗️", "water", "water", "support", "ally", 1, 8, 1, { heal: 1.2, fx: fx({ s: "regen", t: 3, p: 0.3 }) });
+S("volatile_mix", "Hỗn Hợp Bất Ổn", "💥", "arcane", "arcane", "magical", "enemies", 3, 18, 2, { power: 0.9, sp: sp({ k: "randomElement" }) });
+S("transmute", "Chuyển Hóa", "🔄", "arcane", "arcane", "magical", "enemy", 3, 14, 3, { power: 0.6, sp: sp({ k: "dispel", n: 2 }, { k: "mpRestore", pct: 0.15 }) });
+S("philosopher_stone", "Đá Hiền Triết", "💎", "arcane", "light", "support", "allies", 5, 40, 6, { heal: 0.6, fx: fx({ s: "atkUp", t: 3 }, { s: "magUp", t: 3 }, { s: "regen", t: 3, p: 0.3 }) });
+// summoner
+S("summon_wolf", "Gọi Sói Linh", "🐺", "nature", "physical", "physical", "random", 1, 8, 1, { power: 0.5, hits: 3, fx: fx({ s: "bleed", ch: 0.25, t: 3 }), flavor: "Ba con sói linh lao ra từ vòng triệu hồi." });
+S("summon_golem", "Gọi Thạch Nhân", "🗿", "earth", "earth", "support", "allies", 2, 14, 3, { fx: fx({ s: "defUp", t: 3 }, { s: "shield", t: 3, p: 0.5 }) });
+S("spirit_link", "Liên Kết Linh Hồn", "🔗", "arcane", "arcane", "support", "allies", 3, 16, 4, { fx: fx({ s: "regen", t: 3, p: 0.35 }, { s: "manaRegen", t: 3 }) });
+S("summon_phoenix", "Gọi Phượng Hoàng", "🦅", "fire", "fire", "magical", "enemies", 4, 30, 4, { power: 1.2, fx: fx({ s: "burn", ch: 0.6, t: 3 }) });
+S("summon_behemoth", "Gọi Cự Thú", "🦣", "earth", "earth", "magical", "enemies", 5, 44, 6, { power: 1.8, fx: fx({ s: "stun", ch: 0.35, t: 1 }) });
+// berserker
+S("frenzy", "Cuồng Nộ", "😡", "axe", "physical", "support", "self", 1, 6, 3, { self: fx({ s: "atkUp", t: 3 }, { s: "berserk", t: 2 }) });
+S("blood_rage", "Huyết Nộ Trảm", "🩸", "axe", "physical", "physical", "enemy", 2, 10, 1, { power: 1.2, sp: sp({ k: "missingHp", mult: 1.2 }) });
+S("reckless_swing", "Chém Liều", "🪓", "axe", "physical", "physical", "enemies", 3, 14, 2, { power: 1.3, sp: sp({ k: "selfDamage", pct: 0.08 }) });
+S("undying", "Bất Tử Ý Chí", "💀", "fist", "physical", "support", "self", 4, 20, 6, { heal: 0.8, self: fx({ s: "shield", t: 3, p: 1 }, { s: "regen", t: 3, p: 0.3 }) });
+S("ragnarok", "Tận Thế", "🌋", "axe", "fire", "physical", "enemies", 5, 40, 5, { power: 2, fx: fx({ s: "burn", ch: 0.5, t: 3 }), sp: sp({ k: "selfDamage", pct: 0.1 }) });
+// shaman
+S("spirit_totem", "Cột Tổ Linh", "🪶", "nature", "earth", "support", "allies", 1, 10, 3, { fx: fx({ s: "regen", t: 3, p: 0.25 }, { s: "manaRegen", t: 3 }) });
+S("thunder_totem", "Cột Sấm", "⚡", "lightning", "lightning", "magical", "enemies", 2, 14, 2, { power: 0.8, fx: fx({ s: "shock", ch: 0.6, t: 3 }) });
+S("frog_hex", "Bùa Hoá Ếch", "🐸", "nature", "arcane", "magical", "enemy", 3, 14, 4, { power: 0.3, fx: fx({ s: "confuse", ch: 0.7, t: 2 }, { s: "weaken", t: 2 }) });
+S("ancestral_call", "Gọi Tổ Tiên", "👣", "nature", "light", "support", "allies", 3, 18, 4, { fx: fx({ s: "atkUp", t: 3 }, { s: "magUp", t: 3 }) });
+S("storm_spirit", "Hồn Bão Tố", "🌩️", "lightning", "lightning", "magical", "enemies", 5, 42, 5, { power: 1.7, fx: fx({ s: "shock", t: 3 }, { s: "wet", ch: 0.5, t: 2 }) });
+// chronomancer
+S("haste_spell", "Gia Tốc", "⏩", "arcane", "arcane", "support", "ally", 1, 8, 2, { fx: fx({ s: "haste", t: 2 }), sp: sp({ k: "advance", amount: 3000 }) });
+S("slow_time", "Làm Chậm Thời Gian", "⏳", "arcane", "arcane", "magical", "enemies", 2, 14, 3, { power: 0.4, fx: fx({ s: "slow", t: 2 }), sp: sp({ k: "delay", amount: 2500 }) });
+S("rewind", "Tua Ngược", "⏪", "light", "light", "support", "ally", 3, 18, 3, { heal: 2, sp: sp({ k: "cleanse", n: 2 }) });
+S("time_bomb", "Bom Thời Gian", "💣", "arcane", "arcane", "magical", "enemy", 3, 16, 3, { power: 0.9, fx: fx({ s: "doom", t: 3 }) });
+S("stop_time", "Ngưng Đọng Thời Gian", "🕰️", "arcane", "ice", "magical", "enemies", 5, 45, 7, { power: 1.1, fx: fx({ s: "stun", ch: 0.6, t: 1 }), self: fx({ s: "haste", t: 2 }) });
+// beastmaster
+S("pack_hunt", "Săn Theo Bầy", "🐾", "nature", "physical", "physical", "random", 1, 6, 0, { power: 0.4, hits: 4 });
+S("bear_roar", "Gầm Gấu", "🐻", "nature", "physical", "support", "enemies", 2, 10, 3, { fx: fx({ s: "weaken", ch: 0.8, t: 2 }, { s: "slow", ch: 0.4, t: 2 }) });
+S("hawk_eye", "Mắt Ưng", "🦅", "bow", "physical", "physical", "enemy", 2, 8, 2, { power: 0.8, fx: fx({ s: "mark", t: 3 }), self: fx({ s: "focus", t: 2 }) });
+S("primal_bond", "Khế Ước Hoang Dã", "🦁", "nature", "physical", "support", "self", 3, 14, 4, { self: fx({ s: "atkUp", t: 3 }, { s: "haste", t: 2 }, { s: "regen", t: 3, p: 0.3 }) });
+S("stampede", "Đàn Thú Giẫm Đạp", "🦬", "nature", "earth", "physical", "enemies", 5, 40, 5, { power: 1.6, fx: fx({ s: "stun", ch: 0.3, t: 1 }) });
+// dancer
+S("sword_dance", "Kiếm Vũ", "💃", "song", "physical", "physical", "random", 1, 6, 0, { power: 0.5, hits: 3 });
+S("tango", "Vũ Điệu Mê Hoặc", "🌹", "song", "arcane", "magical", "enemy", 2, 10, 3, { power: 0.4, fx: fx({ s: "confuse", ch: 0.6, t: 2 }) });
+S("healing_waltz", "Điệu Valse Chữa Lành", "🩰", "song", "water", "support", "allies", 2, 16, 2, { heal: 0.6, fx: fx({ s: "haste", ch: 0.3, t: 1 }) });
+S("flamenco", "Vũ Điệu Lửa", "🔥", "song", "fire", "magical", "enemies", 3, 16, 2, { power: 0.9, fx: fx({ s: "burn", ch: 0.5, t: 3 }) });
+S("last_dance", "Điệu Nhảy Cuối Cùng", "🎭", "song", "light", "support", "allies", 5, 40, 6, { fx: fx({ s: "empower", t: 2 }, { s: "haste", t: 2 }, { s: "evade", t: 2 }) });
+// astromancer
+S("star_fall", "Sao Rơi", "🌠", "light", "light", "magical", "random", 1, 7, 0, { power: 0.45, hits: 3 });
+S("moonbeam", "Ánh Trăng", "🌙", "light", "light", "magical", "enemy", 2, 10, 1, { power: 1.2, fx: fx({ s: "blind", ch: 0.5, t: 2 }) });
+S("constellation", "Chòm Sao Hộ Mệnh", "✨", "arcane", "light", "support", "allies", 3, 18, 4, { fx: fx({ s: "barrier", t: 2 }, { s: "shield", t: 2, p: 0.5 }) });
+S("comet", "Sao Chổi", "☄️", "arcane", "fire", "magical", "enemy", 3, 18, 2, { power: 1.9, fx: fx({ s: "burn", ch: 0.5, t: 3 }) });
+S("supernova", "Siêu Tân Tinh", "💫", "light", "light", "magical", "enemies", 5, 46, 6, { power: 1.8, sp: sp({ k: "scaleDebuffs", per: 0.12 }) });
+
 // ------------------------------------------------------------------ monsters (enemy-only)
 const M = (id: string, name: string, icon: string, el: Element, kind: SkillKind, target: TargetType, mp: number, cd: number, o: Opts = {}) =>
   S(id, name, icon, "monster", el, kind, target, 1, mp, cd, { enemy: true, ...o });
