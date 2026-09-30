@@ -18,6 +18,9 @@ import { closeAllModals, h, toast } from "./ui/dom";
 app.root = document.getElementById("app")!;
 if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__fl = app;
 if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__visit = (v: PlayerVisit) => goVisit(v);
+if (import.meta.env.DEV) void Promise.all([import("./world/floors"), import("./data/enemies"), import("./render/pixel")]).then(([f, e, p]) => {
+  (window as unknown as Record<string, unknown>).__dev = { getFloor: f.getFloor, ENEMIES: e.ENEMIES, spriteURL: p.spriteURL };
+});
 
 function showLogin(err = "") {
   app.show((root) => mountLogin(root, (s) => startSession(s), err));

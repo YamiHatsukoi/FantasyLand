@@ -68,6 +68,22 @@ P("e_thorny", "Thân Gai", "🌵", "monster", 1, "Có Gai phản từ đầu tr�
 P("e_boss", "Ý Chí Chúa Tể", "👑", "monster", 1, "40% kháng hiệu ứng bất lợi.", [{ on: "debuffResist", ch: 0.4 }], true);
 P("e_flying", "Bay Lượn", "🪽", "monster", 1, "+10% né tránh.", [{ on: "stat", mods: { eva: 10 } }], true);
 P("e_poison_touch", "Thân Độc", "☠️", "monster", 1, "Đòn đánh có 30% gây Trúng độc.", [{ on: "hitApply", fx: [{ s: "poison", ch: 0.3, t: 3 }] }], true);
+// regional traits: monsters of each family share one
+P("r_forest", "Vỏ Cây Dày", "🌳", "monster", 1, "Hồi máu nhẹ trong vài lượt đầu.", [{ on: "battleStart", fx: [{ s: "regen", t: 3, p: 0.2 }] }], true);
+P("r_desert", "Nắng Cháy Da", "☀️", "monster", 1, "Đòn đánh có 20% gây Bỏng.", [{ on: "hitApply", fx: [{ s: "burn", ch: 0.2, t: 2 }] }], true);
+P("r_swamp", "Nhớt Đầm Lầy", "🟢", "monster", 1, "Đòn đánh có 25% gây Chậm.", [{ on: "hitApply", fx: [{ s: "slow", ch: 0.25, t: 2 }] }], true);
+P("r_tundra", "Hơi Thở Giá Lạnh", "🥶", "monster", 1, "Đòn đánh có 30% gây Lạnh Cóng.", [{ on: "hitApply", fx: [{ s: "chill", ch: 0.3, t: 2 }] }], true);
+P("r_fungal", "Bào Tử Bám", "🍄", "monster", 1, "Đòn đánh có 25% gây Trúng Độc.", [{ on: "hitApply", fx: [{ s: "poison", ch: 0.25, t: 3 }] }], true);
+P("r_volcano", "Thân Dung Nham", "🌋", "monster", 1, "Có Gai phản từ đầu trận.", [{ on: "battleStart", fx: [{ s: "thorns", t: 99 }] }], true);
+P("r_reef", "Vảy Ngọc Trai", "🐚", "monster", 1, "Mở đầu trận với một lớp khiên.", [{ on: "battleStart", fx: [{ s: "shield", t: 3, p: 0.6 }] }], true);
+P("r_bamboo", "Thân Pháp Nhẹ", "🎋", "monster", 1, "+8% né tránh.", [{ on: "stat", mods: { eva: 8 } }], true);
+P("r_crystal", "Da Lăng Kính", "💠", "monster", 1, "Kết giới giảm sát thương phép trong 2 lượt đầu.", [{ on: "battleStart", fx: [{ s: "barrier", t: 2 }] }], true);
+P("r_autumn", "Lá Rụng Mờ Mắt", "🍂", "monster", 1, "Đòn đánh có 15% gây Mù.", [{ on: "hitApply", fx: [{ s: "blind", ch: 0.15, t: 2 }] }], true);
+P("r_ruins", "Giáp Cổ", "🏛️", "monster", 1, "+20% phòng thủ.", [{ on: "stat", mods: { def: 0.2 } }], true);
+P("r_sakura", "Hương Hoa Mê", "🌸", "monster", 1, "Đòn đánh có 8% gây Ngủ.", [{ on: "hitApply", fx: [{ s: "sleep", ch: 0.08, t: 1 }] }], true);
+P("r_bonewaste", "Bất Tử Dai Dẳng", "💀", "monster", 1, "Hồi 3% máu mỗi lượt.", [{ on: "turnStart", healPct: 0.03 }], true);
+P("r_jungle", "Nọc Rừng", "🐍", "monster", 1, "Đòn đánh có 30% gây Trúng Độc.", [{ on: "hitApply", fx: [{ s: "poison", ch: 0.3, t: 3 }] }], true);
+P("r_glacier", "Vỏ Băng Hà", "🧊", "monster", 1, "+25% kháng phép, đòn đánh có 15% gây Lạnh Cóng.", [{ on: "stat", mods: { res: 0.25 } }, { on: "hitApply", fx: [{ s: "chill", ch: 0.15, t: 2 }] }], true);
 P("e_enrage", "Nổi Điên", "💢", "monster", 1, "Dưới 40% máu: +40% công, +20% tốc độ.", [{ on: "lowHp", below: 0.4, mods: { atk: 0.4, mag: 0.4, spd: 0.2 } }], true);
 
 export const PASSIVES: Record<string, Passive> = Object.fromEntries(list.map((p) => [p.id, p]));

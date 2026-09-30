@@ -1,4 +1,5 @@
 import { chooseAction } from "./ai";
+import { MECH } from "./bossMech";
 import { critChance, dodgeChance } from "./rates";
 import { Rng } from "../core/rng";
 import type { ItemUse } from "../data/items";
@@ -42,6 +43,9 @@ export class Battle {
   turn = 0;
   /** Shields broken this battle (rewards scale with it). */
   breaks = 0;
+  /** Builds a unit for reinforcements (set by the battle screen). */
+  spawner?: (enemyId: string, level: number, index: number) => Unit;
+  private spawned = 0;
   private extraTurn = false;
 
   constructor(allies: Unit[], enemies: Unit[], seed = Date.now()) {
@@ -207,6 +211,8 @@ export class Battle {
     this.gainMp(u, this.maxMp(u) * mpGain, false);
     // cooldowns
     for (const k of Object.keys(u.cooldowns)) if (u.cooldowns[k] > 0) u.cooldowns[k]--;
+    // boss signature: timed tricks
+    if (u.mech && u.hp > 0) MECH[u.mech]?.turn?.(this, u, (u.mechT = (u.mechT ?? 0) + 1));
     // courage: +1 each turn, except right after spending some
     if (u.bp !== undefined) {
       if (!u.boosted) u.bp = Math.min(MAX_BP, u.bp + 1);
@@ -516,6 +522,8 @@ export class Battle {
     if (shock) dmg *= 1 + 0.08 * shock.stacks;
     if (el === "dark" && this.has(target, "curse")) dmg *= 1.3;
     if (this.has(target, "guard")) dmg *= 0.5;
+    // a rallying boss is shielded by its minions
+    if (target.mech === "rally" && this.alive(target.side).some((o) => o.minionOf === target.uid)) dmg *= 0.5;
     if (sk.kind === "magical" && this.has(target, "barrier")) dmg *= 0.6;
     if (this.has(target, "petrify")) dmg *= 0.5;
     if (this.has(target, "sleep")) {
@@ -662,6 +670,7 @@ export class Battle {
 
   breakUnit(u: Unit) {
     u.broken = true;
+    if (u.mech === "countdown") u.mechCount = (u.mechCount ?? 5) + 2;
     this.breaks++;
     this.emit({ t: "break", uid: u.uid });
     if (u.charged) {
@@ -669,6 +678,51 @@ export class Battle {
       this.emit({ t: "reaction", uid: u.uid, name: "Phá Thế Tụ Lực" });
     }
     this.plan(u);
+  }
+
+  /** Short callout over a unit (boss tricks). */
+  announce(u: Unit, name: string) {
+    this.emit({ t: "reaction", uid: u.uid, name });
+  }
+
+  /** Starts a boss's signature mechanic (after the screen set `spawner`). */
+  initBoss(u: Unit, mechId: string, minion?: string) {
+    u.mech = mechId;
+    u.minion = minion;
+    u.mechT = 0;
+    MECH[mechId]?.start?.(this, u);
+  }
+
+  private addUnit(u: Unit) {
+    this.units.push(u);
+    u.cooldowns ||= {};
+    u.statuses ||= [];
+    u.av = this.avFor(u) * 0.6;
+    this.plan(u);
+    this.emit({ t: "spawn", uid: u.uid });
+  }
+
+  /** A boss calls in one of its floor's monsters (never more than 4 enemies standing). */
+  spawnMinion(boss: Unit) {
+    if (!this.spawner || !boss.minion || this.alive(boss.side).length >= 4) return;
+    const m = this.spawner(boss.minion, Math.max(1, boss.level - 2), 50 + this.spawned++);
+    m.minionOf = boss.uid;
+    this.announce(boss, "Gọi Tay Sai!");
+    this.addUnit(m);
+  }
+
+  /** The boss splits off a weaker copy of itself. */
+  spawnClone(boss: Unit) {
+    if (!this.spawner || !boss.enemyId || this.alive(boss.side).length >= 4) return;
+    const c = this.spawner(boss.enemyId, boss.level, 60 + this.spawned++);
+    c.boss = false;
+    c.name = `Bản Sao ${boss.name}`;
+    c.base = { ...c.base, hp: Math.round(c.base.hp * 0.3) };
+    c.hp = c.base.hp;
+    c.passives = c.passives.filter((p) => p !== "e_boss");
+    c.minionOf = boss.uid;
+    this.announce(boss, "Phân Thân!");
+    this.addUnit(c);
   }
 
   /** Decides (and shows) what an enemy will do on its next turn. */
@@ -736,9 +790,34 @@ export class Battle {
     }
     u.hp = Math.max(o.noKill ? 1 : 0, u.hp - amount);
     this.emit({ t: "dmg", uid: u.uid, amount, el, crit: o.crit, dot: o.dot, absorbed: absorbed || undefined });
+    if (u.mech) {
+      if (u.hp <= 0 && u.mech === "rebirth" && !u.mechUsed) {
+        u.mechUsed = true;
+        u.hp = Math.round(this.maxHp(u) * 0.4);
+        u.statuses = [];
+        this.emit({ t: "reaction", uid: u.uid, name: "Tái Sinh Từ Tro Tàn!" });
+        this.emit({ t: "revive", uid: u.uid });
+        return;
+      }
+      if (u.hp > 0) {
+        const ratio = u.hp / this.maxHp(u);
+        const low = MECH[u.mech]?.low ?? {};
+        for (const k of ["60", "50", "30"] as const) {
+          if (!low[k] || ratio >= Number(k) / 100 || u.mechLow?.includes(k)) continue;
+          (u.mechLow ??= []).push(k);
+          low[k]!(this, u);
+        }
+      }
+    }
     if (u.hp <= 0) {
       u.statuses = [];
       this.emit({ t: "death", uid: u.uid });
+      // volatile elites go off when they fall
+      if (u.elite?.includes("volatile")) {
+        this.emit({ t: "reaction", uid: u.uid, name: "Phát Nổ!" });
+        const boom = Math.round(this.maxHp(u) * 0.12);
+        for (const o of this.opponents(u)) this.damage(o, Math.max(1, Math.round(boom * (o.resist.fire ?? 1))), "fire", { noKill: true });
+      }
     }
   }
 

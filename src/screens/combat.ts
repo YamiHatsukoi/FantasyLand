@@ -1,5 +1,7 @@
 import { app } from "../app";
 import { chooseAction } from "../combat/ai";
+import { AFFIX, makeElite } from "../combat/elite";
+import { MECH, mechForFloor } from "../combat/bossMech";
 import { describeSkill, skillCostText } from "../combat/describe";
 import { Battle, CHARGE_MULT, MAX_BOOST, MAX_BP } from "../combat/engine";
 import { unitFromCharacter, unitFromEnemy } from "../combat/factory";
@@ -30,6 +32,9 @@ export interface BattleSetup {
   biome: string;
   enemyFx?: Eff[];
   noFlee?: boolean;
+  /** The pack is led by an elite (its first monster). */
+  elite?: boolean;
+  seed?: number;
 }
 
 export type BattleOutcome = "win" | "lose" | "flee";
@@ -72,7 +77,7 @@ function slot(i: number, n: number, wide: boolean): [number, number] {
     1: [[50, 80]],
     2: [[62, 52], [32, 96]],
     3: [[64, 38], [32, 68], [64, 98]],
-    4: [[66, 27], [32, 51], [66, 76], [32, 99]],
+    4: [[66, 31], [32, 54], [66, 77], [32, 99]],
   };
   const L = wide ? W : N;
   return (L[Math.min(4, n)] ?? L[4])[Math.min(i, 3)];
@@ -117,6 +122,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   const enemies = setup.enemies.map((e, i) => unitFromEnemy(e.id, e.level, i));
   const battle = new Battle(allies, enemies, rng.int(1, 1e9));
   for (const e of setup.enemyFx ?? []) for (const u of enemies) battle.addStatus(u, e.s, e.t ?? 2, e.st ?? 1, 0);
+  if (setup.elite && enemies[0] && !enemies[0].boss) makeElite(battle, enemies[0], setup.floor, setup.seed ?? 1);
   battle.drainEvents();
   g.stats.battles++;
 
@@ -162,21 +168,49 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   };
   // the boss always takes the front, centre spot
   const eOrder = [...enemies].sort((a, b) => Number(!!b.boss) - Number(!!a.boss));
-  eOrder.forEach((u, i) => {
+  // the floor boss's signature trick (it starts once the screen is ready, see below)
+  const bossUnit = enemies.find((u) => u.boss);
+  const mech = bossUnit && setup.floor > 0 ? mechForFloor(setup.floor) : undefined;
+  if (bossUnit && mech) {
+    bossUnit.mech = mech.id;
+    battle.spawner = (id, lvl, idx) => unitFromEnemy(id, lvl, idx);
+  }
+  const addEnemyView = (u: Unit) => {
     const img = h("img", { class: "sprite", src: spriteURL(u.sprite, u.palette, 8), alt: u.name, draggable: false });
     const hp = cbar("hp");
     const st = h("div", { class: "statuses" });
     const intent = h("div", { class: "intent" });
     const shield = h("div", { class: "shieldrow" });
-    const root = h("div", { class: `unit fighter enemy ${u.boss ? "boss" : ""}` },
+    const affixes = u.elite?.length ? h("div", { class: "affixes" }, u.elite.map((id) => h("span", { class: "affix", title: `${AFFIX[id].name}: ${AFFIX[id].desc}` }, AFFIX[id].icon, " ", AFFIX[id].name)))
+      : u.mech && MECH[u.mech] ? h("div", { class: "affixes" }, h("span", { class: "affix mech", title: MECH[u.mech].desc }, MECH[u.mech].icon, " ", MECH[u.mech].name, h("b", { class: "mech-count" })))
+      : null;
+    const root = h("div", { class: `unit fighter enemy ${u.boss ? "boss" : ""} ${u.elite ? "elite" : ""}` },
       intent,
-      h("div", { class: "plate" }, h("div", { class: "pl-name" }, h("span", null, u.name), h("small", null, `Lv${u.level}`)), hp, shield, st),
+      h("div", { class: "plate" }, h("div", { class: "pl-name" }, h("span", null, u.name), h("small", null, `Lv${u.level}`)), affixes, hp, shield, st),
       h("div", { class: "body" }, h("div", { class: "plat" }), img));
     root.addEventListener("click", () => onUnitClick(u));
-    place(root, i, eOrder.length, "right");
     sideE.append(root);
     views.set(u.uid, { root, img, hp, st, intent, shield });
-  });
+  };
+  /** Standing enemies share the formation; fallen ones step aside for newcomers. */
+  const layoutEnemies = () => {
+    const standing = eOrder.filter((u) => u.hp > 0);
+    const shown = eOrder.length > 4 ? standing : eOrder;
+    eOrder.forEach((u) => views.get(u.uid)?.root.classList.toggle("gone", !shown.includes(u)));
+    const boss = shown.find((u) => u.boss);
+    if (!boss) { shown.forEach((u, i) => place(views.get(u.uid)!.root, i, shown.length, "right")); return; }
+    // a boss holds the front-centre spot; its escort stands around it
+    const wide = window.innerWidth >= 760;
+    const at = (u: Unit, x: number, y: number, i: number) => {
+      const r = views.get(u.uid)!.root;
+      r.style.left = `${100 - x}%`; r.style.top = `${y}%`; r.style.zIndex = String(Math.round(y)); r.style.setProperty("--d", `${(i * 0.37) % 1.2}s`);
+    };
+    at(boss, wide ? 60 : 58, wide ? 88 : 99, 0);
+    const escort: [number, number][] = wide ? [[22, 44], [22, 97], [90, 42]] : [[30, 30], [78, 47], [26, 64]];
+    shown.filter((u) => u !== boss).forEach((u, i) => { at(u, ...escort[Math.min(i, escort.length - 1)], i + 1); views.get(u.uid)!.root.classList.add("escort"); });
+  };
+  eOrder.forEach(addEnemyView);
+  layoutEnemies();
   allies.forEach((u, i) => {
     const person = isPerson(u.sprite);
     const img = h("img", { class: `sprite ${person ? "tall" : ""}`, src: person ? personURL(u.sprite, u.palette) : spriteURL(u.sprite, u.palette, 8), alt: u.name, draggable: false });
@@ -246,6 +280,8 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         ...weak.map((e) => h("span", { class: `weak ${isKnown(u, e) ? "known" : ""}`, title: isKnown(u, e) ? `Yếu ${ELEMENTS[e].name}` : "Điểm yếu chưa rõ — thử các hệ khác nhau" }, isKnown(u, e) ? ELEMENTS[e].icon : "❔")));
     }
     if (v.intent) renderIntent(u, v.intent);
+    const mc = v.root.querySelector(".mech-count");
+    if (mc) mc.textContent = u.mech === "countdown" ? ` ${u.mechCount ?? ""}` : u.mech === "rebirth" && u.mechUsed ? " (đã dùng)" : "";
     v.root.classList.toggle("broken", !!u.broken);
     v.root.classList.toggle("charged", !!u.charged);
     v.root.classList.toggle("dead", u.hp <= 0);
@@ -423,6 +459,20 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         announce(`⚠️ ${u.name} đang tụ lực!`, "warn", 1300);
         log(`${u.name} tụ lực — đòn kế tiếp cực mạnh! Phòng thủ hoặc phá khiên để huỷ.`);
         await delay(700);
+        break;
+      }
+      case "spawn": {
+        const u = battle.unit(ev.uid);
+        if (!u || views.has(u.uid)) break;
+        eOrder.push(u);
+        addEnemyView(u);
+        layoutEnemies();
+        refresh(u);
+        const v = views.get(u.uid)!;
+        v.root.classList.add("arrive");
+        setTimeout(() => v.root.classList.remove("arrive"), 600);
+        log(`${u.name} xuất hiện!`);
+        await delay(450);
         break;
       }
       case "death": {
@@ -607,6 +657,13 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   const loop = async (): Promise<BattleOutcome> => {
     refreshAll();
     if (!g.flags.cb_help2) { g.flags.cb_help2 = true; combatHelp(); }
+    if (bossUnit && mech) {
+      const minion = setup.enemies.find((e) => !ENEMIES[e.id]?.boss)?.id ?? getFloor(Math.max(1, setup.floor)).enemies[0];
+      announce(`${mech.icon} ${mech.name}`, "warn", 1600);
+      log(`${bossUnit.name}: ${mech.desc}`);
+      battle.initBoss(bossUnit, mech.id, minion);
+      await playEvents();
+    }
     await delay(300);
     for (let guard = 0; guard < 2000; guard++) {
       const actor = battle.nextTurn();
@@ -667,8 +724,8 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     panel.replaceChildren(result);
     if (outcome === "win") {
       let xp = 0, gold = 0;
-      // breaking shields pays: +10% per break, up to +50%
-      const bonus = Math.min(0.5, battle.breaks * 0.1);
+      // breaking shields pays: +10% per break, up to +50%; an elite pays a lot more
+      const bonus = Math.min(0.5, battle.breaks * 0.1) + (setup.elite ? 1 : 0);
       const loot: Record<string, number> = {};
       for (const u of enemies) {
         const def = ENEMIES[u.enemyId!];
@@ -679,6 +736,11 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         for (const d of def.drops) if (rng.next() < d.ch * f) loot[d.item] = (loot[d.item] ?? 0) + (u.boss ? rng.int(d.min ?? 1, d.max ?? 1) : 1);
         if (!u.boss && rng.chance(0.02 + setup.floor * 0.002)) loot.mana_crystal = (loot.mana_crystal ?? 0) + 1;
         if (u.boss) loot.monster_core = (loot.monster_core ?? 0) + 1;
+        if (u.elite) {
+          loot.mana_crystal = (loot.mana_crystal ?? 0) + rng.int(1, 3);
+          loot.monster_core = (loot.monster_core ?? 0) + 1;
+          if (rng.chance(0.5)) { const id = gearForFloor(Math.max(1, setup.floor), (xs) => rng.pick(xs), 1).id; loot[id] = (loot[id] ?? 0) + 1; }
+        }
         // biome materials, essences and gear
         const fam = getFloor(Math.max(1, setup.floor)).family;
         const mats = BIOME_MATS[fam];
@@ -709,7 +771,8 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
       result.append(...nn(
         h("h3", null, "Chiến Thắng!"),
         h("div", null, `+${xp} kinh nghiệm · +${gold} vàng`),
-        battle.breaks ? h("div", { class: "gold small" }, `💥 Phá khiên ×${battle.breaks}: thưởng +${Math.round(bonus * 100)}%`) : null,
+        setup.elite ? h("div", { class: "gold small" }, "⭐ Hạ gục Tinh Anh: vàng và kinh nghiệm ×2, chiến lợi phẩm hiếm!") : null,
+        battle.breaks ? h("div", { class: "gold small" }, `💥 Phá khiên ×${battle.breaks}: thưởng +${Math.round(Math.min(0.5, battle.breaks * 0.1) * 100)}%`) : null,
         h("div", { class: "loot" }, lootLines.map((l) => h("span", null, l))),
         lvl.length ? h("div", { class: "gold" }, lvl.join(" ")) : null,
       ));
