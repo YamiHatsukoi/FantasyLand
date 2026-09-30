@@ -7,7 +7,7 @@ import { h, openModal, toast } from "../ui/dom";
 import { itemImg } from "../ui/icon";
 import { gearTags, rarityClass } from "../ui/gear";
 import {
-  SHOP_NAMES, SIZE_NAMES, activeQuest, bought, buyPrice, getNpc, hearts, markBought, memOf, questGoal, questProgress, sellPrice, shopStock,
+  SHOP_NAMES, SIZE_NAMES, activeQuest, bought, buyPrice, getNpc, getSettlement, hearts, markBought, memOf, questGoal, questProgress, sellPrice, shopStock,
   type Settlement, type ShopKind,
 } from "../world/people";
 import { statText } from "./party";
@@ -140,6 +140,67 @@ export function openShop(s: Settlement, kind: ShopKind, ownerId: string, refresh
       h("div", { class: "row", style: "gap:10px;flex-wrap:nowrap" }, spriteImg(owner.sprite, owner.pal, "sprite mini-portrait"),
         h("div", { class: "grow small" }, h("b", null, owner.name), ` ${hearts(memOf(g, owner.id).aff)} · 💰 `, h("b", { class: "gold" }, String(g.gold))),
         h("button", { class: "btn small", onclick: () => openNpc(owner, render) }, "💬 Nói chuyện")),
+      tabs, list);
+  };
+  render();
+}
+
+// ------------------------------------------------------------ the sanctuary's own market
+const SANCT_SHOPS: ShopKind[] = ["general", "apothecary", "seeds", "smith", "tailor", "arcane", "jeweler", "market"];
+let sanctKind: ShopKind | "sell" = "general";
+
+/**
+ * Travelling merchants gather at the sanctuary: every kind of shop in one place, stocked
+ * for the deepest floor reached, restocked daily. Selling pays the item's value.
+ */
+export function openSanctuaryMarket(onChange: () => void) {
+  const g = app.game;
+  const m = openModal("🛒 Chợ Thánh Địa", { wide: true, onClose: onChange });
+  const rank = g.buildings.find((b) => b.type === "house")?.level ?? 1;
+  const base = getSettlement(1, 0);
+  const s: Settlement = {
+    ...base, id: "sanctuary", name: "Chợ Thánh Địa", floor: Math.max(1, g.maxFloor),
+    size: rank >= 5 ? "city" : rank >= 3 ? "town" : "village", shops: SANCT_SHOPS,
+  };
+  const render = () => {
+    const tabs = h("div", { class: "cat-list" },
+      SANCT_SHOPS.map((k) => h("button", { class: sanctKind === k ? "on" : "", onclick: () => { sanctKind = k; render(); } }, `${SHOP_NAMES[k].icon} ${SHOP_NAMES[k].name}`)),
+      h("button", { class: sanctKind === "sell" ? "on" : "", onclick: () => { sanctKind = "sell"; render(); } }, "💰 Bán đồ"));
+    const list = h("div", { class: "list" });
+    if (sanctKind === "sell") {
+      const items = Object.keys(g.inventory).map(getItem).filter((it) => it.value > 0 && it.type !== "key" && (g.inventory[it.id] ?? 0) > 0)
+        .sort((a, b) => b.value * (g.inventory[b.id] ?? 0) - a.value * (g.inventory[a.id] ?? 0));
+      for (const it of items) {
+        const n = g.inventory[it.id] ?? 0;
+        list.append(h("div", { class: "item-row" },
+          h("span", { class: "ico" }, itemImg(it.id)),
+          h("div", { class: "meta" }, h("div", { class: "name" }, h("span", { class: it.equip ? rarityClass(it) : "" }, it.name), h("span", { class: "tag" }, TYPE_NAMES[it.type])), h("div", { class: "desc" }, `${it.value} vàng mỗi cái`)),
+          h("span", { class: "qty" }, `×${n}`),
+          h("button", { class: "btn small", onclick: () => { if (removeItem(g, it.id, 1)) { g.gold += it.value; app.dirty(); render(); } } }, "Bán 1"),
+          n > 1 ? h("button", { class: "btn small", onclick: () => { if (removeItem(g, it.id, n)) { g.gold += it.value * n; toast(`+${it.value * n} vàng`, "good"); app.dirty(); render(); } } }, "Bán hết") : null));
+      }
+      if (!items.length) list.append(h("p", { class: "muted" }, "Không có gì để bán."));
+    } else {
+      const kind = sanctKind;
+      const got = bought(g, s, kind);
+      for (const e of shopStock(g, s, kind)) {
+        const it = getItem(e.id);
+        const left = e.qty - (got[e.id] ?? 0);
+        const desc = it.equip ? `${gearTags(it).join(" · ")} — ${statText(it.equip.stats)}` : it.desc;
+        list.append(h("div", { class: `item-row ${left <= 0 ? "locked" : ""}` },
+          h("span", { class: "ico" }, itemImg(it.id)),
+          h("div", { class: "meta" },
+            h("div", { class: "name" }, h("span", { class: it.equip ? rarityClass(it) : "" }, it.name), h("span", { class: "tag" }, TYPE_NAMES[it.type]), g.inventory[it.id] ? h("span", { class: "tag" }, `có ${g.inventory[it.id]}`) : null),
+            h("div", { class: "desc" }, desc)),
+          h("span", { class: "qty" }, left > 0 ? `×${left}` : "hết"),
+          h("button", {
+            class: "btn small primary", disabled: left <= 0 || g.gold < e.price,
+            onclick: () => { if (g.gold < e.price) return; g.gold -= e.price; addItem(g, it.id, 1); markBought(g, s, kind, it.id, 1); app.dirty(); render(); },
+          }, `💰${e.price}`)));
+      }
+    }
+    m.body.replaceChildren(
+      h("p", { class: "muted small", style: "margin-top:0" }, `Thương nhân từ khắp các tầng tụ về Thánh Địa. Hàng đổi mỗi ngày, theo tầng sâu nhất bạn đã tới (tầng ${s.floor}); Thánh Địa càng lớn, hàng càng nhiều. 💰 `, h("b", { class: "gold" }, String(g.gold))),
       tabs, list);
   };
   render();

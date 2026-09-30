@@ -10,11 +10,12 @@ import { spriteCanvas } from "../render/pixel";
 import { creatureSmall, parseCreature } from "../render/creatures";
 import { isPerson, personCanvas, type Dir } from "../render/people";
 import { PASSABLE, T, tileSet } from "../render/tiles";
-import { RANDOM_EVENTS } from "../story";
+import { EVENTS, RANDOM_EVENTS } from "../story";
+import { eventLook, propCanvas, roadsidePal, type PropCtx } from "../render/eventProps";
 import { giveToGame, randomLoot } from "../story/runner";
 import type { BattleSpec } from "../story/types";
 import { BIOMES } from "../world/biomes";
-import { getFloor, type FloorDef } from "../world/floors";
+import { getFloor, specFor, type FloorDef } from "../world/floors";
 import { SHOP_NAMES, SIZE_NAMES, activeQuest, getNpc, getSettlement, type ShopKind } from "../world/people";
 import { openNpc } from "./npcTalk";
 import { buildingCanvas } from "../render/buildings";
@@ -80,10 +81,27 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   const alive = (e: MapEntity) => {
     if (e.kind === "monster" || e.kind === "node" || e.kind === "camp") return !ex.done.includes(e.id);
     if (e.kind === "guardian") return !fs.cleared;
-    if (e.kind === "stairs" || e.kind === "portal" || e.kind === "town" || e.kind === "building" || e.kind === "npc") return true;
+    if (e.kind === "stairs" || e.kind === "portal" || e.kind === "town" || e.kind === "building" || e.kind === "npc" || e.kind === "deco") return true;
     return !fs.done.includes(e.id);
   };
   const ents = map.entities.map((e) => ({ ...e, px: e.x, py: e.y, stun: 0, dir: 0 as Dir, flip: false }));
+  // what each event looks like on the map
+  const spec = specFor(floorN);
+  const propCtx: PropCtx = { el: def.el, accent: spec.col[5], sig: spec.sig[2], stone: spec.col[3], seed: fs.seed };
+  const looks = new Map<string, { prop: string } | { person: string; pal?: Record<string, string> }>();
+  const eventIdOf = (e: MapEntity) => (e.kind === "random" ? RANDOM_EVENTS[hashString(e.id + fs.seed) % RANDOM_EVENTS.length].id : e.ref!);
+  function lookOf(e: MapEntity) {
+    let l = looks.get(e.id);
+    if (!l) {
+      const id = eventIdOf(e);
+      const base = eventLook(id, propCtx, EVENTS[id]?.portrait);
+      if ("person" in base) {
+        l = isPerson(base.person) ? { person: base.person } : { person: "villager", pal: roadsidePal(`${floorN}:${e.id}`) };
+      } else l = base;
+      looks.set(e.id, l);
+    }
+    return l;
+  }
   const player = { x: map.start.x + 1, y: map.start.y, px: 0, py: 0, flip: false, dir: 0 as Dir, path: [] as { x: number; y: number }[], t: 0 };
   if (fs.px !== undefined && fs.py !== undefined && PASSABLE.has(map.tiles[idx(fs.px, fs.py)])) { player.x = fs.px; player.y = fs.py; }
   if (!PASSABLE.has(map.tiles[idx(player.x, player.y)])) { player.x = map.start.x; player.y = map.start.y + 1; }
@@ -154,7 +172,30 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     app.dirty(immediate);
   }
 
+  // one-time tips the first time the player walks up to each kind of thing
+  const TIPS: Partial<Record<string, string>> = {
+    monster: "⚔️ Quái vật! Chạm vào nó để đánh úp (được đánh trước). Quái đi tuần quanh ổ và sẽ đuổi theo khi bạn tới gần.",
+    node: "🌿 Điểm thu thập: chạm để lấy gỗ, đá, thảo mộc, quặng — nguyên liệu để xây và chế tạo ở Thánh Địa.",
+    chest: "🎁 Rương báu: chạm để mở. Có thể có vàng, đồ dùng, hạt giống, sách kỹ năng.",
+    camp: "🔥 Lửa trại: nghỉ chân để hồi máu và MP cho cả đội (mỗi chuyến đi dùng được một lần).",
+    event: "✨ Có gì đó ở đây — một người, một di tích, một vật lạ. Chạm vào để xem chuyện gì xảy ra; lựa chọn của bạn có hậu quả.",
+    random: "✨ Chạm vào những thứ lạ trên đường để gặp sự kiện: thương nhân, người bị thương, bẫy, kho báu…",
+    town: "🏘️ Một ngôi làng! Đi dọc phố, chạm cửa tiệm để mua bán, vào nhà trọ để nghỉ, trò chuyện với dân làng — có người sẽ nhờ việc, có người có thể theo bạn.",
+    guardian: "💀 Boss Canh Cửa giữ cầu thang xuống tầng sau. Hãy chuẩn bị kỹ trước khi đánh.",
+    portal: "🌀 Cổng dịch chuyển: chạm để về Thánh Địa bất cứ lúc nào (mang theo toàn bộ chiến lợi phẩm).",
+  };
+  function tutorialTips() {
+    for (const e of ents) {
+      const tip = TIPS[e.kind];
+      if (!tip || g.flags[`tip_${e.kind}`] || !alive(e) || Math.abs(e.x - player.x) + Math.abs(e.y - player.y) > 4) continue;
+      g.flags[`tip_${e.kind}`] = true;
+      toast(tip, "info", 7000);
+      return;
+    }
+  }
+
   function checkRegion() {
+    tutorialTips();
     const town = map.towns.find((t) => player.x >= t.x && player.x < t.x + t.w && player.y >= t.y && player.y < t.y + t.h);
     if (town && town.i !== inTown) {
       const s = getSettlement(floorN, town.i);
@@ -288,22 +329,22 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
       case "monster":
         return fightMonster(e, true);
       case "node": {
-        const n = rng.int(1, 3);
-        const lines = giveToGame(g, { [e.ref!]: n, ...(rng.chance(0.08) ? { mana_crystal: 1 } : {}) });
+        const n = rng.chance(0.3) ? 2 : 1;
+        const lines = giveToGame(g, { [e.ref!]: n, ...(rng.chance(0.04) ? { mana_crystal: 1 } : {}) });
         ex.done.push(e.id);
         toast(`Thu thập: ${lines.join(", ")}`, "good");
         updateHud();
         return savePos();
       }
       case "chest": {
-        const loot = randomLoot({ g, floor: floorN, vars: {}, rng }, 3);
-        if (rng.chance(0.35)) {
+        const loot = randomLoot({ g, floor: floorN, vars: {}, rng }, 2);
+        if (rng.chance(0.2)) {
           const maxTier = Math.min(5, 1 + Math.floor(floorN / 2));
           const pool = PLAYER_SKILLS.filter((s) => s.tier <= maxTier);
           const sk = rng.pick(pool);
           loot[`tome:${sk.id}`] = 1;
         }
-        if (rng.chance(0.45)) {
+        if (rng.chance(0.25)) {
           const seeds = ITEM_LIST.filter((i) => (i.type === "seed" || i.type === "sapling") && (i.tier ?? 1) <= 1 + Math.floor(floorN / 3));
           loot[rng.pick(seeds).id] = rng.int(1, 3);
         }
@@ -334,7 +375,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
       case "guardian": {
         busy = true;
         player.path = [];
-        const eventId = e.kind === "random" ? RANDOM_EVENTS[hashString(e.id + fs.seed) % RANDOM_EVENTS.length].id : e.ref!;
+        const eventId = eventIdOf(e);
         const bossDef = e.kind === "guardian" ? ENEMIES[def.boss.find((id) => ENEMIES[id]?.boss) ?? def.boss[0]] : undefined;
         const res = await playStory(eventId, {
           floor: floorN,
@@ -668,14 +709,44 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         drawables.push({ y: 1e6, fn: () => townLabel(e, s.name) });
         return;
       }
-      const sprite = e.kind === "guardian" ? "marker" : e.sprite;
-      const scale = e.kind === "stairs" || e.kind === "portal" ? 1 : 0.9;
-      const bounce = e.kind === "event" || e.kind === "random" || e.kind === "guardian" ? Math.abs(Math.sin(t / 300 + e.x)) * -0.18 : 0;
+      if (e.kind === "event" || e.kind === "random") {
+        // the event is shown by what it is: a tablet, a nest, a cart, a stranger...
+        const look = lookOf(e);
+        const alpha = seen ? 1 : 0.7;
+        if ("person" in look) {
+          c.fillStyle = "rgba(20,10,40,0.28)";
+          c.beginPath();
+          c.ellipse(view.sx(e.x) + TL / 2, view.sy(e.y) + TL * 0.92, TL * 0.28, TL * 0.09, 0, 0, Math.PI * 2);
+          c.fill();
+          view.img(personCanvas(look.person, look.pal, 0, 0), e.x, e.y - 1, { h: 2, alpha });
+        } else view.img(propCanvas(look.prop, propCtx), e.x - 0.5, e.y - 1, { w: 2, h: 2, alpha });
+        // a faint glint every few seconds hints that it can be touched
+        const ph = (t / 1000 + (e.x * 7 + e.y * 13) % 10) % 4;
+        if (seen && ph < 0.6) {
+          const a = Math.sin((ph / 0.6) * Math.PI);
+          c.fillStyle = `rgba(255,250,210,${a})`;
+          const gx = view.sx(e.x) + TL * 0.75, gy = view.sy(e.y) - TL * 0.55, r = TL * 0.12;
+          c.fillRect(gx - r * 1.6, gy - 1, r * 3.2, 2);
+          c.fillRect(gx - 1, gy - r * 1.6, 2, r * 3.2);
+        }
+        return;
+      }
+      if (e.kind === "deco") {
+        view.img(propCanvas(e.sprite, propCtx), e.x - 0.5, e.y - 1, { w: 2, h: 2, alpha: seen ? 1 : 0.7 });
+        return;
+      }
       if (e.kind === "guardian") {
         const bd = ENEMIES[def.boss.find((id) => ENEMIES[id]?.boss) ?? def.boss[0]];
-        view.img(spriteCanvas(bd.sprite, bd.palette), e.x - 0.5, e.y - 1, { w: 2, h: 2, alpha: seen ? 1 : 0.6 });
+        c.fillStyle = "rgba(20,10,40,0.35)";
+        c.beginPath();
+        c.ellipse(view.sx(e.x) + TL / 2, view.sy(e.y) + TL * 0.92, TL * 0.7, TL * 0.2, 0, 0, Math.PI * 2);
+        c.fill();
+        view.img(spriteCanvas(bd.sprite, bd.palette), e.x - 0.5, e.y - 1, { w: 2, h: 2, alpha: seen ? 1 : 0.6, dy: Math.sin(t / 500) * 0.04 });
+        return;
       }
-      view.img(spriteCanvas(sprite), e.x, e.y, { scale, dy: bounce - (e.kind === "guardian" ? 0.9 : 0) });
+      const sprite = e.sprite;
+      const scale = e.kind === "stairs" || e.kind === "portal" ? 1 : 0.9;
+      view.img(spriteCanvas(sprite), e.x, e.y, { scale });
       if (e.kind === "stairs" && !fs.cleared) {
         c.font = `${Math.round(view.tile * 0.45)}px sans-serif`;
         c.fillText("🔒", view.sx(e.x) + view.tile * 0.28, view.sy(e.y) + view.tile * 0.7);

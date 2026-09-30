@@ -447,16 +447,18 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         const def = ENEMIES[u.enemyId!];
         xp += Math.round(11 * u.level * (u.boss ? 6 : 1));
         gold += Math.round(rng.range(3, 6) * u.level * (u.boss ? 6 : 1));
-        for (const d of def.drops) if (rng.next() < d.ch) loot[d.item] = (loot[d.item] ?? 0) + rng.int(d.min ?? 1, d.max ?? 1);
-        if (!u.boss && rng.chance(0.04 + setup.floor * 0.004)) loot.mana_crystal = (loot.mana_crystal ?? 0) + 1;
+        // ordinary monsters drop a lot less than they used to; bosses keep their full table
+        const f = u.boss ? 1 : 0.4;
+        for (const d of def.drops) if (rng.next() < d.ch * f) loot[d.item] = (loot[d.item] ?? 0) + (u.boss ? rng.int(d.min ?? 1, d.max ?? 1) : 1);
+        if (!u.boss && rng.chance(0.02 + setup.floor * 0.002)) loot.mana_crystal = (loot.mana_crystal ?? 0) + 1;
         if (u.boss) loot.monster_core = (loot.monster_core ?? 0) + 1;
         // biome materials, essences and gear
         const fam = getFloor(Math.max(1, setup.floor)).family;
         const mats = BIOME_MATS[fam];
-        if (mats && rng.chance(u.boss ? 1 : 0.3)) { const id = rng.pick([mats.hide, mats.fiber, mats.herb, mats.gem]); loot[id] = (loot[id] ?? 0) + (u.boss ? 3 : 1); }
+        if (mats && rng.chance(u.boss ? 1 : 0.1)) { const id = rng.pick([mats.hide, mats.fiber, mats.herb, mats.gem]); loot[id] = (loot[id] ?? 0) + (u.boss ? 3 : 1); }
         const el = ENEMY_EL[fam];
-        if (el && ESSENCES[el] && rng.chance(u.boss ? 1 : 0.05)) loot[ESSENCES[el]] = (loot[ESSENCES[el]] ?? 0) + (u.boss ? 2 : 1);
-        if (rng.chance(u.boss ? 1 : 0.04)) {
+        if (el && ESSENCES[el] && rng.chance(u.boss ? 1 : 0.03)) loot[ESSENCES[el]] = (loot[ESSENCES[el]] ?? 0) + (u.boss ? 2 : 1);
+        if (rng.chance(u.boss ? 1 : 0.02)) {
           for (let k = 0; k < (u.boss ? 2 : 1); k++) {
             const id = gearForFloor(Math.max(1, setup.floor), (xs) => rng.pick(xs), u.boss ? 1 : 0).id;
             loot[id] = (loot[id] ?? 0) + 1;

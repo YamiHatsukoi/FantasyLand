@@ -113,7 +113,7 @@ describe("save data", () => {
     for (let n = 1; n <= 100; n++) {
       for (const seed of [7, 4242, 987654]) {
         const m = generateFloor(getFloor(n), seed * 13 + n);
-        const solid = new Set(m.entities.filter((e) => e.kind === "building" || e.kind === "town").map((e) => e.y * m.w + e.x));
+        const solid = new Set(m.entities.filter((e) => e.kind === "building" || e.kind === "town" || e.kind === "deco").map((e) => e.y * m.w + e.x));
         const ok = (x: number, y: number) => x >= 0 && y >= 0 && x < m.w && y < m.h && PASSABLE.has(m.tiles[y * m.w + x]) && !solid.has(y * m.w + x);
         const seen = new Uint8Array(m.w * m.h);
         const q = [m.start.y * m.w + m.start.x + 1];
@@ -128,4 +128,24 @@ describe("save data", () => {
       }
     }
   }, 120000);
+
+  it("hides the gatekeeper's lair somewhere different on each playthrough, guarded", () => {
+    for (const n of [1, 10, 55]) {
+      const spots = new Set<string>();
+      for (const seed of [3, 17, 99, 1234, 55555, 777777]) {
+        const m = generateFloor(getFloor(n), seed);
+        const gd = m.entities.find((e) => e.kind === "guardian")!;
+        spots.add(`${Math.round(gd.x / 12)},${Math.round(gd.y / 12)}`);
+        const guards = m.entities.filter((e) => e.kind === "monster" && Math.abs(e.x - gd.x) + Math.abs(e.y - gd.y) <= 10);
+        expect(guards.length, `floor ${n} guards`).toBeGreaterThanOrEqual(2);
+      }
+      expect(spots.size, `floor ${n}`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("has fewer, smaller monster packs on the first floors", () => {
+    const count = (n: number) => generateFloor(getFloor(n), 42).entities.filter((e) => e.kind === "monster");
+    expect(count(1).length).toBeLessThan(count(80).length);
+    expect(Math.max(...count(1).map((e) => e.group!.length))).toBeLessThanOrEqual(3);
+  });
 });
