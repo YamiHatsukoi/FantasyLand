@@ -166,3 +166,12 @@ describe("save data", () => {
     expect(Math.max(...count(1).map((e) => e.group!.length))).toBeLessThanOrEqual(3);
   });
 });
+
+describe("roadside encounters", () => {
+  it("has a pool of 100+ and never repeats one on the same floor", async () => {
+    const { RANDOM_POOL, EVENTS } = await import("../src/story");
+    expect(RANDOM_POOL.length).toBeGreaterThanOrEqual(100);
+    for (const p of RANDOM_POOL) expect(EVENTS[p.id], p.id).toBeTruthy();
+    expect(RANDOM_POOL.filter((p) => p.rare).length).toBeGreaterThan(3);
+  });
+});

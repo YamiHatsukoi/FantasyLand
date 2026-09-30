@@ -1,3 +1,4 @@
+import { ROADSIDE_META } from "../story/roadside";
 import type { Element } from "../combat/types";
 import { hashString } from "../core/rng";
 import { hs, makeCanvas, mix, outline, rgba, type Paint } from "./palette";
@@ -367,7 +368,7 @@ const HAZARD: Record<Element, string> = {
 
 /** What stands on the map for an event: a prop to draw, or a person (sprite id). */
 export function eventLook(eventId: string, ctx: PropCtx, portrait?: string): { prop: string } | { person: string } {
-  const fixed = FIXED[eventId];
+  const fixed = FIXED[eventId] ?? ROADSIDE_META[eventId]?.look;
   if (fixed) return fixed.startsWith("person:") ? { person: fixed.slice(7) } : { prop: fixed };
   const m = /^([a-z]+)\d+$/.exec(eventId);
   switch (m?.[1]) {

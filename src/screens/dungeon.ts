@@ -12,7 +12,7 @@ import { spriteCanvas } from "../render/pixel";
 import { creatureSmall, parseCreature } from "../render/creatures";
 import { isPerson, personCanvas, type Dir } from "../render/people";
 import { PASSABLE, T, tileSet } from "../render/tiles";
-import { EVENTS, RANDOM_EVENTS } from "../story";
+import { EVENTS, RANDOM_EVENTS, RANDOM_POOL } from "../story";
 import { eventLook, propCanvas, roadsidePal, type PropCtx } from "../render/eventProps";
 import { giveToGame, randomLoot } from "../story/runner";
 import type { BattleSpec } from "../story/types";
@@ -100,7 +100,22 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   const spec = specFor(floorN);
   const propCtx: PropCtx = { el: def.el, accent: spec.col[5], sig: spec.sig[2], stone: spec.col[3], seed: fs.seed };
   const looks = new Map<string, { prop: string } | { person: string; pal?: Record<string, string> }>();
-  const eventIdOf = (e: MapEntity) => (e.kind === "random" ? RANDOM_EVENTS[hashString(e.id + fs.seed) % RANDOM_EVENTS.length].id : e.ref!);
+  // Roadside "?" encounters: dealt from a big shuffled pool, never twice on one floor, skipping
+  // the ones met recently; rare ones are drawn much less often.
+  const randomOf = new Map<string, string>();
+  {
+    const recent = new Set(String(g.flags.rev_recent ?? "").split(",").filter(Boolean));
+    const r2 = new Rng(fs.seed ^ 0x3a7e);
+    const order = RANDOM_POOL.map((p) => ({ id: p.id, k: -Math.log(1 - r2.next()) / (p.rare ? 0.2 : 1) })).sort((a, b) => a.k - b.k).map((p) => p.id);
+    const deck = [...order.filter((id) => !recent.has(id)), ...order.filter((id) => recent.has(id))];
+    map.entities.filter((e) => e.kind === "random").sort((a, b) => a.id.localeCompare(b.id)).forEach((e, i) => randomOf.set(e.id, deck[i % deck.length]));
+  }
+  const eventIdOf = (e: MapEntity) => (e.kind === "random" ? randomOf.get(e.id) ?? RANDOM_EVENTS[0].id : e.ref!);
+  const rememberRandom = (id: string) => {
+    const list = String(g.flags.rev_recent ?? "").split(",").filter((x) => x && x !== id);
+    list.push(id);
+    g.flags.rev_recent = list.slice(-40).join(",");
+  };
   function lookOf(e: MapEntity) {
     let l = looks.get(e.id);
     if (!l) {
@@ -458,6 +473,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         busy = true;
         player.path = [];
         const eventId = eventIdOf(e);
+        if (e.kind === "random") rememberRandom(eventId);
         const bossDef = e.kind === "guardian" ? ENEMIES[def.boss.find((id) => ENEMIES[id]?.boss) ?? def.boss[0]] : undefined;
         const res = await playStory(eventId, {
           floor: floorN,

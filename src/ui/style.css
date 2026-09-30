@@ -691,3 +691,11 @@ img.iicon.lg { width: 48px; height: 48px; }
   .arena .fighter.escort .plate { width: 104px; }
   .arena .fighter.escort .statuses { display: none; }
 }
+/* frameless name plates: just the name and the gauges */
+.arena .plate { background: none; border: 0 !important; box-shadow: none !important; padding: 0; gap: 2px; }
+.arena .pl-name { text-shadow: 0 1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 -1px 0 #000, 0 0 4px #000; }
+.arena .fighter.active .pl-name span { color: var(--gold); }
+.arena .fighter.active .plate { box-shadow: none; }
+.arena .fighter.elite .plate { box-shadow: none !important; }
+.arena .fighter.ally .plate, .arena .fighter.enemy .plate { border: 0; }
+.cb-track { box-shadow: 0 2px 4px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.15); }
