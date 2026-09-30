@@ -21,6 +21,8 @@ import { openResidentList } from "./residentList";
 import { openResident } from "./residentTalk";
 import { ResidentSim } from "../world/residentSim";
 import { sceneReady } from "../world/residents";
+import { openTodo, todoBadge, todoList } from "./todo";
+import { fold } from "../ui/smart";
 
 const SPROUT_TIPS = [
   "Cậu đã gieo hạt chưa? Ngủ một giấc là cây lớn thêm một ngày đó!",
@@ -107,17 +109,38 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     (title.lastChild as HTMLElement).textContent = `Ngày ${gg.day} · ${SEASON_ICONS[s]} ${SEASON_NAMES[s]} · ${WEATHER[gg.weather].icon} · 👥 ${population(gg)}/${Math.max(1, housing(gg))}`;
     gold.replaceChildren("💰 ", h("b", null, String(app.game.gold)), "  🖤 ", h("b", null, String(app.game.inventory.black_thorn ?? 0)), "  ", saveDot());
     party.update();
+    updateBadges();
   };
+  // dock badges: things that want attention, refreshed with the HUD and every few seconds
+  const badges: Record<string, HTMLElement> = {};
+  const todoHooks = () => ({ talkTo: walkToResident, refresh: updateHud });
+  function updateBadges() {
+    if (!badges.todo) return;
+    const gg = app.game;
+    const list = todoList(gg, todoHooks());
+    badges.todo.textContent = String(todoBadge(list) || "");
+    const partyN = list.filter((t) => t.kind === "party" || t.kind === "tome").length;
+    badges.party.textContent = String(partyN || "");
+    badges.res.textContent = String(list.filter((t) => t.kind === "resident").length || "");
+    badges.bag.textContent = String(gg.newItems?.length || "");
+  }
+  function walkToResident(id: string) {
+    const a = sim.get(id);
+    if (!a) return;
+    const path = findPath({ w: SZ_W, h: SZ_H }, walkable, hero.x, hero.y, a.x, a.y, 5000);
+    if (path) { hero.path = path.slice(0, -1); toast(`Đang tới chỗ ${app.game.chars[id].name.split(" ")[0]}…`); }
+  }
   el.append(h("div", { class: "hud-top" }, h("div", { class: "col", style: "gap:6px" }, title, party.el), h("div", { class: "hud-right" }, gold)));
   el.append(h("div", { class: "zoom" },
     h("button", { class: "icon-btn", onclick: () => view.zoom(1) }, "＋"),
     h("button", { class: "icon-btn", onclick: () => view.zoom(-1) }, "－"),
     h("button", { class: "icon-btn", title: "Về chỗ nhân vật", onclick: () => { view.camX = hero.px; view.camY = hero.py; } }, "◎")));
   const dock = h("div", { class: "dock" },
+    dockBtn("📌", "Việc", () => openTodo(todoHooks()), "todo"),
     dockBtn("🔨", "Xây", () => openBuildMenu()),
-    dockBtn("👥", "Đội", () => openParty({ inDungeon: false, onChange: updateHud })),
-    dockBtn("🎒", "Túi", () => openInventory({ canSell: true, onChange: updateHud })),
-    dockBtn("💞", "Cư dân", () => openResidentList({ find: (id) => { const a = sim.get(id); if (a) { const path = findPath({ w: SZ_W, h: SZ_H }, walkable, hero.x, hero.y, a.x, a.y, 5000); if (path) { hero.path = path.slice(0, -1); toast(`Đang tới chỗ ${app.game.chars[id].name.split(" ")[0]}…`); } } }, onClose: updateHud })),
+    dockBtn("👥", "Đội", () => openParty({ inDungeon: false, onChange: updateHud }), "party"),
+    dockBtn("🎒", "Túi", () => openInventory({ canSell: true, onChange: updateHud }), "bag"),
+    dockBtn("💞", "Cư dân", () => openResidentList({ find: walkToResident, onClose: updateHud }), "res"),
     dockBtn("🌀", "Vực Sâu", () => { const gate = app.game.buildings.find((b) => b.type === "gate"); if (gate) openB(gate); }),
     dockBtn("📜", "Nhật ký", () => openJournal()),
     dockBtn("⚙️", "Menu", () => openMenu()),
@@ -127,8 +150,10 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   el.append(placeBar);
   updateHud();
 
-  function dockBtn(icon: string, label: string, fn: () => void) {
-    return h("button", { onclick: fn }, h("span", null, icon), h("span", null, label));
+  function dockBtn(icon: string, label: string, fn: () => void, badge?: string) {
+    const b = h("button", { onclick: fn }, h("span", null, icon), h("span", null, label));
+    if (badge) b.append(badges[badge] = h("span", { class: "dock-badge" }));
+    return b;
   }
 
   const openB = (b: PlacedBuilding) => openBuilding(b, {
@@ -147,15 +172,22 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   // ------------------------------------------------------------ building
   let buildCat: BuildingCategory = "farm";
   const CAT_NAMES: Record<BuildingCategory, string> = { core: "Cốt lõi", farm: "Nông trại", production: "Sản xuất", craft: "Chế tạo", housing: "Nhà ở", service: "Dịch vụ", decor: "Trang trí" };
+  let buildQ = "";
+  let buildOnlyOk = false;
   function openBuildMenu() {
     const m = openModal("🔨 Xây Dựng", { wide: true });
+    let focusSearch = false;
     const render = () => {
       const rank = rankOf(g);
       const list = h("div", { class: "list" });
-      for (const def of BUILDING_LIST.filter((d) => d.category === buildCat && !d.fixed)) {
-        const limit = buildLimitReason(g, def.id);
-        const cost = buildingCost(def.id, 0);
-        const ok = !limit && canAfford(g, cost);
+      const q = fold(buildQ.trim());
+      // searching looks through every category; otherwise the chosen tab
+      const defs = BUILDING_LIST.filter((d) => !d.fixed && (q ? fold(`${d.name} ${d.desc}`).includes(q) : d.category === buildCat))
+        .map((def) => ({ def, limit: buildLimitReason(g, def.id), cost: buildingCost(def.id, 0) }))
+        .map((x) => ({ ...x, ok: !x.limit && canAfford(g, x.cost) }))
+        .filter((x) => !buildOnlyOk || x.ok)
+        .sort((a, b) => Number(b.ok) - Number(a.ok) || Number(!!a.limit) - Number(!!b.limit));
+      for (const { def, limit, cost, ok } of defs) {
         const n = g.buildings.filter((b) => b.type === def.id).length;
         list.append(h("div", { class: `item-row ${limit ? "locked" : ""}` },
           h("span", { class: "ico" }, def.icon),
@@ -165,11 +197,21 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
             limit ? h("div", { class: "desc bad" }, limit) : costView(cost)),
           h("button", { class: "btn small primary", disabled: !ok, onclick: () => { m.close(); startPlacing(def.id); } }, "Chọn")));
       }
+      if (!defs.length) list.append(h("p", { class: "muted" }, buildOnlyOk ? "Chưa đủ nguyên liệu cho công trình nào ở đây. Bỏ lọc để xem cần gì." : "Không tìm thấy công trình nào."));
+      let timer = 0;
+      const search = h("input", {
+        class: "input", placeholder: "Tìm công trình (vd: nhà, lò, hoa)…", value: buildQ,
+        oninput: (e: Event) => { const v = (e.target as HTMLInputElement).value; clearTimeout(timer); timer = window.setTimeout(() => { buildQ = v; focusSearch = true; render(); }, 250); },
+      }) as HTMLInputElement;
+      const okCount = BUILDING_LIST.filter((d) => !d.fixed && !buildLimitReason(g, d.id) && canAfford(g, buildingCost(d.id, 0))).length;
       m.body.replaceChildren(
-        h("p", { class: "muted small", style: "margin-top:0" }, `Hạng hiện tại: ${RANK_NAMES[rank]}. Chọn công trình rồi chạm vào vị trí muốn đặt trên bản đồ.`),
-        h("div", { class: "cat-list" }, (Object.keys(CAT_NAMES) as BuildingCategory[]).filter((c) => c !== "core").map((c) =>
+        h("p", { class: "muted small", style: "margin-top:0" }, `Hạng hiện tại: ${RANK_NAMES[rank]}. Chọn công trình rồi chạm vào vị trí muốn đặt trên bản đồ. Có ${okCount} công trình đủ nguyên liệu để xây ngay.`),
+        h("div", { class: "searchbar" }, search,
+          h("label", { class: "check" }, h("input", { type: "checkbox", checked: buildOnlyOk, onchange: (e: Event) => { buildOnlyOk = (e.target as HTMLInputElement).checked; render(); } }), "Chỉ hiện cái xây được")),
+        q ? h("p", { class: "muted small" }, `Kết quả tìm "${buildQ}" trong mọi mục:`) : h("div", { class: "cat-list" }, (Object.keys(CAT_NAMES) as BuildingCategory[]).filter((c) => c !== "core").map((c) =>
           h("button", { class: c === buildCat ? "on" : "", onclick: () => { buildCat = c; render(); } }, CAT_NAMES[c]))),
         list);
+      if (focusSearch) { focusSearch = false; search.focus(); search.setSelectionRange(buildQ.length, buildQ.length); }
     };
     render();
   }
@@ -343,7 +385,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     sim.update(dt, t, vr, talkingTo);
     markT -= dt;
     const refreshMarks = markT <= 0;
-    if (refreshMarks) markT = 3;
+    if (refreshMarks) { markT = 3; updateBadges(); }
     const bubbles: (() => void)[] = [];
     for (const a of sim.agents) {
       if (a.px < vr.x0 - 1 || a.px > vr.x1 + 1 || a.py < vr.y0 - 1 || a.py > vr.y1 + 2) continue;

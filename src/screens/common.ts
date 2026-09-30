@@ -72,6 +72,7 @@ async function resolveConflict() {
 
 export function showBanner(root: HTMLElement, text: string, sub = "") {
   const b = h("div", { class: "banner" }, text, sub ? h("small", null, sub) : null);
+  for (const old of root.querySelectorAll(".banner")) old.remove();
   root.append(b);
   setTimeout(() => b.remove(), 2700);
 }
@@ -123,6 +124,7 @@ export function openHelp() {
       "Mỗi lần ngủ ở Nhà Chính là một ngày trôi qua: cây lớn, công trình sản xuất, dân chúng ăn uống. Mỗi mùa dài 7 ngày, thời tiết thay đổi mỗi ngày.",
       "🌱 Nông trại: gieo hạt đúng mùa, tưới nước mỗi ngày (mưa thì trời tưới) để được mùa gấp rưỡi. Bón phân nâng cấp đất. Một số cây thu hoạch nhiều lần. Trồng hai giống bố mẹ cạnh ô trống có thể ra giống lai. Nhà Kính trồng quanh năm.",
       "🏘️ Thăng hạng Thánh Địa: Trại → Xóm → Làng → Thị Trấn → Thành Phố → Kinh Đô. Cần dân số và độ sâu đã tới. Dân tới ở khi có nhà và đủ lương thực, làm việc ở các công trình sản xuất.",
+      "📌 Nút Việc cho biết những gì đang chờ bạn: ruộng chín, điểm chỉ số chưa dùng, đồ trong túi tốt hơn đồ đang mặc (⚡ tối ưu một chạm), cư dân có chuyện muốn nói, việc nhờ đã xong. Con số đỏ trên các nút là số việc có thể làm ngay. Trong túi đồ, đồ mới nhận có nhãn MỚI, đồ tốt hơn cho đồng đội có dấu ⬆; tìm kiếm không cần gõ dấu.",
       "⚒️ Các trạm chế tạo (Bếp, Giả Kim, Lò Rèn, Xưởng Cưa, Xưởng Đá, Xưởng May, Hố Ủ Phân, Thư Viện) có hàng trăm công thức từ nguyên liệu của Vực Sâu."),
     ...sec("💞 Cư dân & tình cảm", "Mọi đồng đội bạn chiêu mộ đều về sống ở Thánh Địa: họ đi làm, đi dạo, trò chuyện với nhau. Chạm vào ai đó (hoặc mở 💞 Cư dân) để nói chuyện.",
       "Mỗi người có tính cách, chủ đề yêu thích và ghét, giá trị sống, món quà ưa thích, sinh nhật, và một câu chuyện riêng (ước mơ, vết thương, bí mật). Hỏi thăm, trò chuyện đúng chủ đề, tâm sự, tặng quà, rủ đi chơi để tăng ❤️ tình bạn (tối đa 10). Mỗi ngày được 4 lượt trò chuyện với mỗi người.",
@@ -131,6 +133,7 @@ export function openHelp() {
     ...sec("🗺️ Vực Sâu", "Chạm vào ô để di chuyển (hoặc WASD / phím mũi tên). Chạm lên quái vật để lao vào đánh úp.",
       "❗ là sự kiện cốt truyện, ❓ là sự kiện ngẫu nhiên, rương báu, lửa trại (hồi phục), điểm thu thập tài nguyên.",
       "Đánh bại Boss Canh Cửa để mở cầu thang. Cổng Dịch Chuyển ở đầu tầng đưa bạn về nhà hoặc tới đầu bất kỳ tầng nào đã mở khoá. Nếu gục ngã, bạn mất một nửa chiến lợi phẩm của chuyến đi.",
+      "🏘️ Hầu hết các tầng có làng, thị trấn hoặc thành phố thật sự trên bản đồ: đi dọc phố, chạm vào cửa tiệm (biển hiệu trên mái) để mua bán, vào nhà trọ để nghỉ, gõ cửa nhà dân hoặc bắt chuyện với người đi đường, chạm vào đài phun nước / giếng ở quảng trường để xem cả làng. Có những tầng khắc nghiệt tới mức không ai sống nổi. Mỗi tầng có một đặc sản ✨ và một di vật 🏺 độc nhất do Boss Canh Cửa giữ.",
       "🏘️ Mỗi tầng có làng, thị trấn hoặc thành phố với cửa hàng, quán trọ và cư dân. Mỗi người có tính cách, sở thích, trí nhớ riêng — trò chuyện, tặng quà, giúp việc để thân hơn và chiêu mộ họ. Đội mang theo bạn + 3 người; số đồng đội chiêu mộ không giới hạn."),
     ...sec("⚔️ Chiến đấu", "Theo lượt, thứ tự theo Tốc độ (thanh trên cùng). Chọn kỹ năng rồi chạm mục tiêu. Chạm kẻ địch để xem điểm yếu nguyên tố.",
       "Phản ứng nguyên tố: Ướt + Sét = Điện Giật (choáng), Ướt + Băng = Đóng Băng, Dầu + Lửa = Nổ Dầu, Đóng Băng + đòn vật lý = Vỡ Băng (x2), Thiêu đốt + Gió = Bão Lửa (lây lan), Nhiễm điện + Đất = Tiếp Địa...",

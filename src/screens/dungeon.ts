@@ -106,7 +106,9 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   const regionChip = h("div", { class: "chip" }, "");
   const info = h("div", { class: "chip" });
   const party = partyMini();
+  const bagBadge = h("span", { class: "dock-badge" });
   const updateHud = () => {
+    bagBadge.textContent = String(g.newItems?.length || "");
     info.replaceChildren("💰 ", h("b", null, String(g.gold)), "  🎒 ", h("b", null, String(Object.keys(ex.bag).length)), "  ", saveDot());
     party.update();
   };
@@ -115,7 +117,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     h("button", { class: "icon-btn", onclick: () => view.zoom(1) }, "＋"),
     h("button", { class: "icon-btn", onclick: () => view.zoom(-1) }, "－")));
   el.append(h("div", { class: "dock" },
-    dockBtn("🎒", "Túi", () => openInventory({ canSell: false, onChange: updateHud })),
+    dockBtn("🎒", "Túi", () => openInventory({ canSell: false, onChange: updateHud }), bagBadge),
     dockBtn("👥", "Đội", () => openParty({ inDungeon: true, onChange: updateHud })),
     dockBtn("🗺️", "Bản đồ", () => openMinimap()),
     dockBtn("📜", "Nhật ký", () => openJournal()),
@@ -128,8 +130,8 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   ));
   updateHud();
 
-  function dockBtn(icon: string, label: string, fn: () => void) {
-    return h("button", { onclick: fn }, h("span", null, icon), h("span", null, label));
+  function dockBtn(icon: string, label: string, fn: () => void, badge?: HTMLElement) {
+    return h("button", { onclick: fn }, h("span", null, icon), h("span", null, label), badge ?? null);
   }
 
   // ------------------------------------------------------------ helpers

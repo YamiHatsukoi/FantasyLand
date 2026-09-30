@@ -9,6 +9,7 @@ import { spriteImg } from "../render/pixel";
 import { bar, confirmBox, h, nn, openModal, toast, type ModalHandle } from "../ui/dom";
 import { itemImg } from "../ui/icon";
 import { GEAR_ICONS, GEAR_NAMES, gearTags, rarityClass, scaleStats, statDiff } from "../ui/gear";
+import { autoEquip, planBestGear } from "../ui/smart";
 import { openAppearance } from "./appearance";
 
 const STAT_NAMES: Record<string, string> = { hp: "Máu", mp: "MP", atk: "Công", mag: "Phép", def: "Thủ", res: "Kháng", spd: "Tốc", crit: "Chí mạng", eva: "Né" };
@@ -91,13 +92,26 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
       },
     }, `↺ Tẩy điểm (${resetCost(ch)}💰)`) : null) : null;
 
-  // gear
+  // gear (⬆ marks slots where the bag holds something better)
+  const plan = planBestGear(g, ch);
+  const better = new Set(plan.map((p) => p.key));
+  const gearTitle = h("div", { class: "row between", style: "margin:12px 0 6px" },
+    h("div", { class: "section-title", style: "margin:0" }, "Trang bị"),
+    h("div", { class: "row" },
+      h("button", {
+        class: `btn small ${plan.length ? "primary" : ""}`, disabled: !plan.length, title: "Tự chọn đồ mạnh nhất trong túi cho nhân vật này",
+        onclick: () => { const n = autoEquip(g, ch); toast(`⚡ Đã thay ${n} món cho ${ch.name.split(" ")[0]}.`, "good"); rerender(); },
+      }, plan.length ? `⚡ Tối ưu (${plan.length})` : "✓ Đồ tốt nhất"),
+      h("button", {
+        class: "btn small", title: "Tối ưu trang bị cho cả đội (người đứng trước được chọn trước)",
+        onclick: () => { let n = 0; for (const id of g.party) n += autoEquip(g, g.chars[id]); toast(n ? `⚡ Đã thay ${n} món cho cả đội.` : "Cả đội đang dùng đồ tốt nhất.", n ? "good" : "info"); rerender(); },
+      }, "⚡ Cả đội")));
   const gear = h("div", { class: "gear-grid" }, GEAR_KEYS.map((key) => {
     const id = ch.gear[key];
     const it = id ? getItem(id) : null;
     const locked = key === "offhand" && !it && isTwoHanded(ch.gear.weapon);
     return h("button", { class: `slot ${it ? "filled" : ""}`, onclick: () => pickGear(ch, key, rerender) },
-      h("div", { class: "muted small" }, `${GEAR_ICONS[key]} ${GEAR_NAMES[key]}`),
+      h("div", { class: "muted small" }, `${GEAR_ICONS[key]} ${GEAR_NAMES[key]}`, better.has(key) ? h("span", { class: "up-dot", title: "Trong túi có đồ tốt hơn" }, " ⬆") : null),
       it ? h("div", { class: "row", style: "gap:6px;flex-wrap:nowrap" }, itemImg(it.id), h("span", { class: `gname ${rarityClass(it)}` }, it.name))
         : h("div", { class: "muted" }, locked ? "(vũ khí hai tay)" : "— trống —"),
       it?.equip ? h("div", { class: "small good" }, statText(key === "offhand" && it.equip.slot === "weapon" ? scaleStats(it.equip.stats, 0.5) : it.equip.stats), it.equip.passive ? ` · ✦ ${getPassive(it.equip.passive).name}` : "") : null);
@@ -170,7 +184,7 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
   m.body.replaceChildren(...nn(
     tabs, header, note,
     h("div", { class: "section-title" }, "Chỉ số"), pointsBar, stats,
-    h("div", { class: "section-title" }, "Trang bị"), gear, dualNote,
+    gearTitle, gear, dualNote,
     h("div", { class: "section-title" }, `Kỹ năng (${ch.equipped.length}/${slots} đang dùng)`),
     h("p", { class: "muted small", style: "margin:0 0 6px" }, "Chạm vào kỹ năng để xem chi tiết. Tấn công và Phòng thủ luôn có sẵn."),
     skillList,

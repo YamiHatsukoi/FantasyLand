@@ -232,7 +232,7 @@ function gateBody(m: ModalHandle, hooks: PanelHooks) {
 // ------------------------------------------------------------ farming
 const rng = () => new Rng((Date.now() ^ (Math.random() * 1e9)) >>> 0);
 
-function harvestMany(plots: PlotState[]) {
+export function harvestMany(plots: PlotState[]) {
   const g = app.game;
   const got: Record<string, number> = {};
   const r = rng();

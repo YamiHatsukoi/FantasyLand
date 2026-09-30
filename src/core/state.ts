@@ -113,6 +113,8 @@ export interface GameState {
   territory: number;
   flags: Record<string, number | boolean | string>;
   maxFloor: number;
+  /** Items picked up since the bag was last opened. */
+  newItems?: string[];
   floors: Record<number, FloorState>;
   expedition: Expedition | null;
   learnedRecipes: string[];
@@ -382,8 +384,14 @@ export const count = (g: GameState, item: string) => (item === "gold" ? g.gold :
 
 export function addItem(g: GameState, item: string, n = 1) {
   if (item === "gold") { g.gold += n; return; }
-  g.inventory[item] = (g.inventory[item] ?? 0) + n;
+  const had = g.inventory[item] ?? 0;
+  g.inventory[item] = had + n;
   if (g.inventory[item] <= 0) delete g.inventory[item];
+  else if (had <= 0 && n > 0) {
+    // "new" markers in the bag, cleared when the bag is opened
+    const list = (g.newItems ??= []);
+    if (!list.includes(item)) { list.push(item); if (list.length > 120) list.shift(); }
+  }
 }
 
 export function removeItem(g: GameState, item: string, n = 1): boolean {

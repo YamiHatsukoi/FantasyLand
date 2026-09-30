@@ -10,6 +10,7 @@ import { GEAR_NAMES, gearTags, rarityClass } from "../ui/gear";
 const EQUIP_FILTERS = ["weapon", "offhand", "head", "armor", "hands", "legs", "feet", "neck", "ring", "earring"] as const;
 let slotFilter = "";
 import { statText } from "./party";
+import { fold, upgradeFor } from "../ui/smart";
 
 const GROUPS: { id: string; label: string; types: ItemType[] }[] = [
   { id: "all", label: "Tất cả", types: [] },
@@ -21,7 +22,15 @@ const GROUPS: { id: string; label: string; types: ItemType[] }[] = [
   { id: "tome", label: "Sách", types: ["tome"] },
 ];
 
+type SortKey = "type" | "new" | "value" | "qty" | "name";
+const SORTS: [SortKey, string][] = [["type", "Theo loại"], ["new", "Mới nhận"], ["value", "Giá trị"], ["qty", "Số lượng"], ["name", "Tên A→Z"]];
+let sortKey: SortKey = "type";
+let fresh = new Set<string>();
+
 export function openInventory(opts: { canSell: boolean; onChange?: () => void }) {
+  const g = app.game;
+  fresh = new Set(g.newItems ?? []);
+  if (g.newItems?.length) { g.newItems = []; app.dirty(); }
   const m = openModal("Túi Đồ", { wide: true, onClose: () => opts.onChange?.() });
   let group = "all";
   let q = "";
@@ -34,9 +43,16 @@ function renderInv(m: ModalHandle, group: string, q: string, canSell: boolean, s
   const grp = GROUPS.find((x) => x.id === group)!;
   const items = Object.keys(g.inventory)
     .map(getItem)
-    .filter((it) => (g.inventory[it.id] ?? 0) > 0 && (!grp.types.length || grp.types.includes(it.type)) && (!q || it.name.toLowerCase().includes(q.toLowerCase())))
+    .filter((it) => (g.inventory[it.id] ?? 0) > 0 && (!grp.types.length || grp.types.includes(it.type)) && (!q || fold(it.name).includes(fold(q))))
     .filter((it) => group !== "equip" || !slotFilter || it.equip?.slot === slotFilter)
-    .sort((a, b) => a.type.localeCompare(b.type) || (b.equip?.floor ?? 0) - (a.equip?.floor ?? 0) || (b.tier ?? 0) - (a.tier ?? 0) || a.name.localeCompare(b.name));
+    .sort((a, b) => {
+      const byType = a.type.localeCompare(b.type) || (b.equip?.floor ?? 0) - (a.equip?.floor ?? 0) || (b.tier ?? 0) - (a.tier ?? 0) || a.name.localeCompare(b.name);
+      if (sortKey === "new") return Number(fresh.has(b.id)) - Number(fresh.has(a.id)) || byType;
+      if (sortKey === "value") return b.value * (g.inventory[b.id] ?? 0) - a.value * (g.inventory[a.id] ?? 0) || byType;
+      if (sortKey === "qty") return (g.inventory[b.id] ?? 0) - (g.inventory[a.id] ?? 0) || byType;
+      if (sortKey === "name") return a.name.localeCompare(b.name, "vi");
+      return byType;
+    });
   const slotChips = group === "equip" ? h("div", { class: "cat-list" },
     h("button", { class: slotFilter ? "" : "on", onclick: () => { slotFilter = ""; rerender(); } }, "Mọi ô"),
     EQUIP_FILTERS.map((k) => h("button", { class: slotFilter === k ? "on" : "", onclick: () => { slotFilter = k; rerender(); } }, GEAR_NAMES[k].replace(" 1", "")))) : null;
@@ -51,7 +67,13 @@ function renderInv(m: ModalHandle, group: string, q: string, canSell: boolean, s
     },
   }, "💰 Bán hết đồ Thường") : null;
   const tabs = h("div", { class: "cat-list" }, GROUPS.map((x) => h("button", { class: x.id === group ? "on" : "", onclick: () => setGroup(x.id) }, x.label)));
-  const search = h("input", { class: "input", placeholder: "Tìm vật phẩm…", value: q, onchange: (e: Event) => setQ((e.target as HTMLInputElement).value) });
+  let timer = 0;
+  const search = h("input", {
+    class: "input", placeholder: "Tìm vật phẩm…", value: q,
+    oninput: (e: Event) => { const v = (e.target as HTMLInputElement).value; clearTimeout(timer); timer = window.setTimeout(() => { refocus = true; setQ(v); }, 250); },
+  }) as HTMLInputElement;
+  const sortSel = h("select", { class: "input sort-sel", onchange: (e: Event) => { sortKey = (e.target as HTMLSelectElement).value as SortKey; rerender(); } },
+    SORTS.map(([k, label]) => h("option", { value: k, selected: k === sortKey }, label)));
   const list = h("div", { class: "list" });
   for (const it of items.slice(0, 150)) list.append(itemRow(it, canSell, rerender));
   if (items.length > 150) list.append(h("p", { class: "muted small" }, `…và ${items.length - 150} loại nữa. Hãy lọc hoặc tìm kiếm.`));
@@ -61,11 +83,15 @@ function renderInv(m: ModalHandle, group: string, q: string, canSell: boolean, s
   m.body.replaceChildren(
     h("div", { class: "row between" }, h("div", null, "💰 ", h("b", { class: "gold" }, String(g.gold)), " vàng"),
       ex ? h("div", { class: "muted small" }, `Chiến lợi phẩm chuyến này: ${bag.length} loại, ${ex.bagGold} vàng (mất 50% nếu gục ngã)`) : null),
-    tabs, slotChips ?? "", h("div", { class: "searchbar" }, search, sellCommons ?? "", h("span", { class: "small muted" }, `${Object.keys(g.inventory).length} loại`)), list);
+    tabs, slotChips ?? "", h("div", { class: "searchbar" }, search, sortSel, sellCommons ?? "", h("span", { class: "small muted" }, `${Object.keys(g.inventory).length} loại${fresh.size ? ` · ${fresh.size} mới` : ""}`)), list);
+  if (refocus) { refocus = false; search.focus(); search.setSelectionRange(q.length, q.length); }
 }
+
+let refocus = false;
 
 function itemRow(it: ItemDef, canSell: boolean, rerender: () => void) {
   const g = app.game;
+  const ups = it.equip ? upgradeFor(g, it.id) : [];
   const n = g.inventory[it.id] ?? 0;
   const actions = h("div", { class: "row" });
   if (it.use?.field || it.meal || (it.use?.special && fieldSpecial)) actions.append(h("button", { class: "btn small good", onclick: () => useInField(it, rerender) }, it.meal && !it.use?.field ? "Ăn" : "Dùng"));
@@ -85,7 +111,8 @@ function itemRow(it: ItemDef, canSell: boolean, rerender: () => void) {
   return h("div", { class: "item-row" },
     h("span", { class: "ico" }, itemImg(it.id)),
     h("div", { class: "meta" },
-      h("div", { class: "name" }, h("span", { class: it.equip ? rarityClass(it) : "" }, it.name), h("span", { class: "tag" }, TYPE_NAMES[it.type]), it.tier ? h("span", { class: "tag" }, `Bậc ${it.tier}`) : null),
+      h("div", { class: "name" }, h("span", { class: it.equip ? rarityClass(it) : "" }, it.name), fresh.has(it.id) ? h("span", { class: "new-tag" }, "MỚI") : null, h("span", { class: "tag" }, TYPE_NAMES[it.type]), it.tier ? h("span", { class: "tag" }, `Bậc ${it.tier}`) : null),
+      ups.length ? h("div", { class: "desc up-dot" }, `⬆ Tốt hơn đồ đang dùng của: ${ups.join(", ")}`) : null,
       it.equip ? h("div", { class: "desc muted" }, gearTags(it).join(" · ")) : null,
       it.meal ? h("div", { class: "desc good" }, `Bữa ăn: ${it.meal.name} (${statText(it.meal.mods as Record<string, number>)}) tới khi về nhà`) : null,
       h("div", { class: "desc" }, desc)),
