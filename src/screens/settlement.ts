@@ -146,16 +146,22 @@ export function openShop(s: Settlement, kind: ShopKind, ownerId: string, refresh
 }
 
 // ------------------------------------------------------------ the sanctuary's own market
-const SANCT_SHOPS: ShopKind[] = ["general", "apothecary", "seeds", "smith", "tailor", "arcane", "jeweler", "market"];
-let sanctKind: ShopKind | "sell" = "general";
+const MARKET_TIERS: ShopKind[][] = [["general", "seeds", "market"], ["apothecary"], ["smith", "tailor"], ["arcane", "jeweler"]];
+/** Stalls the sanctuary's Market building has at a given level. */
+export const marketKinds = (level: number): ShopKind[] => MARKET_TIERS.slice(0, Math.max(1, level)).flat();
+let sanctKind: ShopKind | "sell" = "sell";
 
 /**
- * Travelling merchants gather at the sanctuary: every kind of shop in one place, stocked
- * for the deepest floor reached, restocked daily. Selling pays the item's value.
+ * The sanctuary market. From the dock it only buys the player's goods; buying needs a
+ * Market building (its stalls grow with its level) — or a trip down to a town.
+ * Stock follows the deepest floor reached and changes daily.
  */
-export function openSanctuaryMarket(onChange: () => void) {
+export function openSanctuaryMarket(onChange: () => void, stalls: ShopKind[] = []) {
   const g = app.game;
-  const m = openModal("🛒 Chợ Thánh Địa", { wide: true, onClose: onChange });
+  const SANCT_SHOPS = stalls;
+  if (sanctKind !== "sell" && !SANCT_SHOPS.includes(sanctKind)) sanctKind = SANCT_SHOPS[0] ?? "sell";
+  if (!stalls.length) sanctKind = "sell";
+  const m = openModal(stalls.length ? "🛒 Chợ Thánh Địa" : "💰 Bán Đồ", { wide: true, onClose: onChange });
   const rank = g.buildings.find((b) => b.type === "house")?.level ?? 1;
   const base = getSettlement(1, 0);
   const s: Settlement = {
@@ -200,8 +206,10 @@ export function openSanctuaryMarket(onChange: () => void) {
       }
     }
     m.body.replaceChildren(
-      h("p", { class: "muted small", style: "margin-top:0" }, `Thương nhân từ khắp các tầng tụ về Thánh Địa. Hàng đổi mỗi ngày, theo tầng sâu nhất bạn đã tới (tầng ${s.floor}); Thánh Địa càng lớn, hàng càng nhiều. 💰 `, h("b", { class: "gold" }, String(g.gold))),
-      tabs, list);
+      h("p", { class: "muted small", style: "margin-top:0" }, stalls.length
+        ? `Hàng đổi mỗi ngày, theo tầng sâu nhất bạn đã tới (tầng ${s.floor}). 💰 `
+        : "Thương lái ghé Thánh Địa thu mua mọi thứ bạn mang về. Muốn mua hàng, hãy xây Chợ hoặc ghé các làng dưới Vực Sâu. 💰 ", h("b", { class: "gold" }, String(g.gold))),
+      stalls.length ? tabs : "", list);
   };
   render();
 }

@@ -41,3 +41,32 @@ describe("classes", () => {
     }
   });
 });
+
+describe("forge enhancement", () => {
+  it("costs gold, can fail at high levels, and strengthens the slot", async () => {
+    const { newGame, charStats, equipGear, tryEnhance, enhanceCost, ENH_MAX } = await import("../src/core/state");
+    const { GEAR_BY_FLOOR } = await import("../src/data/items");
+    const g = newGame("An", "warrior", 1);
+    const hero = g.chars[g.heroId];
+    const sword = GEAR_BY_FLOOR[5].find((i) => i.equip!.kind === "sword")!;
+    equipGear(hero, "weapon", sword.id);
+    const atk0 = charStats(hero).atk;
+    g.gold = 0;
+    expect(tryEnhance(g, hero, "weapon", 0)).toBe("gold");
+    g.gold = 1e9;
+    expect(tryEnhance(g, hero, "weapon", 0)).toBe("ok");
+    expect(charStats(hero).atk).toBeGreaterThan(atk0);
+    for (let i = 1; i < ENH_MAX; i++) tryEnhance(g, hero, "weapon", 0);
+    expect(hero.enh!.weapon).toBe(ENH_MAX);
+    expect(tryEnhance(g, hero, "weapon", 0)).toBe("max");
+    // a bad roll at a risky level only costs gold
+    hero.enh!.weapon = 8;
+    const before = g.gold;
+    expect(tryEnhance(g, hero, "weapon", 0.99)).toBe("fail");
+    expect(hero.enh!.weapon).toBe(8);
+    expect(before - g.gold).toBe(enhanceCost(g, 8));
+    // the level stays with the slot when the weapon changes
+    equipGear(hero, "weapon", GEAR_BY_FLOOR[6].find((i) => i.equip!.kind === "sword")!.id);
+    expect(hero.enh!.weapon).toBe(8);
+  });
+});

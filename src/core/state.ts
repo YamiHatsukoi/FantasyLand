@@ -25,6 +25,8 @@ export interface Character {
   /** Hero only: unspent stat points and where the spent ones went. */
   points?: number;
   alloc?: Partial<Record<keyof Stats, number>>;
+  /** Forge enhancement per gear slot (+1..+10); it stays with the slot when gear is swapped. */
+  enh?: Partial<Record<GearKey, number>>;
   /** Earned in the sanctuary: 10-heart friendship or marriage. */
   bond?: "kindred" | "beloved";
 }
@@ -119,7 +121,7 @@ export interface GameState {
   expedition: Expedition | null;
   learnedRecipes: string[];
   log: string[];
-  stats: { battles: number; kills: number; deaths: number; steps: number };
+  stats: { battles: number; kills: number; deaths: number; steps: number; goldSpent?: number };
   settlers: number;
   weather: Weather;
   meal: MealBuff | null;
@@ -301,10 +303,31 @@ export function charStats(ch: Character): Stats {
     if (!id) continue;
     const eq = getItem(id).equip;
     if (!eq) continue;
-    const f = key === "offhand" && eq.slot === "weapon" ? 0.5 : 1;
+    const f = (key === "offhand" && eq.slot === "weapon" ? 0.5 : 1) * (1 + ENH_BONUS * (ch.enh?.[key] ?? 0));
     for (const [k, v] of Object.entries(eq.stats)) s[k as keyof Stats] += Math.round((v as number) * f);
   }
   return s;
+}
+
+// ------------------------------------------------------------ forge enhancement (a gold sink)
+export const ENH_MAX = 10;
+/** Each enhancement level adds this fraction to the stats of whatever sits in the slot. */
+export const ENH_BONUS = 0.06;
+const ENH_CHANCE = [1, 1, 1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3];
+/** Gold for going from `lvl` to `lvl + 1`: steep, and scaled by how deep the player has been. */
+export const enhanceCost = (g: GameState, lvl: number) => Math.round(80 * (lvl + 1) ** 2.2 * (1 + Math.max(1, g.maxFloor) / 8));
+export const enhanceChance = (lvl: number) => ENH_CHANCE[Math.min(lvl, ENH_CHANCE.length - 1)];
+/** Pays and rolls one enhancement. A failure only costs the gold. */
+export function tryEnhance(g: GameState, ch: Character, key: GearKey, roll: number): "ok" | "fail" | "max" | "gold" {
+  const lvl = ch.enh?.[key] ?? 0;
+  if (lvl >= ENH_MAX) return "max";
+  const cost = enhanceCost(g, lvl);
+  if (g.gold < cost) return "gold";
+  g.gold -= cost;
+  g.stats.goldSpent = (g.stats.goldSpent ?? 0) + cost;
+  if (roll >= enhanceChance(lvl)) return "fail";
+  ch.enh = { ...(ch.enh ?? {}), [key]: lvl + 1 };
+  return "ok";
 }
 
 /** Copies the look of equipped gear into the character's palette so sprites show it. */

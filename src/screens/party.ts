@@ -4,7 +4,7 @@ import { GEAR_KEYS, POINTS_PER_LEVEL, POINT_CAP, POINT_VALUE, addItem, allocPoin
 import { CLASSES, xpForLevel } from "../data/classes";
 import { getItem, type GearKey, type ItemDef } from "../data/items";
 import { getPassive } from "../data/passives";
-import { SCHOOL_NAMES, getSkill } from "../data/skills";
+import { getSkill } from "../data/skills";
 import { spriteImg } from "../render/pixel";
 import { bar, confirmBox, h, nn, openModal, toast, type ModalHandle } from "../ui/dom";
 import { itemImg } from "../ui/icon";
@@ -18,6 +18,9 @@ const STAT_NAMES: Record<string, string> = { hp: "Máu", mp: "MP", atk: "Công",
 export function statText(stats: Record<string, number | undefined>): string {
   return Object.entries(stats).filter(([, v]) => v).map(([k, v]) => `${STAT_NAMES[k] ?? k} ${v! > 0 ? "+" : ""}${v}`).join(", ");
 }
+
+type PartyTab = "gear" | "stats" | "skills" | "passives";
+let partyTab: PartyTab = "gear";
 
 export function openParty(opts: { inDungeon: boolean; onChange?: () => void; select?: string }) {
   const g = app.game;
@@ -38,154 +41,152 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
   const tabs = h("div", { class: "char-tabs" }, ids.map((id) => {
     const c = g.chars[id];
     const inParty = g.party.includes(id);
-    return h("button", { class: `char-tab ${id === ch.id ? "on" : ""}`, onclick: () => select(id) },
-      spriteImg(c.sprite, c.pal), h("div", null, c.name.split(" ")[0]), h("div", { class: "muted" }, `Lv${c.level}`),
-      h("span", { class: `badge ${inParty ? "" : "gray"}` }, inParty ? "Trong đội" : "Dự bị"));
+    return h("button", { class: `char-tab ${id === ch.id ? "on" : ""} ${inParty ? "in-party" : ""}`, title: inParty ? "Trong đội" : "Dự bị", onclick: () => select(id) },
+      spriteImg(c.sprite, c.pal), h("div", null, c.name.split(" ")[0]), h("div", { class: "muted" }, `Lv${c.level}`));
   }));
 
   const inParty = g.party.includes(ch.id);
   const rosterBtn = ch.id === g.heroId ? null : h("button", {
     class: "btn small",
     disabled: inDungeon,
+    title: inDungeon ? "Không đổi thành viên khi đang ở Vực Sâu" : "",
     onclick: () => {
       if (inParty) g.party = g.party.filter((x) => x !== ch.id);
-      else if (g.party.length >= partySize(g)) return toast(`Đội mang theo tối đa ${partySize(g)} người (bạn + ${partySize(g) - 1} đồng đội). Cho một người nghỉ trước.`, "bad");
+      else if (g.party.length >= partySize(g)) return toast(`Đội tối đa ${partySize(g)} người. Cho một người nghỉ trước.`, "bad");
       else g.party.push(ch.id);
       rerender();
     },
-  }, inParty ? "Cho nghỉ" : "Đưa vào đội");
+  }, inParty ? "➖ Cho nghỉ" : "➕ Vào đội");
 
-  const header = h("div", { class: "row", style: "align-items:flex-start;gap:12px" },
+  const header = h("div", { class: "party-head" },
     spriteImg(ch.sprite, ch.pal, "sprite big-portrait"),
-    h("div", { class: "grow col", style: "gap:4px" },
-      h("div", { class: "row between" }, h("b", { style: "font-size:18px" }, ch.name), h("div", { class: "row" }, h("button", { class: "btn small", onclick: () => openAppearance(ch, rerender) }, "🎨 Ngoại hình"), rosterBtn)),
-      h("div", { class: "muted small" }, `${cls.icon} ${cls.name} · Cấp ${ch.level} · ${cls.desc}`),
-      ch.bio ? h("div", { class: "small" }, ch.bio) : null,
-      bar(ch.hp, s.hp, "hp big", `Máu ${ch.hp}/${s.hp}`),
-      bar(ch.mp, s.mp, "mp big", `MP ${ch.mp}/${s.mp}`),
-      bar(ch.xp, xpForLevel(ch.level), "xp big", `EXP ${ch.xp}/${xpForLevel(ch.level)}`),
+    h("div", { class: "grow col", style: "gap:3px;min-width:0" },
+      h("div", { class: "row between", style: "flex-wrap:nowrap" },
+        h("div", { style: "min-width:0" }, h("b", { style: "font-size:17px" }, ch.name), h("div", { class: "muted small" }, `${cls.icon} ${cls.name} · Cấp ${ch.level}`)),
+        h("div", { class: "row", style: "flex-wrap:nowrap" }, h("button", { class: "icon-btn", title: "Ngoại hình", onclick: () => openAppearance(ch, rerender) }, "🎨"), rosterBtn)),
+      bar(ch.hp, s.hp, "hp", `${ch.hp}/${s.hp}`),
+      bar(ch.mp, s.mp, "mp", `${ch.mp}/${s.mp}`),
+      bar(ch.xp, xpForLevel(ch.level), "xp", `EXP ${ch.xp}/${xpForLevel(ch.level)}`),
     ),
   );
-  const note = inDungeon ? h("p", { class: "muted small" }, "Đang ở trong Vực Sâu: không thể đổi thành viên, nhưng vẫn đổi được trang bị và kỹ năng.") : null;
 
-  // the hero spends stat points earned on level-up
+  // ---- section tabs
   const isHero = ch.id === g.heroId;
   const pts = isHero ? ch.points ?? 0 : 0;
-  const statKeys = isHero ? (["hp", "mp", "atk", "mag", "def", "res", "spd", "crit", "eva"] as const) : (["atk", "mag", "def", "res", "spd", "crit", "eva"] as const);
-  const stats = h("div", { class: "grid2" }, statKeys.map((k) => {
-    const spent = ch.alloc?.[k] ?? 0;
-    const capped = POINT_CAP[k] !== undefined && spent >= POINT_CAP[k]!;
-    return h("div", { class: "stat" }, STAT_NAMES[k],
-      h("span", { class: "row", style: "gap:6px;flex-wrap:nowrap" },
-        spent ? h("span", { class: "small good" }, `+${Math.floor(spent * POINT_VALUE[k])}`) : null,
-        h("b", null, k === "crit" ? `${s[k]} (${pctLabel(critChance(s[k]))})` : k === "eva" ? `${s[k]} (${pctLabel(dodgeChance(s[k]))})` : String(s[k])),
-        isHero && pts > 0 ? h("button", { class: "btn small primary pt-btn", disabled: capped, title: POINT_VALUE[k] < 1 ? `2 điểm = +1 ${STAT_NAMES[k]} (tối đa ${POINT_CAP[k]} điểm)` : `1 điểm = +${POINT_VALUE[k]} ${STAT_NAMES[k]}`, onclick: () => { if (allocPoint(ch, k)) { clampVitals(ch); rerender(); } } }, "+") : null));
-  }));
-  const pointsBar = isHero ? h("div", { class: "row between", style: "margin:4px 0" },
-    h("span", { class: pts ? "gold" : "muted small" }, pts ? `✨ ${pts} điểm chỉ số chưa dùng (+${POINTS_PER_LEVEL} mỗi cấp)` : `Mỗi lần lên cấp nhận ${POINTS_PER_LEVEL} điểm chỉ số.`),
-    Object.keys(ch.alloc ?? {}).length ? h("button", {
-      class: "btn small",
-      onclick: async () => {
-        const cost = resetCost(ch);
-        if (!(await confirmBox("Tẩy điểm", `Lấy lại toàn bộ điểm đã phân bổ với giá ${cost} vàng?`, "Tẩy điểm"))) return;
-        if (g.gold < cost) return toast(`Cần ${cost} vàng.`, "bad");
-        g.gold -= cost; resetPoints(ch); clampVitals(ch); rerender();
-      },
-    }, `↺ Tẩy điểm (${resetCost(ch)}💰)`) : null) : null;
-
-  // gear (⬆ marks slots where the bag holds something better)
+  const slots = skillSlots(g);
+  const pslots = passiveSlots(g);
   const plan = planBestGear(g, ch);
   const better = new Set(plan.map((p) => p.key));
-  const gearTitle = h("div", { class: "section-title" }, "Trang bị");
-  const gear = h("div", { class: "gear-grid" }, GEAR_KEYS.map((key) => {
-    const id = ch.gear[key];
-    const it = id ? getItem(id) : null;
-    const locked = key === "offhand" && !it && isTwoHanded(ch.gear.weapon);
-    return h("button", { class: `slot ${it ? "filled" : ""}`, onclick: () => pickGear(ch, key, rerender) },
-      h("div", { class: "muted small" }, `${GEAR_ICONS[key]} ${GEAR_NAMES[key]}`, better.has(key) ? h("span", { class: "up-dot", title: "Trong túi có đồ tốt hơn" }, " ⬆") : null),
-      it ? h("div", { class: "row", style: "gap:6px;flex-wrap:nowrap" }, itemImg(it.id), h("span", { class: `gname ${rarityClass(it)}` }, it.name))
-        : h("div", { class: "muted" }, locked ? "(vũ khí hai tay)" : "— trống —"),
-      it?.equip ? h("div", { class: "small good" }, statText(key === "offhand" && it.equip.slot === "weapon" ? scaleStats(it.equip.stats, 0.5) : it.equip.stats), it.equip.passive ? ` · ✦ ${getPassive(it.equip.passive).name}` : "") : null);
-  }));
-  const dualNote = dualWielding(ch) ? h("p", { class: "muted small" }, "⚔️⚔️ Song kiếm: vũ khí tay trái tính 50% chỉ số, đòn Tấn công thường chém thêm một nhát (50% sát thương).") : null;
-
-  // skills
-  const slots = skillSlots(g);
-  const skillList = h("div", { class: "list" }, ch.skills.map((id) => {
-    const sk = getSkill(id);
-    const on = ch.equipped.includes(id);
-    const detail = h("div", { class: "desc hidden" }, describeSkill(sk).join(" "));
-    const row = h("div", { class: `item-row ${on ? "sel" : ""}` },
-      h("span", { class: "ico" }, sk.icon),
-      h("div", { class: "meta" },
-        h("div", { class: "name" }, sk.name, h("span", { class: "tag" }, SCHOOL_NAMES[sk.school]), h("span", { class: "tag" }, `Bậc ${sk.tier}`)),
-        h("div", { class: "desc" }, skillCostText(sk)), detail),
-      h("button", {
-        class: `btn small ${on ? "" : "primary"}`,
-        onclick: (e: Event) => {
-          e.stopPropagation();
-          if (on) ch.equipped = ch.equipped.filter((x) => x !== id);
-          else if (ch.equipped.length >= slots) return toast(`Tối đa ${slots} kỹ năng. Bỏ bớt một kỹ năng trước.`, "bad");
-          else ch.equipped.push(id);
-          rerender();
-        },
-      }, on ? "Bỏ" : "Dùng"));
-    row.addEventListener("click", () => detail.classList.toggle("hidden"));
-    return row;
-  }));
-
-  const pslots = passiveSlots(g);
-  const gearPassives = charPassives(ch).filter((p) => !ch.equippedPassives.includes(p));
-  const passiveList = h("div", { class: "list" }, ch.passives.map((id) => {
-    const p = getPassive(id);
-    const on = ch.equippedPassives.includes(id);
-    return h("div", { class: `item-row ${on ? "sel" : ""}` },
-      h("span", { class: "ico" }, p.icon),
-      h("div", { class: "meta" }, h("div", { class: "name" }, p.name), h("div", { class: "desc" }, p.desc)),
-      h("button", {
-        class: `btn small ${on ? "" : "primary"}`,
-        onclick: () => {
-          if (on) ch.equippedPassives = ch.equippedPassives.filter((x) => x !== id);
-          else if (ch.equippedPassives.length >= pslots) return toast(`Tối đa ${pslots} nội tại.`, "bad");
-          else ch.equippedPassives.push(id);
-          rerender();
-        },
-      }, on ? "Bỏ" : "Dùng"));
-  }));
-
-  // tomes
   const tomes = Object.keys(g.inventory).map(getItem).filter((it) => it.type === "tome");
-  const tomeList = tomes.length ? h("div", { class: "list" }, tomes.map((it) => {
-    const known = it.skill ? ch.skills.includes(it.skill) : ch.passives.includes(it.passive!);
-    return h("div", { class: "item-row" },
-      h("span", { class: "ico" }, itemImg(it.id)),
-      h("div", { class: "meta" }, h("div", { class: "name" }, it.name, h("span", { class: "qty" }, ` ×${g.inventory[it.id]}`)), h("div", { class: "desc" }, it.skill ? describeSkill(getSkill(it.skill)).join(" ") : it.desc)),
-      h("button", {
-        class: "btn small primary", disabled: known,
-        onclick: () => {
-          if (!removeItem(g, it.id, 1)) return;
-          if (it.skill) { ch.skills.push(it.skill); if (ch.equipped.length < slots) ch.equipped.push(it.skill); }
-          else if (it.passive) { ch.passives.push(it.passive); if (ch.equippedPassives.length < pslots) ch.equippedPassives.push(it.passive); }
-          toast(`${ch.name} đã học ${it.name.replace(/^.*?: /, "")}!`, "good");
-          rerender();
-        },
-      }, known ? "Đã biết" : "Học"));
-  })) : null;
+  const TABS: [PartyTab, string, string][] = [
+    ["gear", "🛡️ Trang bị", better.size ? "⬆" : ""],
+    ["stats", "📊 Chỉ số", pts ? String(pts) : ""],
+    ["skills", "✨ Kỹ năng", `${ch.equipped.length}/${slots}`],
+    ["passives", "🔮 Nội tại", `${ch.equippedPassives.length}/${pslots}`],
+  ];
+  const secTabs = h("div", { class: "tabs party-tabs" }, TABS.map(([id, label, badge]) =>
+    h("button", { class: partyTab === id ? "on" : "", onclick: () => { partyTab = id; select(ch.id); } }, label, badge ? h("span", { class: "tab-badge" }, badge) : null)));
 
-  m.body.replaceChildren(...nn(
-    tabs, header, note,
-    h("div", { class: "section-title" }, "Chỉ số"), pointsBar, stats,
-    h("p", { class: "muted small", style: "margin:4px 0 0" }, "Chí mạng và Né là điểm, càng nhiều càng giảm hiệu quả: số trong ngoặc là tỉ lệ thật (tối đa 60% chí mạng, 35% né)."),
-    gearTitle, gear, dualNote,
-    h("div", { class: "section-title" }, `Kỹ năng (${ch.equipped.length}/${slots} đang dùng)`),
-    h("p", { class: "muted small", style: "margin:0 0 6px" }, "Chạm vào kỹ năng để xem chi tiết. Tấn công và Phòng thủ luôn có sẵn."),
-    skillList,
-    h("div", { class: "section-title" }, `Nội tại (${ch.equippedPassives.length}/${pslots})`),
-    passiveList,
-    gearPassives.length ? h("p", { class: "muted small" }, `Từ trang bị: ${gearPassives.map((p) => getPassive(p).name).join(", ")}`) : null,
-    tomeList ? h("div", { class: "section-title" }, "Học từ sách") : null,
-    tomeList,
-  ));
+  let body: (HTMLElement | null)[] = [];
+  if (partyTab === "gear") {
+    const key = (k: keyof typeof s, label: string) => h("span", { class: "stat-chip" }, label, " ", h("b", null, String(s[k])));
+    const summary = h("div", { class: "row", style: "gap:6px;margin-bottom:8px" }, key("atk", "⚔️"), key("mag", "🔮"), key("def", "🛡️"), key("res", "✨"), key("spd", "💨"));
+    const gear = h("div", { class: "gear-tiles" }, GEAR_KEYS.map((key) => {
+      const id = ch.gear[key];
+      const it = id ? getItem(id) : null;
+      const locked = key === "offhand" && !it && isTwoHanded(ch.gear.weapon);
+      const enh = ch.enh?.[key];
+      return h("button", { class: `gtile ${it ? "filled" : ""} ${it ? rarityClass(it) : ""}`, title: it ? `${it.name}\n${statText(it.equip!.stats)}` : GEAR_NAMES[key], onclick: () => pickGear(ch, key, rerender) },
+        h("div", { class: "gt-ico" }, it ? itemImg(it.id) : h("span", { class: "gt-empty" }, GEAR_ICONS[key])),
+        h("div", { class: "gt-name" }, it ? it.name : locked ? "(hai tay)" : GEAR_NAMES[key]),
+        enh ? h("span", { class: "gt-enh" }, `+${enh}`) : null,
+        better.has(key) ? h("span", { class: "gt-up" }, "⬆") : null);
+    }));
+    body = [summary, gear, dualWielding(ch) ? h("p", { class: "muted small" }, "⚔️⚔️ Song kiếm: tay trái 50% chỉ số, đánh thường chém thêm 1 nhát.") : null];
+  } else if (partyTab === "stats") {
+    const statKeys = isHero ? (["hp", "mp", "atk", "mag", "def", "res", "spd", "crit", "eva"] as const) : (["hp", "mp", "atk", "mag", "def", "res", "spd", "crit", "eva"] as const);
+    const stats = h("div", { class: "grid2" }, statKeys.map((k) => {
+      const spent = ch.alloc?.[k] ?? 0;
+      const capped = POINT_CAP[k] !== undefined && spent >= POINT_CAP[k]!;
+      const tip = k === "crit" || k === "eva" ? "Điểm càng nhiều càng giảm hiệu quả; số trong ngoặc là tỉ lệ thật (tối đa 60% chí mạng, 35% né)." : "";
+      return h("div", { class: "stat", title: tip }, STAT_NAMES[k],
+        h("span", { class: "row", style: "gap:6px;flex-wrap:nowrap" },
+          spent ? h("span", { class: "small good" }, `+${Math.floor(spent * POINT_VALUE[k])}`) : null,
+          h("b", null, k === "crit" ? `${s[k]} (${pctLabel(critChance(s[k]))})` : k === "eva" ? `${s[k]} (${pctLabel(dodgeChance(s[k]))})` : String(s[k])),
+          isHero && pts > 0 ? h("button", { class: "btn small primary pt-btn", disabled: capped, title: POINT_VALUE[k] < 1 ? `2 điểm = +1 (tối đa ${POINT_CAP[k]} điểm)` : `1 điểm = +${POINT_VALUE[k]}`, onclick: () => { if (allocPoint(ch, k)) { clampVitals(ch); rerender(); } } }, "+") : null));
+    }));
+    const pointsBar = isHero ? h("div", { class: "row between", style: "margin:0 0 6px" },
+      h("span", { class: pts ? "gold" : "muted small" }, pts ? `✨ ${pts} điểm chưa dùng` : `+${POINTS_PER_LEVEL} điểm mỗi cấp`),
+      Object.keys(ch.alloc ?? {}).length ? h("button", {
+        class: "btn small",
+        onclick: async () => {
+          const cost = resetCost(ch);
+          if (!(await confirmBox("Tẩy điểm", `Lấy lại toàn bộ điểm đã phân bổ với giá ${cost} vàng?`, "Tẩy điểm"))) return;
+          if (g.gold < cost) return toast(`Cần ${cost} vàng.`, "bad");
+          g.gold -= cost; resetPoints(ch); clampVitals(ch); rerender();
+        },
+      }, `↺ Tẩy điểm (${resetCost(ch)}💰)`) : null) : null;
+    body = [pointsBar, stats, ch.bio ? h("p", { class: "muted small" }, ch.bio) : h("p", { class: "muted small" }, cls.desc)];
+  } else if (partyTab === "skills") {
+    const skillList = h("div", { class: "list" }, ch.skills.map((id) => {
+      const sk = getSkill(id);
+      const on = ch.equipped.includes(id);
+      const detail = h("div", { class: "desc hidden" }, describeSkill(sk).join(" "));
+      const row = h("div", { class: `item-row ${on ? "sel" : ""}`, title: "Chạm để xem chi tiết" },
+        h("span", { class: "ico" }, sk.icon),
+        h("div", { class: "meta" }, h("div", { class: "name" }, sk.name), h("div", { class: "desc" }, skillCostText(sk)), detail),
+        h("button", {
+          class: `btn small ${on ? "" : "primary"}`,
+          onclick: (e: Event) => {
+            e.stopPropagation();
+            if (on) ch.equipped = ch.equipped.filter((x) => x !== id);
+            else if (ch.equipped.length >= slots) return toast(`Tối đa ${slots} kỹ năng. Bỏ bớt một kỹ năng trước.`, "bad");
+            else ch.equipped.push(id);
+            rerender();
+          },
+        }, on ? "Bỏ" : "Dùng"));
+      row.addEventListener("click", () => detail.classList.toggle("hidden"));
+      return row;
+    }));
+    const tomeList = tomes.length ? h("div", { class: "list" }, tomes.map((it) => {
+      const known = it.skill ? ch.skills.includes(it.skill) : ch.passives.includes(it.passive!);
+      return h("div", { class: "item-row" },
+        h("span", { class: "ico" }, itemImg(it.id)),
+        h("div", { class: "meta" }, h("div", { class: "name" }, it.name, h("span", { class: "qty" }, ` ×${g.inventory[it.id]}`))),
+        h("button", {
+          class: "btn small primary", disabled: known,
+          onclick: () => {
+            if (!removeItem(g, it.id, 1)) return;
+            if (it.skill) { ch.skills.push(it.skill); if (ch.equipped.length < slots) ch.equipped.push(it.skill); }
+            else if (it.passive) { ch.passives.push(it.passive); if (ch.equippedPassives.length < pslots) ch.equippedPassives.push(it.passive); }
+            toast(`${ch.name} đã học ${it.name.replace(/^.*?: /, "")}!`, "good");
+            rerender();
+          },
+        }, known ? "Đã biết" : "Học"));
+    })) : null;
+    body = [skillList, tomeList ? h("div", { class: "section-title" }, "📕 Học từ sách") : null, tomeList];
+  } else {
+    const gearPassives = charPassives(ch).filter((p) => !ch.equippedPassives.includes(p));
+    const passiveList = h("div", { class: "list" }, ch.passives.map((id) => {
+      const p = getPassive(id);
+      const on = ch.equippedPassives.includes(id);
+      return h("div", { class: `item-row ${on ? "sel" : ""}` },
+        h("span", { class: "ico" }, p.icon),
+        h("div", { class: "meta" }, h("div", { class: "name" }, p.name), h("div", { class: "desc" }, p.desc)),
+        h("button", {
+          class: `btn small ${on ? "" : "primary"}`,
+          onclick: () => {
+            if (on) ch.equippedPassives = ch.equippedPassives.filter((x) => x !== id);
+            else if (ch.equippedPassives.length >= pslots) return toast(`Tối đa ${pslots} nội tại.`, "bad");
+            else ch.equippedPassives.push(id);
+            rerender();
+          },
+        }, on ? "Bỏ" : "Dùng"));
+    }));
+    body = [passiveList, gearPassives.length ? h("p", { class: "muted small" }, `Từ trang bị: ${gearPassives.map((p) => getPassive(p).name).join(", ")}`) : null];
+  }
+
+  m.body.replaceChildren(...nn(tabs, header, secTabs, ...body));
 }
 
 function pickGear(ch: Character, key: GearKey, done: () => void) {

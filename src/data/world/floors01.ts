@@ -34,7 +34,7 @@ export const FLOORS_01: FloorSpec[] = [
   },
   {
     n: 4, name: "Thư Viện Băng Vĩnh Cửu", biome: "Băng Nguyên Tri Thức Aurvel", fam: "tundra", el: "ice",
-    col: ["#e4eef6", "#a8bcd0", "#3a6a9a", "#5a7a9a", "#2a5a6a", "#8ad8ff"], obs: ["book_stack", "pine", "ice_spike"], decor: "snow", pat: "snow", fx: "snow",
+    col: ["#e4eef6", "#a8bcd0", "#3a6a9a", "#5a7a9a", "#2a5a6a", "#8ad8ff"], obs: ["pine", "ice_spike", "pine", "book_stack"], decor: "snow", pat: "snow", fx: "snow",
     intro: "Tuyết rơi thành từng trang giấy. Giữa đồng băng trắng xoá là những giá sách cao như tháp, đóng băng từ gốc tới ngọn.",
     places: ["Cổng Mục Lục", "Hành Lang Chú Giải", "Kho Sách Cấm", "Hồ Mực Đông Cứng", "Đồi Bút Lông", "Tháp Thiên Văn", "Phòng Đọc Tuyết", "Thung Lũng Bìa Da", "Bãi Tuyết Chữ", "Giảng Đường Im Lặng", "Nhà Kính Giấy", "Hầm Bản Thảo"],
     mobs: [

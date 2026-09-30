@@ -84,7 +84,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
         }
       }
     }
-    for (const [x, y, tall] of trees) gc.drawImage(tall, (x - 0.5) * 16, (y - 2) * 16, 32, 48);
+    for (const [x, y, tall] of trees) gc.drawImage(tall, (x - 0.5) * 16, (y - 2) * 16 - 6, 32, 48); // trunk mid-tile
     return cv;
   };
   let talkingTo: string | null = null;
@@ -138,7 +138,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     h("button", { class: "icon-btn", title: "Về chỗ nhân vật", onclick: () => { view.camX = hero.px; view.camY = hero.py; } }, "◎")));
   const dock = h("div", { class: "dock" },
     dockBtn("📌", "Việc", () => openTodo(todoHooks()), "todo"),
-    dockBtn("🛒", "Chợ", () => openSanctuaryMarket(updateHud)),
+    dockBtn("💰", "Bán", () => openSanctuaryMarket(updateHud)),
     dockBtn("🔨", "Xây", () => openBuildMenu()),
     dockBtn("👥", "Đội", () => openParty({ inDungeon: false, onChange: updateHud }), "party"),
     dockBtn("🎒", "Túi", () => openInventory({ canSell: true, onChange: updateHud }), "bag"),

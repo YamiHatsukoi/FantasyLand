@@ -29,7 +29,13 @@ import { openParty } from "./party";
 import { playStory } from "./story";
 
 const mapCache = new Map<string, FloorMap>();
-const SIGHT = 6;
+const SIGHT = 8;
+/** Seconds to walk one tile; movement glides at constant speed from tile to tile. */
+const STEP = 0.15;
+/** Terrain chunk size in tiles. */
+const CH = 16;
+/** Tall obstacles (trees...) are lifted so their trunk stands in the middle of their tile. */
+const TREE_LIFT = 0.375;
 
 export function floorMap(n: number, seed: number): FloorMap {
   const key = `${n}:${seed}`;
@@ -108,6 +114,8 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   player.px = player.x;
   player.py = player.y;
   const trail: { x: number; y: number }[] = [];
+  const followers: { px: number; py: number; dir: Dir; flip: boolean }[] = [];
+  const approach = (a: number, b: number, d: number) => (Math.abs(b - a) <= d ? b : a + Math.sign(b - a) * d);
   let busy = false;
   let destroyed = false;
   let region = -1;
@@ -157,12 +165,80 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   const entityAt = (x: number, y: number) => ents.find((e) => alive(e) && e.x === x && e.y === y);
   const walkable = (x: number, y: number) => passable(x, y) && !entityAt(x, y);
 
+  // ------------------------------------------------------------ terrain chunks & fog overlay
+  const chunks = new Map<string, HTMLCanvasElement>();
+  const tileAt = (x: number, y: number) => (x < 0 || y < 0 || x >= map.w || y >= map.h ? T.WALL : map.tiles[idx(x, y)]);
+  const isLiquid = (tt: number) => tt === T.WATER || tt === T.SHALLOW;
+  function terrainChunk(cx: number, cy: number, frame: number): HTMLCanvasElement {
+    const hasWater = chunkHasWater(cx, cy);
+    const key = `${cx},${cy},${hasWater ? frame : 0}`;
+    const hit = chunks.get(key);
+    if (hit) { chunks.delete(key); chunks.set(key, hit); return hit; }
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = CH * 16;
+    const q = cv.getContext("2d")!;
+    q.imageSmoothingEnabled = false;
+    const S = 16;
+    for (let ty = 0; ty < CH; ty++) for (let tx = 0; tx < CH; tx++) {
+      const x = cx * CH + tx, y = cy * CH + ty;
+      if (x >= map.w || y >= map.h) continue;
+      const i = idx(x, y), tt = map.tiles[i], v = map.variant[i];
+      const img = tt === T.WATER ? tiles.water[(frame + x * 3 + y) % 4] : tt === T.OBSTACLE ? tiles.tiles[T.GROUND][v] : tiles.tiles[tt][v];
+      const sx = tx * S, sy = ty * S;
+      q.drawImage(img, sx, sy, S, S);
+      const edge = (src: CanvasImageSource, skip: (nt: number) => boolean) => {
+        for (const [dx, dy, rot] of [[0, -1, 0], [1, 0, 90], [0, 1, 180], [-1, 0, 270]] as const) {
+          if (skip(tileAt(x + dx, y + dy))) continue;
+          q.save();
+          q.translate(sx + S / 2, sy + S / 2);
+          q.rotate((rot * Math.PI) / 180);
+          q.drawImage(src, -S / 2, -S / 2, S, S);
+          q.restore();
+        }
+      };
+      if (tt === T.WATER) edge(tiles.shore, isLiquid); // foam where the liquid meets land
+      if (tt === T.ALT) edge(tiles.edge, (nt) => nt !== T.GROUND && nt !== T.DECOR && nt !== T.OBSTACLE);
+      if (tt === T.WALL && tileAt(x, y + 1) !== T.WALL) q.drawImage(tiles.wallFace, sx, sy, S, S);
+      if (tt !== T.WALL && tileAt(x, y - 1) === T.WALL) { q.fillStyle = "rgba(0,0,0,.22)"; q.fillRect(sx, sy, S, S * 0.25); }
+    }
+    chunks.set(key, cv);
+    while (chunks.size > 72) chunks.delete(chunks.keys().next().value!);
+    return cv;
+  }
+  const waterIn = new Map<string, boolean>();
+  function chunkHasWater(cx: number, cy: number) {
+    const k = `${cx},${cy}`;
+    let w = waterIn.get(k);
+    if (w === undefined) {
+      w = false;
+      for (let y = cy * CH; y < Math.min(map.h, cy * CH + CH) && !w; y++) for (let x = cx * CH; x < Math.min(map.w, cx * CH + CH); x++) if (map.tiles[idx(x, y)] === T.WATER) { w = true; break; }
+      waterIn.set(k, w);
+    }
+    return w;
+  }
+  // one pixel per tile: black where unexplored, dimmed where explored but out of sight
+  const fogCanvas = document.createElement("canvas");
+  fogCanvas.width = map.w;
+  fogCanvas.height = map.h;
+  const fogCtx = fogCanvas.getContext("2d")!;
+  const fogImg = fogCtx.createImageData(map.w, map.h);
+  function updateFog() {
+    const d = fogImg.data;
+    const r2 = SIGHT * SIGHT + 2;
+    for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
+      const i = idx(x, y);
+      d[i * 4 + 3] = !fog[i] ? 255 : (x - player.x) ** 2 + (y - player.y) ** 2 <= r2 ? 0 : 115;
+    }
+    fogCtx.putImageData(fogImg, 0, 0);
+  }
+
   function reveal() {
     for (let y = -SIGHT; y <= SIGHT; y++) for (let x = -SIGHT; x <= SIGHT; x++) {
       if (x * x + y * y > SIGHT * SIGHT + 2) continue;
       const tx = player.x + x, ty = player.y + y;
       if (tx >= 0 && ty >= 0 && tx < map.w && ty < map.h) fog[idx(tx, ty)] = 1;
     }
+    updateFog();
   }
 
   function savePos(immediate = false) {
@@ -546,24 +622,38 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   view.onDraw = (t) => {
     const dt = Math.min(0.05, (t - last) / 1000);
     last = t;
-    if (!busy && !topModalOpen()) {
-      player.t += dt;
-      if (player.t >= 0.12) {
-        const next = player.path.shift();
-        if (next) { player.t = 0; tryStep(next.x, next.y); }
-        else if (keys.size) {
-          player.t = 0;
-          const d = DIRS[[...keys].pop()!];
-          tryStep(player.x + d[0], player.y + d[1]);
-        }
+    // glide at a constant speed; the next step starts just before the current one ends,
+    // so holding a direction or following a path moves without stopping between tiles
+    const v = dt / STEP;
+    const glide = (o: { px: number; py: number }, x: number, y: number) => {
+      o.px = approach(o.px, x, v);
+      o.py = approach(o.py, y, v);
+    };
+    glide(player, player.x, player.y);
+    player.t = Math.max(0, player.t - dt);
+    const left = Math.abs(player.x - player.px) + Math.abs(player.y - player.py);
+    if (!busy && !topModalOpen() && left < 0.2 && player.t <= 0) {
+      const next = player.path.shift();
+      const bx = player.x, by = player.y;
+      if (next) tryStep(next.x, next.y);
+      else if (keys.size) {
+        const d = DIRS[[...keys].pop()!];
+        tryStep(player.x + d[0], player.y + d[1]);
       }
+      // bumped into something: wait a moment before trying again
+      if ((next || keys.size) && bx === player.x && by === player.y) player.t = 0.2;
     }
-    const k = Math.min(1, dt * 14);
-    player.px += (player.x - player.px) * k;
-    player.py += (player.y - player.py) * k;
-    for (const e of ents) { e.px += (e.x - e.px) * k; e.py += (e.y - e.py) * k; }
-    view.camX += (player.px - view.camX) * Math.min(1, dt * 6);
-    view.camY += (player.py - view.camY) * Math.min(1, dt * 6);
+    for (const e of ents) glide(e, e.x, e.y);
+    // companions glide along the trail too
+    for (let i = 0; i < 3; i++) {
+      const tr = trail[i] ?? { x: player.x, y: player.y };
+      const f = (followers[i] ??= { px: tr.x, py: tr.y, dir: 0 as Dir, flip: false });
+      if (Math.abs(tr.x - f.px) + Math.abs(tr.y - f.py) > 3) { f.px = tr.x; f.py = tr.y; }
+      if (Math.abs(tr.x - f.px) > 0.01) { f.dir = 2; f.flip = tr.x < f.px; } else if (Math.abs(tr.y - f.py) > 0.01) f.dir = tr.y < f.py ? 1 : 0;
+      glide(f, tr.x, tr.y);
+    }
+    view.camX += (player.px - view.camX) * Math.min(1, dt * 14);
+    view.camY += (player.py - view.camY) * Math.min(1, dt * 14);
 
     const c = view.ctx;
     c.fillStyle = "#000";
@@ -571,59 +661,30 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     const vr = view.visible();
     const frame = Math.floor(t / 380) % 4;
     const inSight = (x: number, y: number) => (x - player.x) ** 2 + (y - player.y) ** 2 <= SIGHT * SIGHT + 2;
-    const tileAt = (x: number, y: number) => (x < 0 || y < 0 || x >= map.w || y >= map.h ? T.WALL : map.tiles[idx(x, y)]);
-    const isLiquid = (tt: number) => tt === T.WATER || tt === T.SHALLOW;
     const TL = view.tile;
     const drawables: { y: number; fn: () => void }[] = [];
-    for (let y = vr.y0; y <= vr.y1 + 2; y++) {
+    // terrain: pre-rendered 16x16-tile chunks (one per water frame), then the fog overlay
+    for (let cy = Math.floor(vr.y0 / CH); cy <= Math.floor(vr.y1 / CH); cy++) {
+      for (let cx = Math.floor(vr.x0 / CH); cx <= Math.floor(vr.x1 / CH); cx++) {
+        if (cx < 0 || cy < 0 || cx * CH >= map.w || cy * CH >= map.h) continue;
+        c.drawImage(terrainChunk(cx, cy, frame), view.sx(cx * CH), view.sy(cy * CH), CH * TL, CH * TL);
+      }
+    }
+    {
+      // only the visible part of the fog map
+      const fx0 = Math.max(0, vr.x0), fy0 = Math.max(0, vr.y0), fx1 = Math.min(map.w, vr.x1 + 1), fy1 = Math.min(map.h, vr.y1 + 1);
+      if (fx1 > fx0 && fy1 > fy0) c.drawImage(fogCanvas, fx0, fy0, fx1 - fx0, fy1 - fy0, view.sx(fx0), view.sy(fy0), (fx1 - fx0) * TL, (fy1 - fy0) * TL);
+    }
+    // tall obstacles (trees, rocks...) are y-sorted with the entities; their base sits mid-tile
+    for (let y = vr.y0; y <= vr.y1 + 3; y++) {
       for (let x = vr.x0; x <= vr.x1; x++) {
         if (x < 0 || y < 0 || x >= map.w || y >= map.h) continue;
         const i = idx(x, y);
-        if (!fog[i]) continue;
-        const tt = map.tiles[i];
-        const v = map.variant[i];
-        if (y <= vr.y1) {
-          const img = tt === T.WATER ? tiles.water[(frame + x * 3 + y) % 4] : tt === T.OBSTACLE ? tiles.tiles[T.GROUND][v] : tiles.tiles[tt][v];
-          view.img(img, x, y);
-          const sx = view.sx(x), sy = view.sy(y);
-          if (tt === T.WATER) {
-            // foam where the liquid meets land
-            const edges: [number, number, number][] = [[0, -1, 0], [1, 0, 90], [0, 1, 180], [-1, 0, 270]];
-            for (const [dx, dy, rot] of edges) {
-              if (isLiquid(tileAt(x + dx, y + dy))) continue;
-              c.save();
-              c.translate(sx + TL / 2, sy + TL / 2);
-              c.rotate((rot * Math.PI) / 180);
-              c.drawImage(tiles.shore, -TL / 2, -TL / 2, TL, TL);
-              c.restore();
-            }
-          }
-          if (tt === T.ALT) {
-            const edges: [number, number, number][] = [[0, -1, 0], [1, 0, 90], [0, 1, 180], [-1, 0, 270]];
-            for (const [dx, dy, rot] of edges) {
-              const nt = tileAt(x + dx, y + dy);
-              if (nt !== T.GROUND && nt !== T.DECOR && nt !== T.OBSTACLE) continue;
-              c.save();
-              c.translate(sx + TL / 2, sy + TL / 2);
-              c.rotate((rot * Math.PI) / 180);
-              c.drawImage(tiles.edge, -TL / 2, -TL / 2, TL, TL);
-              c.restore();
-            }
-          }
-          if (tt === T.WALL && tileAt(x, y + 1) !== T.WALL) c.drawImage(tiles.wallFace, sx, sy, TL, TL);
-          if (tt !== T.WALL && tileAt(x, y - 1) === T.WALL) { c.fillStyle = "rgba(0,0,0,.22)"; c.fillRect(sx, sy, TL, TL * 0.25); }
-        }
-        if (tt === T.OBSTACLE) {
-          const tall = tiles.tall[(v + x * 7 + y * 13) % tiles.tall.length];
-          const seen = inSight(x, y);
-          drawables.push({ y: y + 0.99, fn: () => view.img(tall, x - 0.5, y - 2, { w: 2, h: 3, alpha: seen ? 1 : 0.55 }) });
-        }
+        if (!fog[i] || map.tiles[i] !== T.OBSTACLE) continue;
+        const tall = tiles.tall[(map.variant[i] + x * 7 + y * 13) % tiles.tall.length];
+        const seen = inSight(x, y);
+        drawables.push({ y: y + 0.99, fn: () => view.img(tall, x - 0.5, y - 2 - TREE_LIFT, { w: 2, h: 3, alpha: seen ? 1 : 0.55 }) });
       }
-    }
-    for (let y = vr.y0; y <= vr.y1; y++) for (let x = vr.x0; x <= vr.x1; x++) {
-      if (x < 0 || y < 0 || x >= map.w || y >= map.h || !fog[idx(x, y)] || inSight(x, y)) continue;
-      c.fillStyle = "rgba(0,0,0,0.45)";
-      c.fillRect(view.sx(x), view.sy(y), TL, TL);
     }
     // entities
     const bob = (seed: number) => Math.sin(t / 260 + seed) * 0.06;
@@ -776,35 +837,51 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     const members = g.party.map((id) => g.chars[id]);
     for (let i = members.length - 1; i >= 0; i--) {
       const ch = members[i];
-      const tr = trail[i - 1], prev = trail[i - 2] ?? { x: player.x, y: player.y };
-      const pos = i === 0 || !tr ? { x: player.px, y: player.py } : { x: tr.x, y: tr.y, dir: (prev.x !== tr.x ? 2 : prev.y < tr.y ? 1 : 0) as Dir, flip: prev.x < tr.x };
+      const f = followers[i - 1];
+      const pos = i === 0 || !f ? { x: player.px, y: player.py } : { x: f.px, y: f.py, dir: f.dir, flip: f.flip };
       drawables.push({ y: pos.y + 1 + (i === 0 ? 0.01 : 0), fn: () => drawMember(ch, pos, i) });
     }
     drawables.sort((a, b) => a.y - b.y);
     for (const d of drawables) d.fn();
     drawParticles(c, biome.particles, view.w, view.h, t, view.camX, view.camY, TL);
-    // lighting
+    // lighting: a pre-rendered vignette (night floors: a lantern circle around the player)
+    const lt = lighting(view.w, view.h, TL);
     if (biome.night) {
-      const cx = view.sx(player.px) + view.tile / 2, cy = view.sy(player.py) + view.tile / 2;
-      const grd = c.createRadialGradient(cx, cy, view.tile * 1.5, cx, cy, view.tile * (SIGHT + 1.5));
+      const cx = view.sx(player.px) + TL / 2, cy = view.sy(player.py) + TL / 2;
+      c.drawImage(lt, cx - lt.width / 2, cy - lt.height / 2);
+    } else c.drawImage(lt, 0, 0);
+  };
+  let lightCv: HTMLCanvasElement | null = null, lightKey = "";
+  function lighting(w: number, h: number, tl: number): HTMLCanvasElement {
+    const key = `${w}x${h}@${tl}`;
+    if (lightCv && lightKey === key) return lightCv;
+    const cv = document.createElement("canvas");
+    // the night circle follows the player, so it is drawn twice the screen size and centred on them
+    cv.width = biome.night ? w * 2 : w;
+    cv.height = biome.night ? h * 2 : h;
+    const q = cv.getContext("2d")!;
+    const cx = cv.width / 2, cy = cv.height / 2;
+    const grd = biome.night ? q.createRadialGradient(cx, cy, tl * 1.5, cx, cy, tl * (SIGHT + 1.5)) : q.createRadialGradient(cx, cy, Math.min(w, h) * 0.4, cx, cy, Math.max(w, h) * 0.8);
+    if (biome.night) {
       grd.addColorStop(0, "rgba(0,0,0,0)");
       grd.addColorStop(0.55, "rgba(0,0,12,0.35)");
       grd.addColorStop(1, "rgba(0,0,12,0.78)");
-      c.fillStyle = grd;
-      c.fillRect(0, 0, view.w, view.h);
     } else {
-      const grd = c.createRadialGradient(view.w / 2, view.h / 2, Math.min(view.w, view.h) * 0.4, view.w / 2, view.h / 2, Math.max(view.w, view.h) * 0.8);
       grd.addColorStop(0, "rgba(0,0,0,0)");
       grd.addColorStop(1, "rgba(0,0,0,0.45)");
-      c.fillStyle = grd;
-      c.fillRect(0, 0, view.w, view.h);
     }
-  };
+    q.fillStyle = grd;
+    q.fillRect(0, 0, cv.width, cv.height);
+    lightCv = cv;
+    lightKey = key;
+    return cv;
+  }
   setFieldSpecial((it) => {
     const sp = it.use?.special;
     if (busy) return false;
     if (sp === "revealMap") {
       for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) if (Math.hypot(x - player.x, y - player.y) < 22) fog[idx(x, y)] = 1;
+      updateFog();
       toast("🗺️ Bản đồ vùng xung quanh hiện ra rõ ràng.", "good");
       savePos();
       return true;
