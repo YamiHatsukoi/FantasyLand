@@ -728,3 +728,13 @@ img.iicon.lg { width: 48px; height: 48px; }
   .gift-packed .meta { flex: 1 1 calc(100% - 50px); }
 }
 .gift-inv .item-row .desc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* combat: the chosen skill's action stays on top, its description scrolls under it */
+.cb-pick { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cb-pick-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cb-pick > .btn, .cb-pick > span { flex: none; }
+.cb-pick-desc { margin-top: 3px; max-height: 4.3em; overflow-y: auto; font-size: 12.5px; line-height: 1.4; overscroll-behavior: contain; }
+@media (max-width: 520px) { .cb-pick-desc { max-height: 4.3em; font-size: 12px; } }
+/* the info line never gets squeezed under the tabs; the skill list is what gives way (and scrolls) */
+.cb-panel > .cb-info, .cb-panel > .cb-head, .cb-panel > .cb-tabs, .cb-panel > .tabs { flex: none; }
+.cb-panel > .skill-grid { flex: 1 1 auto; min-height: 0; }

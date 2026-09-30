@@ -911,6 +911,10 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
       if (!p || !alive(e) || !fog[idx(e.x, e.y)]) continue;
       pin(p[0], e.x, e.y, p[1], e.kind === "guardian" ? "big" : "");
     }
+    // the great event's pieces / places still to visit, once seen
+    if (sagaDef && !fs.saga?.done) {
+      for (const e of sagaNodes()) if (alive(e) && !nodeDone(e) && fog[idx(e.x, e.y)]) pin("saga", e.x, e.y, `${sagaDef.icon} ${saga?.name ?? ""}: còn ở đây`);
+    }
     if (map.saga && sagaDef && (fs.saga?.seen || fog[idx(map.saga.x, map.saga.y)])) {
       pin("saga", map.saga.x, map.saga.y, `${sagaDef.icon} ${map.saga.name}${fs.saga?.done ? " (đã xong)" : ""}`, "big");
       wrap.append(h("div", { class: "mm-label saga", style: `left:${((map.saga.x + 0.5) / map.w) * 100}%;top:${((map.saga.y + 0.5) / map.h) * 100}%` }, map.saga.name));
@@ -991,7 +995,17 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
       const fx0 = Math.max(0, vr.x0), fy0 = Math.max(0, vr.y0), fx1 = Math.min(map.w, vr.x1 + 1), fy1 = Math.min(map.h, vr.y1 + 1);
       if (fx1 > fx0 && fy1 > fy0) c.drawImage(fogCanvas, fx0, fy0, fx1 - fx0, fy1 - fy0, view.sx(fx0), view.sy(fy0), (fx1 - fx0) * TL, (fy1 - fy0) * TL);
     }
-    // tall obstacles (trees, rocks...) are y-sorted with the entities; their base sits mid-tile
+    // tall obstacles (trees, rocks...) are y-sorted with the entities; their base sits mid-tile.
+    // A tree is 2 tiles wide and 3 tall, so it can hide whatever stands just above it: those
+    // trees turn see-through (quest pieces, chests and the hero must never vanish behind one).
+    const covering = new Set<number>();
+    const behind = (x: number, y: number) => { for (let dy = 1; dy <= 2; dy++) for (let dx = -1; dx <= 1; dx++) covering.add(idx(x + dx, y + dy)); };
+    behind(player.x, player.y);
+    for (const e of ents) {
+      if (e.kind === "deco" || e.kind === "building" || e.kind === "town" || !alive(e) || !fog[idx(e.x, e.y)]) continue;
+      if (e.x < vr.x0 - 2 || e.x > vr.x1 + 2 || e.y < vr.y0 - 3 || e.y > vr.y1 + 1) continue;
+      behind(e.x, e.y);
+    }
     for (let y = vr.y0; y <= vr.y1 + 3; y++) {
       for (let x = vr.x0; x <= vr.x1; x++) {
         if (x < 0 || y < 0 || x >= map.w || y >= map.h) continue;
@@ -999,7 +1013,8 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         if (!fog[i] || map.tiles[i] !== T.OBSTACLE) continue;
         const tall = tiles.tall[(map.variant[i] + x * 7 + y * 13) % tiles.tall.length];
         const seen = inSight(x, y);
-        drawables.push({ y: y + 0.99, fn: () => view.img(tall, x - 0.5, y - 2 - TREE_LIFT, { w: 2, h: 3, alpha: seen ? 1 : 0.55 }) });
+        const alpha = covering.has(i) ? 0.4 : seen ? 1 : 0.55;
+        drawables.push({ y: y + 0.99, fn: () => view.img(tall, x - 0.5, y - 2 - TREE_LIFT, { w: 2, h: 3, alpha }) });
       }
     }
     // a spreading taint over the blighted district

@@ -638,8 +638,8 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     renderPanel(actor);
     const lines = describeSkill(sk);
     const needs = battle.needsTarget(sk);
-    info.replaceChildren(h("b", null, `${sk.icon} ${sk.name}`), ` (${skillCostText(sk)}) — ${lines.join(" ")}`, " ",
-      needs ? h("span", { class: "gold" }, "👉 Chạm vào mục tiêu.") : h("button", { class: "btn small primary", onclick: () => selectSkill(actor, sk) }, "Dùng ▸"));
+    showPick(`${sk.icon} ${sk.name}`, skillCostText(sk), lines.join(" "),
+      needs ? h("span", { class: "gold" }, "👉 Chạm vào mục tiêu") : h("button", { class: "btn small primary", onclick: () => selectSkill(actor, sk) }, "Dùng ▸"));
     if (needs) {
       for (const t of battle.validTargets(actor, sk)) {
         const v = views.get(t.uid);
@@ -647,6 +647,13 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         if (t.side === "enemy" && (sk.power ?? 0) > 0 && battle.isWeak(t, sk.el) && isKnown(t, sk.el)) v?.root.classList.add("weak-hit");
       }
     }
+  }
+
+  /** The chosen skill / item: name and the action on one line that always fits, the description below (scrolls if long). */
+  function showPick(name: string, cost: string, desc: string, action: HTMLElement) {
+    info.replaceChildren(
+      h("div", { class: "cb-pick" }, h("div", { class: "cb-pick-name" }, h("b", null, name), cost ? h("span", { class: "muted small" }, ` · ${cost}`) : null), action),
+      h("div", { class: "cb-pick-desc" }, desc));
   }
 
   function selectItem(actor: Unit, it: ItemDef) {
@@ -660,8 +667,8 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     selected = { kind: "item", it };
     clearTargets();
     renderPanel(actor);
-    info.replaceChildren(h("b", null, `${it.icon} ${it.name}`), ` — ${it.desc} `,
-      needs ? h("span", { class: "gold" }, "👉 Chạm vào đồng đội.") : h("button", { class: "btn small primary", onclick: () => selectItem(actor, it) }, "Dùng ▸"));
+    showPick(`${it.icon} ${it.name}`, "", it.desc,
+      needs ? h("span", { class: "gold" }, "👉 Chạm vào đồng đội") : h("button", { class: "btn small primary", onclick: () => selectItem(actor, it) }, "Dùng ▸"));
     if (needs) for (const t of targetsFor(actor)) views.get(t.uid)?.root.classList.add("targetable");
   }
 
