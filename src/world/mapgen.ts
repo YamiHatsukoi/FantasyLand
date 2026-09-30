@@ -426,21 +426,7 @@ const BUILDING_SIZE: Record<string, [number, number]> = Object.fromEntries(Objec
 
 
 // ------------------------------------------------------------ fog of war bitset helpers
-export function decodeFog(s: string, size: number): Uint8Array {
-  const out = new Uint8Array(size);
-  if (!s) return out;
-  const bin = atob(s);
-  for (let i = 0; i < size; i++) out[i] = (bin.charCodeAt(i >> 3) >> (i & 7)) & 1;
-  return out;
-}
-
-export function encodeFog(fog: Uint8Array): string {
-  const bytes = new Uint8Array(Math.ceil(fog.length / 8));
-  for (let i = 0; i < fog.length; i++) if (fog[i]) bytes[i >> 3] |= 1 << (i & 7);
-  let bin = "";
-  for (const b of bytes) bin += String.fromCharCode(b);
-  return btoa(bin);
-}
+export { decodeFog, encodeFog } from "./fog";
 
 /** A* over passable tiles (binary heap); returns the path excluding the start tile. */
 export function findPath(
