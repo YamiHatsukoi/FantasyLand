@@ -1,9 +1,13 @@
+import type { Cond } from "../../story/types";
 /**
  * Main story beats, one per floor. Each beat is a short chain of scenes that ends with an
  * optional choice. Flags set here are read by later beats and by the ending on floor 100.
  */
 export interface ArcChoice {
   text: string;
+  /** Only selectable when this holds (e.g. a flag from an earlier floor). */
+  cond?: Cond;
+  hide?: boolean;
   reply: string;
   flag?: string;
   give?: Record<string, number>;

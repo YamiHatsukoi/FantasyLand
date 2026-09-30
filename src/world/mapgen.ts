@@ -260,6 +260,34 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
     layoutTown(rect, s.size, s.shops, s.npcs, def.family, trng);
   }
 
+  // Safety net: the gatekeeper and the stairs must always be reachable, whatever the terrain,
+  // towns or permanent props did. If not, dig a road to them.
+  const solid = new Set(entities.filter((e) => e.kind === "building" || e.kind === "town").map((e) => idx(e.x, e.y)));
+  const reachFrom = () => {
+    const seen = new Uint8Array(w * h);
+    const q = [idx(start.x + 1, start.y)];
+    seen[q[0]] = 1;
+    for (let k = 0; k < q.length; k++) {
+      const x = q[k] % w, y = Math.floor(q[k] / w);
+      for (const [dx, dy] of DIRS) {
+        const ni = idx(x + dx, y + dy);
+        if (!seen[ni] && passable(x + dx, y + dy) && !solid.has(ni)) { seen[ni] = 1; q.push(ni); }
+      }
+    }
+    return seen;
+  };
+  const guard = entities.find((e) => e.kind === "guardian")!;
+  for (const goal of [guard, stairs]) {
+    const seen = reachFrom();
+    if (DIRS.some(([dx, dy]) => seen[idx(goal.x + dx, goal.y + dy)])) continue;
+    let x = goal.x - 1, y = goal.y;
+    for (let guardN = 0; guardN < 800 && !seen[idx(x, y)]; guardN++) {
+      const i = idx(x, y);
+      if (!passable(x, y) || solid.has(i)) { tiles[i] = tiles[i] === T.WATER ? T.SHALLOW : T.ALT; solid.delete(i); }
+      if (x !== start.x + 1) x += Math.sign(start.x + 1 - x); else y += Math.sign(start.y - y);
+    }
+  }
+
   return { w, h, tiles, variant, region, regionCenters: centers, entities, start, stairs, towns };
 
   function layoutTown(r: TownRect, size: string, shops: string[], npcs: string[], fam: string, tr: Rng) {

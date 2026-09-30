@@ -150,7 +150,7 @@ function floorEvents(s: FloorSpec): StoryEvent[] {
     const last = scenes[beat.scenes.length === 1 ? "a" : `s${beat.scenes.length - 1}`];
     const endFx = [{ flag: `arc_${n}` }, { xpF: 8 }, ...(beat.give ? [{ give: beat.give }] : [])];
     if (beat.choices?.length) {
-      last.choices = beat.choices.map((c, i) => ({ text: c.text, next: `c${i}`, fx: [...endFx, ...(c.flag ? [{ flag: c.flag }] : []), ...(c.give ? [{ give: c.give }] : [])] }));
+      last.choices = beat.choices.map((c, i) => ({ text: c.text, cond: c.cond, hide: c.hide, next: `c${i}`, fx: [...endFx, ...(c.flag ? [{ flag: c.flag }] : []), ...(c.give ? [{ give: c.give }] : [])] }));
       beat.choices.forEach((c, i) => { scenes[`c${i}`] = { text: c.reply, speaker: beat.speaker, portrait: beat.portrait }; });
     } else last.fx = endFx;
     out.push({ id: `beat${n}`, title: beat.title, start: "a", portrait: beat.portrait, scenes });

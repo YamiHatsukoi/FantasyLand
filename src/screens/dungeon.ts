@@ -104,35 +104,13 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   // ------------------------------------------------------------ HUD
   const title = h("div", { class: "chip title" }, `Tầng ${floorN}`, h("small", null, def.name));
   const regionChip = h("div", { class: "chip" }, "");
-  // Objective: where the gatekeeper / stairs are, with a one-tap auto-walk.
-  const guardEnt = map.entities.find((e) => e.kind === "guardian")!;
-  const goalChip = h("button", { class: "chip goal-chip", onclick: () => walkTo(fs.cleared ? map.stairs : guardEnt) });
-  const compass = (dx: number, dy: number) => {
-    const a = Math.atan2(dy, dx);
-    return ["Đông", "Đông Nam", "Nam", "Tây Nam", "Tây", "Tây Bắc", "Bắc", "Đông Bắc"][((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8];
-  };
-  const updateGoal = () => {
-    const tgt = fs.cleared ? map.stairs : guardEnt;
-    const d = Math.abs(tgt.x - player.x) + Math.abs(tgt.y - player.y);
-    const dir = d <= 2 ? "ngay đây" : `${compass(tgt.x - player.x, tgt.y - player.y)} · ${d} ô`;
-    goalChip.replaceChildren(fs.cleared ? "🪜 Cầu thang: " : "🎯 Boss Canh Cửa: ", h("b", null, dir), h("small", null, " (chạm để tự đi)"));
-  };
-  function walkTo(tgt: { x: number; y: number }) {
-    if (busy) return;
-    // walk through unexplored tiles too; the path stops next to the target
-    for (const [dx, dy] of [[-1, 0], [0, 1], [0, -1], [1, 0], [-1, 1], [-1, -1]]) {
-      const path = findPath(map, (x, y) => walkable(x, y), player.x, player.y, tgt.x + dx, tgt.y + dy, 60000);
-      if (path) { player.path = path; toast(fs.cleared ? "🪜 Đang đi tới cầu thang…" : "🎯 Đang đi tới Boss Canh Cửa…"); return; }
-    }
-    toast("Không tìm thấy đường — thử đi vòng qua chướng ngại.", "bad");
-  }
   const info = h("div", { class: "chip" });
   const party = partyMini();
   const updateHud = () => {
     info.replaceChildren("💰 ", h("b", null, String(g.gold)), "  🎒 ", h("b", null, String(Object.keys(ex.bag).length)), "  ", saveDot());
     party.update();
   };
-  el.append(h("div", { class: "hud-top" }, h("div", { class: "col", style: "gap:6px" }, title, party.el), h("div", { class: "hud-right" }, info, regionChip, goalChip)));
+  el.append(h("div", { class: "hud-top" }, h("div", { class: "col", style: "gap:6px" }, title, party.el), h("div", { class: "hud-right" }, info, regionChip)));
   el.append(h("div", { class: "zoom" },
     h("button", { class: "icon-btn", onclick: () => view.zoom(1) }, "＋"),
     h("button", { class: "icon-btn", onclick: () => view.zoom(-1) }, "－")));
@@ -175,7 +153,6 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   }
 
   function checkRegion() {
-    updateGoal();
     const town = map.towns.find((t) => player.x >= t.x && player.x < t.x + t.w && player.y >= t.y && player.y < t.y + t.h);
     if (town && town.i !== inTown) {
       const s = getSettlement(floorN, town.i);
@@ -510,8 +487,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     }
     const mark: Record<string, string> = { town: "#ffffff", event: "#ffe14a", guardian: "#ff4a4a", stairs: "#c08aff", portal: "#6ab8ff", chest: "#f2a23a", camp: "#ff7a3a", random: "#8fd8ff" };
     for (const e of ents) {
-      const always = e.kind === "guardian" || e.kind === "stairs" || e.kind === "town";
-      if (!alive(e) || (!fog[idx(e.x, e.y)] && !always) || !mark[e.kind]) continue;
+      if (!alive(e) || !fog[idx(e.x, e.y)] || !mark[e.kind]) continue;
       c.fillStyle = mark[e.kind];
       c.fillRect(e.x * s - 1, e.y * s - 1, s + 2, s + 2);
     }
@@ -734,33 +710,6 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     drawables.sort((a, b) => a.y - b.y);
     for (const d of drawables) d.fn();
     drawParticles(c, biome.particles, view.w, view.h, t, view.camX, view.camY, TL);
-    // edge arrow pointing to the current objective when it is off screen
-    {
-      const tgt = fs.cleared ? map.stairs : guardEnt;
-      const tx = view.sx(tgt.x) + TL / 2, ty = view.sy(tgt.y) + TL / 2;
-      const m = 34;
-      if (tx < 0 || ty < 0 || tx > view.w || ty > view.h) {
-        const cx = view.w / 2, cy = view.h / 2;
-        const ang = Math.atan2(ty - cy, tx - cx);
-        const k = Math.min((view.w / 2 - m) / Math.abs(Math.cos(ang) || 1e-6), (view.h / 2 - m - 40) / Math.abs(Math.sin(ang) || 1e-6));
-        const ax = cx + Math.cos(ang) * k, ay = cy + Math.sin(ang) * k;
-        const pulse = 1 + Math.sin(t / 250) * 0.12;
-        c.save();
-        c.translate(ax, ay);
-        c.rotate(ang);
-        c.scale(pulse, pulse);
-        c.fillStyle = fs.cleared ? "rgba(192,138,255,.9)" : "rgba(255,90,70,.9)";
-        c.strokeStyle = "#000";
-        c.lineWidth = 2;
-        c.beginPath();
-        c.moveTo(16, 0); c.lineTo(-8, -11); c.lineTo(-3, 0); c.lineTo(-8, 11); c.closePath();
-        c.fill(); c.stroke();
-        c.restore();
-        c.font = "16px sans-serif";
-        c.fillText(fs.cleared ? "🪜" : "💀", ax - Math.cos(ang) * 26 - 8, ay - Math.sin(ang) * 26 + 6);
-      }
-    }
-
     // lighting
     if (biome.night) {
       const cx = view.sx(player.px) + view.tile / 2, cy = view.sy(player.py) + view.tile / 2;
@@ -813,11 +762,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
 
   if (fresh) {
     busy = true;
-    void showIntro(def).then(() => {
-      busy = false;
-      showBanner(el, `Tầng ${floorN}`, def.name);
-      toast(`🎯 Boss Canh Cửa canh giữ cầu thang ở phía ${compass(guardEnt.x - player.x, guardEnt.y - player.y)}. Chạm nút 🎯 góc phải để tự đi tới.`, "info", 6000);
-    });
+    void showIntro(def).then(() => { busy = false; showBanner(el, `Tầng ${floorN}`, def.name); });
   } else showBanner(el, `Tầng ${floorN}`, def.name);
 
   return {
