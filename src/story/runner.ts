@@ -1,5 +1,5 @@
 import { Rng } from "../core/rng";
-import { addItem, charStats, giveXp, logMsg, makeCharacter, recruit, removeItem, type GameState } from "../core/state";
+import { addItem, charStats, giveXp, logMsg, makeCharacter, recruit, removeItem, syncLook, type GameState } from "../core/state";
 import { CLASSES, COMPANIONS } from "../data/classes";
 import { getItem } from "../data/items";
 import { SKILLS } from "../data/skills";
@@ -177,6 +177,8 @@ export function applyEffect(e: Effect, ctx: StoryCtx): string[] {
   if ("setClass" in e) {
     const hero = g.chars[g.heroId];
     const fresh = makeCharacter(hero.id, hero.name, e.setClass, `hero_${e.setClass}`, hero.level);
+    fresh.pal = hero.pal;
+    syncLook(fresh);
     g.chars[g.heroId] = fresh;
     return [`${CLASSES[e.setClass].icon} ${CLASSES[e.setClass].name}`];
   }

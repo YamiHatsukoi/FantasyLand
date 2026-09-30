@@ -145,6 +145,11 @@ function applyCustom(L: Look, pal: Record<string, string>) {
   if (pal.bd) L.beard = pal.bd === "1";
   if (pal.ht) L.hat = pal.ht as Hat;
   if (pal.a) {
+    // Party members: clothes come only from equipped armor — class outfits, hats and capes are not free.
+    Object.assign(L, { outfit: "tunic", top: "#e8dcc0", accent: "#b89a70", pants: "#6a5a4a", shoes: "#5a3a2a", cape: undefined });
+    L.hat = (pal.ht as Hat) ?? "none";
+  }
+  if (pal.a && pal.a !== "none") {
     const [kind, col, col2] = pal.a.split("|");
     L.top = col;
     if (kind === "robe") { L.outfit = "robe"; L.accent = col2 ?? L.accent; }
