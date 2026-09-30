@@ -9,11 +9,12 @@ import { PLAYER_PASSIVES } from "../data/passives";
 import { RECIPES, STATION_NAMES, researchCost, type Station } from "../data/recipes";
 import { PLAYER_SKILLS, SCHOOL_NAMES } from "../data/skills";
 import { spriteImg } from "../render/pixel";
-import { confirmBox, h, nn, openModal, toast, type ModalHandle } from "../ui/dom";
+import { bar, confirmBox, h, nn, openModal, toast, type ModalHandle } from "../ui/dom";
 import { costView as costViewG, itemImg, lootChips } from "../ui/icon";
 import { GEAR_NAMES } from "../ui/gear";
 import { getFloor } from "../world/floors";
 import {
+  WATER_SEC, cropSeconds, cropTarget, fmtDuration, msToRipe, tickFarm, waterPlot,
   SOIL_NAMES, WEATHER, allPlots, appeal, applyFertilizer, cropInfo, efficiency, ensureSlots, harvest, housing, isReady,
   maxTerritory, plant, population, rankOf, residents, workersNeeded,
 } from "../world/town";
@@ -35,6 +36,7 @@ export function openBuilding(b: PlacedBuilding, hooks: PanelHooks) {
   const wide = !!def.station || ["house", "greenhouse", "farm", "tavern"].includes(b.type);
   const m = openModal(`${def.icon} ${def.name}${def.maxLevel > 1 ? ` · Cấp ${b.level}` : ""}`, { wide, onClose: hooks.refresh });
   const render = () => {
+    tickFarm(app.game);
     const keep = m.body.scrollTop;
     m.body.replaceChildren(h("p", { class: "muted", style: "margin-top:0" }, def.desc));
     switch (b.type) {
@@ -60,6 +62,14 @@ export function openBuilding(b: PlacedBuilding, hooks: PanelHooks) {
     m.body.scrollTop = keep;
   };
   render();
+  if (b.type === "farm" || b.type === "greenhouse") {
+    // crops grow while you watch: refresh the timers every few seconds
+    const iv = window.setInterval(() => {
+      if (!m.el.isConnected) return clearInterval(iv);
+      if (m.body.querySelector("input:focus")) return;
+      render();
+    }, 1000);
+  }
 }
 
 // ------------------------------------------------------------ shared rows
@@ -254,15 +264,22 @@ export function harvestMany(plots: PlotState[]) {
 
 function plotSummary(p: PlotState, greenhouse: boolean): HTMLElement {
   const g = app.game;
+  const now = Date.now();
   const info = cropInfo(g, p, greenhouse);
-  if (!info) return h("div", { class: "desc" }, `${SOIL_NAMES[p.soil]} · ${greenhouse ? "Nhà kính" : p.watered ? "Đã tưới" : "Chưa tưới"} · trống`);
+  const wet = greenhouse ? "🏠 Tưới tự động" : isWetNow() ? "🌧️ Trời mưa, đủ nước" : p.watered
+    ? `💧 Đủ nước${p.wetUntil && p.wetUntil > now ? ` · còn ${fmtDuration(p.wetUntil - now)}` : ""}`
+    : "";
+  if (!info) return h("div", { class: "desc" }, h("span", { class: "chip-s" }, SOIL_NAMES[p.soil]), " ", wet ? h("span", { class: "chip-s" }, wet) : null);
   const d = info.def;
-  return h("div", { class: "desc" },
-    info.ready ? "✨ Đã chín! " : `Còn ~${info.left} ngày · `,
-    info.inSeason ? "" : h("span", { class: "bad" }, "trái mùa (chậm) · "),
-    `${SOIL_NAMES[p.soil]} · ${greenhouse ? "tưới tự động" : p.watered ? "đã tưới" : d.water ? "cần tưới!" : "chịu hạn"}`,
-    d.regrow ? ` · thu hoạch lần ${p.crop!.harvests + 1}, tái sinh sau ${d.regrow} ngày` : "",
-    p.crop!.perfect ? " · 🌟 chăm sóc hoàn hảo (+50%)" : "");
+  const target = cropTarget(p.crop!);
+  return h("div", { class: "col", style: "gap:4px;margin-top:3px" },
+    bar(p.crop!.growth, target, `growbar ${info.ready ? "ripe" : ""}`, info.ready ? "✨ Đã chín — thu hoạch được!" : `🌱 Chín sau ${fmtDuration(msToRipe(g, p, greenhouse))}`),
+    h("div", { class: "row", style: "gap:4px" }, ...nn(
+      wet ? h("span", { class: "chip-s good" }, wet) : d.water ? h("span", { class: "chip-s bad" }, d.water === 2 ? "🏜️ Khô — cây ngừng lớn!" : "🏜️ Khô — lớn chậm một nửa") : h("span", { class: "chip-s" }, "🌵 Chịu hạn"),
+      info.inSeason ? null : h("span", { class: "chip-s bad" }, "❄️ Trái mùa: lớn chậm"),
+      h("span", { class: "chip-s" }, `🟫 ${SOIL_NAMES[p.soil]}`),
+      p.crop!.perfect ? h("span", { class: "chip-s gold" }, "🌟 Được mùa +50%") : null,
+      d.regrow ? h("span", { class: "chip-s" }, `♻️ Tái sinh · lần ${p.crop!.harvests + 1}`) : null)));
 }
 
 /** Detail + actions for one plot (field or greenhouse bed). */
@@ -277,7 +294,7 @@ function plotBody(m: ModalHandle, p: PlotState, greenhouse: boolean, render: () 
       h("div", { class: "meta" }, h("div", { class: "name" }, it.name), plotSummary(p, greenhouse)),
       ...nn(
         info.ready ? h("button", { class: "btn small good", onclick: () => { harvestMany([p]); render(); } }, "Thu hoạch") : null,
-        !greenhouse && !p.watered ? h("button", { class: "btn small blue", onclick: () => { p.watered = true; app.dirty(); render(); } }, "💧 Tưới") : null,
+        !greenhouse && !p.watered ? h("button", { class: "btn small blue", onclick: () => { waterPlot(p); app.dirty(); render(); } }, "💧 Tưới") : null,
         h("button", {
           class: "btn small",
           onclick: async () => { if (await confirmBox("Nhổ bỏ", `Nhổ bỏ ${it.name}? Cây sẽ mất.`)) { p.crop = undefined; app.dirty(); render(); } },
@@ -286,7 +303,7 @@ function plotBody(m: ModalHandle, p: PlotState, greenhouse: boolean, render: () 
     m.body.append(h("div", { class: "item-row" },
       h("span", { class: "ico" }, "🟫"),
       h("div", { class: "meta" }, h("div", { class: "name" }, "Ô đất trống"), plotSummary(p, greenhouse)),
-      !greenhouse && !p.watered ? h("button", { class: "btn small blue", onclick: () => { p.watered = true; app.dirty(); render(); } }, "💧 Tưới") : null));
+      !greenhouse && !p.watered ? h("button", { class: "btn small blue", onclick: () => { waterPlot(p); app.dirty(); render(); } }, "💧 Tưới") : null));
     const seeds = Object.keys(g.inventory).map(getItem).filter((it) => (it.type === "seed" || it.type === "sapling") && it.crop && CROPS[it.crop]);
     m.body.append(h("div", { class: "section-title" }, `Gieo trồng · mùa ${SEASON_ICONS[season]} ${SEASON_NAMES[season]}`));
     if (!seeds.length) m.body.append(h("p", { class: "muted" }, "Bạn không có hạt giống nào. Mua ở chợ các làng dưới Vực Sâu, nhặt khi khám phá, hoặc có được khi thu hoạch."));
@@ -300,7 +317,7 @@ function plotBody(m: ModalHandle, p: PlotState, greenhouse: boolean, render: () 
         h("div", { class: "meta" },
           h("div", { class: "name" }, s.name, h("span", { class: "qty" }, ` ×${g.inventory[s.id]}`), ok ? null : h("span", { class: "tag bad" }, "trái mùa")),
           h("div", { class: "desc" },
-            `${c.days} ngày${c.regrow ? `, tái sinh mỗi ${c.regrow} ngày` : ""} → ${c.yield[0]}–${c.yield[1]} ${getItem(c.id).name} · `,
+            `⏱️ ${fmtDuration(cropSeconds(c.days) * 1000)}${c.regrow ? `, ra lứa mới mỗi ${fmtDuration(cropSeconds(c.regrow) * 1000)}` : ""} → ${c.yield[0]}–${c.yield[1]} ${getItem(c.id).name} · `,
             `mùa ${c.seasons.map((x) => SEASON_ICONS[x]).join("")} · ${["chịu hạn", "cần nước", "rất khát"][c.water]}`,
             c.hybrid ? ` · giống lai` : "")),
         h("button", { class: "btn small primary", onclick: () => { if (removeItem(g, s.id, 1)) { plant(p, c.id); toast(`Đã gieo ${getItem(c.id).name}.`, "good"); app.dirty(); render(); } } }, "Gieo")));
@@ -329,12 +346,12 @@ function bulkFarmActions(m: ModalHandle, render: () => void) {
   const hasWell = g.buildings.some((b) => b.type === "well");
   const w = WEATHER[g.weather];
   m.body.append(h("div", { class: "section-title" }, "Cả nông trại"),
-    h("p", { class: "small muted", style: "margin:0 0 6px" }, `Hôm nay: ${w.icon} ${w.name} · ${fields.length} ô ruộng · ${empty.length} trống · ${dry.length} chưa tưới · ${ready.length} chín.${isWetNow() ? " Trời mưa — ruộng tự được tưới." : ""}`),
+    h("p", { class: "small muted", style: "margin:0 0 6px" }, `${w.icon} ${w.name} · ${fields.length} ô ruộng · ${empty.length} trống · ${dry.length} khô · ${ready.length} chín.${isWetNow() ? " Trời mưa — ruộng tự đủ nước." : ` Mỗi lần tưới giữ ẩm ${WATER_SEC / 60} phút.`} Cây lớn theo thời gian thật, kể cả khi bạn đi vắng.`),
     h("div", { class: "row" }, ...nn(
       ready.length ? h("button", { class: "btn good", onclick: () => { harvestMany(ready); render(); } }, `🧺 Thu hoạch tất cả (${ready.length})`) : null,
       dry.length ? h("button", {
         class: "btn blue", disabled: !hasWell, title: hasWell ? "" : "Cần xây Giếng Nước",
-        onclick: () => { for (const p of dry) p.watered = true; app.dirty(); toast(`Đã tưới ${dry.length} ô.`, "good"); render(); },
+        onclick: () => { for (const p of dry) waterPlot(p); app.dirty(); toast(`Đã tưới ${dry.length} ô (ẩm trong ${WATER_SEC / 60} phút).`, "good"); render(); },
       }, hasWell ? `💧 Tưới tất cả (${dry.length})` : "💧 Tưới tất cả (cần Giếng)") : null,
     )));
   if (empty.length > 1) {

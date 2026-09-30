@@ -121,8 +121,8 @@ export function openHelp() {
   const sec = (t: string, ...p: string[]) => [h("div", { class: "section-title" }, t), ...p.map((x) => h("p", { style: "margin:4px 0;line-height:1.55" }, x))];
   m.body.append(
     ...sec("🏡 Thánh Địa", "Chạm vào công trình để sử dụng. Nút 🔨 Xây để đặt công trình mới, kéo màn hình để di chuyển camera khi đặt.",
-      "Mỗi lần ngủ ở Nhà Chính là một ngày trôi qua: cây lớn, công trình sản xuất, dân chúng ăn uống. Mỗi mùa dài 7 ngày, thời tiết thay đổi mỗi ngày.",
-      "🌱 Nông trại: gieo hạt đúng mùa, tưới nước mỗi ngày (mưa thì trời tưới) để được mùa gấp rưỡi. Bón phân nâng cấp đất. Một số cây thu hoạch nhiều lần. Trồng hai giống bố mẹ cạnh ô trống có thể ra giống lai. Nhà Kính trồng quanh năm.",
+      "Mỗi lần ngủ ở Nhà Chính là một ngày trôi qua: công trình sản xuất, dân chúng ăn uống, thời tiết và mùa thay đổi. Mỗi mùa dài 7 ngày.",
+      "🌱 Nông trại chạy theo thời gian thật: cây lớn từng giây (nhanh nhất 15 giây, cây ăn trái vài phút), kể cả khi bạn đang ở Vực Sâu hay tắt game (tối đa 8 giờ). Mỗi lần tưới giữ ẩm 3 phút — ô khô thì cây lớn chậm (cây khát nước sẽ ngừng lớn) và mất thưởng được mùa (+50%). Mưa, Vòi Tưới và Nhà Kính tự lo nước. Gieo hạt đúng mùa, bón phân nâng cấp đất; một số cây thu hoạch nhiều lần; hai giống bố mẹ chín cạnh ô trống có thể ra giống lai.",
       "🏘️ Thăng hạng Thánh Địa: Trại → Xóm → Làng → Thị Trấn → Thành Phố → Kinh Đô. Cần dân số và độ sâu đã tới. Dân tới ở khi có nhà và đủ lương thực, làm việc ở các công trình sản xuất.",
       "📌 Nút Việc cho biết những gì đang chờ bạn: ruộng chín, điểm chỉ số chưa dùng, đồ trong túi tốt hơn đồ đang mặc (ô trang bị có dấu ⬆), cư dân có chuyện muốn nói, việc nhờ đã xong. Con số đỏ trên các nút là số việc có thể làm ngay. Trong túi đồ, đồ mới nhận có nhãn MỚI, đồ tốt hơn cho đồng đội có dấu ⬆; tìm kiếm không cần gõ dấu.",
       "⚒️ Các trạm chế tạo (Bếp, Giả Kim, Lò Rèn, Xưởng Cưa, Xưởng Đá, Xưởng May, Hố Ủ Phân, Thư Viện) có hàng trăm công thức từ nguyên liệu của Vực Sâu."),

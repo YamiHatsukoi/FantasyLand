@@ -417,3 +417,12 @@ img.iicon.lg { width: 48px; height: 48px; }
 .gt-up { position: absolute; top: 3px; right: 5px; font-size: 12px; color: #7be07b; font-weight: 700; }
 .party-tabs button { min-width: 0; white-space: nowrap; padding: 8px 4px; }
 @media (max-width: 480px) { .party-tabs button { font-size: 11.5px; } .tab-badge { margin-left: 3px; padding: 0 3px; } }
+/* ---- farming */
+.bar.growbar { height: 14px; }
+.bar.growbar .bar-fill { background: linear-gradient(#8ad86a, #3f8a3a); }
+.bar.growbar.ripe .bar-fill { background: linear-gradient(#ffe070, #d8a030); }
+.bar.growbar .bar-label { font-size: 10px; line-height: 14px; }
+.chip-s { font-size: 11px; padding: 1px 7px; border-radius: 8px; background: #ffffff12; color: var(--muted); white-space: nowrap; }
+.chip-s.good { color: #8ad0ff; background: #2a4a6a55; }
+.chip-s.bad { color: #ff9a8a; background: #6a2a2a55; }
+.chip-s.gold { color: var(--gold); background: #6a5a2a55; }

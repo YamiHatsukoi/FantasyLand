@@ -13,7 +13,7 @@ import { findPath } from "../world/mapgen";
 import { SPROUT, SZ_H, SZ_W, blockerAt, buildLimitReason, buildingAt, canPlace, inTerritory, territory } from "../world/sanctuary";
 import { h, openModal, toast, topModalOpen } from "../ui/dom";
 import { costView, openBuilding, setMoveHook, showReport } from "./buildingPanels";
-import { WEATHER, advanceDay, cropStage, ensureSlots, housing, isReady, population, rankName, rankOf } from "../world/town";
+import { WEATHER, advanceDay, cropStage, ensureSlots, housing, isReady, population, rankName, rankOf, tickFarm } from "../world/town";
 import { openHelp, openJournal, openMenu, partyMini, saveDot, showBanner } from "./common";
 import { openInventory } from "./inventory";
 import { openParty } from "./party";
@@ -90,6 +90,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   let talkingTo: string | null = null;
   const marks = new Map<string, boolean>(); // "!" markers, refreshed every few seconds
   let markT = 0;
+  let farmT = 0;
   const talkTo = (id: string) => {
     const ch = app.game.chars[id];
     if (!ch) return;
@@ -387,6 +388,8 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     sim.update(dt, t, vr, talkingTo);
     markT -= dt;
     const refreshMarks = markT <= 0;
+    farmT -= dt;
+    if (farmT <= 0) { farmT = 0.5; tickFarm(app.game); }
     if (refreshMarks) { markT = 3; updateBadges(); }
     const bubbles: (() => void)[] = [];
     for (const a of sim.agents) {
