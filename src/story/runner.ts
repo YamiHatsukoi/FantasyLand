@@ -33,6 +33,7 @@ export function evalCond(c: Cond | undefined, ctx: StoryCtx): boolean {
   if ("party" in c) return g.party.includes(c.party);
   if ("recruited" in c) return Boolean(g.chars[c.recruited]);
   if ("gold" in c) return g.gold >= c.gold;
+  if ("rank" in c) return (g.buildings.find((b) => b.type === "house")?.level ?? 1) >= c.rank;
   if ("all" in c) return c.all.every((x) => evalCond(x, ctx));
   if ("any" in c) return c.any.some((x) => evalCond(x, ctx));
   if ("not" in c) return !evalCond(c.not, ctx);
@@ -44,6 +45,7 @@ export function condText(c: Cond | undefined): string {
   if ("has" in c) return `Cần ${c.n ?? 1} ${getItem(c.has).name}`;
   if ("party" in c) return `Cần ${COMPANIONS[c.party]?.name ?? c.party} trong đội`;
   if ("gold" in c) return `Cần ${c.gold} vàng`;
+  if ("rank" in c) return `Thánh Địa cần đạt hạng ${["", "Trại", "Xóm", "Làng", "Thị Trấn", "Thành Phố", "Kinh Đô"][c.rank]}`;
   if ("all" in c) return c.all.map(condText).filter(Boolean).join(", ");
   return "Chưa đủ điều kiện";
 }

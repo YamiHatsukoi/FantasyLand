@@ -1,8 +1,22 @@
 import { registerSpecs } from "../../world/floorSpec";
 import "./arc02";
 import "./arc03";
+import "./arc04";
+import "./arc05";
+import "./arc06";
+import "./arc07";
+import "./arc08";
+import "./arc09";
+import "./arc10";
 import { FLOORS_01 } from "./floors01";
 import { FLOORS_02 } from "./floors02";
 import { FLOORS_03 } from "./floors03";
+import { FLOORS_04 } from "./floors04";
+import { FLOORS_05 } from "./floors05";
+import { FLOORS_06 } from "./floors06";
+import { FLOORS_07 } from "./floors07";
+import { FLOORS_08 } from "./floors08";
+import { FLOORS_09 } from "./floors09";
+import { FLOORS_10 } from "./floors10";
 
-registerSpecs([...FLOORS_01, ...FLOORS_02, ...FLOORS_03]);
+registerSpecs([...FLOORS_01, ...FLOORS_02, ...FLOORS_03, ...FLOORS_04, ...FLOORS_05, ...FLOORS_06, ...FLOORS_07, ...FLOORS_08, ...FLOORS_09, ...FLOORS_10]);

@@ -25,6 +25,10 @@ I("star_chart", "Bản Đồ Sao Của Hana", "key", 0, "Bầu trời của từ
 I("false_thorn", "Gai Giả Của Brakka", "key", 0, "Một chiếc gai đen thô kệch rèn ở Durgath. Đặt cạnh ngọn lửa, ngọn lửa ngừng lay động.", "thorn", ["#3a3a3a", "#6a6a6a", "#ff8a3a"], { icon: "🪡" });
 I("hana_notebook", "Sổ Tay Của Hana", "key", 0, "Cuốn sổ dày cộp của Hana: bản đồ sao, những trang Sổ Tay đã ghép, và dòng chữ cuối cùng bị bỏ dở.", "book", ["#c83a3a", "#e8e0d0", "#1a1a2a"], { icon: "📓" });
 I("kaito_seed", "Hạt Giống Của Kaito", "key", 0, "Một quả nhỏ vỏ cứng như gỗ. Kaito dặn: tới đáy rồi hãy trồng.", "seed", ["#6a4a2a", "#8ad86a", "#ffe8a0"], { icon: "🌰" });
+I("lan_doll", "Búp Bê Vải Bé Na", "key", 0, "Con búp bê vải khâu vụng, thêu chữ LAN trên váy. Của một cô bé bảy tuổi.", "cloth", ["#ff8ab0", "#1a1a1a", "#ffe040"], { icon: "🧸" });
+I("blank_page", "Trang Giấy Trắng", "key", 0, "Người thứ nhất tặng bạn: một trang giấy chưa ép gì cả. Để dành cho một kết thúc khác.", "scroll", ["#ffffff", "#c8c0a0", "#e8e0d0"], { icon: "📃" });
+I("iris_flower", "Bông Diên Vĩ Nhỏ", "key", 0, "Một cái tên bị quên, hoá thành hoa. Iris — tên mẹ của Người Làm Vườn.", "flower", ["#8a6ac0", "#4f9a45", "#ffe070"], { icon: "🪻" });
+I("canh_chua", "Cà Mèn Canh Chua Bà Tư", "food", 60, "Bà Tư nhờ đem lên cho ông Bảy ở hồ sao tầng 14. Vẫn còn nóng hổi.", "bowl", ["#e8903a", "#c83a3a", "#8ad86a"], { icon: "🍲", use: { target: "allies", healPct: 1, mpPct: 0.5, field: true } });
 I("black_thorn", "Gai Đen", "key", 0, "Chiếc gai đen rút ra từ Boss Canh Cửa. Nó vẫn còn ấm, và dường như đang đập.", "thorn", ["#2a1a2a", "#5a2a5a", "#ff3a6a"], { icon: "🖤" });
 I("bouquet", "Bó Hoa Tỏ Tình", "key", 0, "Tặng người trong lòng để ngỏ lời hẹn hò. Mầm bán ở Thánh Địa.", "flower", ["#ff6a9a", "#4f9a45", "#fff0f5"], { icon: "💐", tags: ["romance"] });
 I("promise_ring", "Nhẫn Đính Ước", "key", 0, "Trao cho người đang hẹn hò để cầu hôn. Cần Nhà Chính cấp 2.", "ring", ["#f2c542", "#ffffff", "#ff80b0"], { icon: "💍", tags: ["romance"] });

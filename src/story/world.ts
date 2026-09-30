@@ -2,6 +2,7 @@ import type { Element } from "../combat/types";
 import { ARC } from "../data/world/arc";
 import "../data/world";
 import { FLOOR_EVENTS, FLOOR_GUARDIAN, SPECS, sigId, type FloorSpec } from "../world/floorSpec";
+import { FINALE } from "./finale";
 import type { Attr, Choice, Scene, StoryEvent } from "./types";
 
 /**
@@ -150,13 +151,16 @@ function floorEvents(s: FloorSpec): StoryEvent[] {
     const last = scenes[beat.scenes.length === 1 ? "a" : `s${beat.scenes.length - 1}`];
     const endFx = [{ flag: `arc_${n}` }, { xpF: 8 }, ...(beat.give ? [{ give: beat.give }] : [])];
     if (beat.choices?.length) {
-      last.choices = beat.choices.map((c, i) => ({ text: c.text, cond: c.cond, hide: c.hide, next: `c${i}`, fx: [...endFx, ...(c.flag ? [{ flag: c.flag }] : []), ...(c.give ? [{ give: c.give }] : [])] }));
-      beat.choices.forEach((c, i) => { scenes[`c${i}`] = { text: c.reply, speaker: beat.speaker, portrait: beat.portrait }; });
+      last.choices = beat.choices.map((c, i) => ({ text: c.text, cond: c.cond, hide: c.hide, next: `c${i}`, fx: [...(c.keep ? [] : endFx), ...(c.flag ? [{ flag: c.flag }] : []), ...(c.give ? [{ give: c.give }] : []), ...(c.recruit ? [{ recruit: c.recruit }] : [])] }));
+      beat.choices.forEach((c, i) => { scenes[`c${i}`] = { text: c.reply, speaker: beat.speaker, portrait: beat.portrait, keep: c.keep }; });
     } else last.fx = endFx;
     out.push({ id: `beat${n}`, title: beat.title, start: "a", portrait: beat.portrait, scenes });
   }
 
-  if (n > 3) {
+  if (n === 100) {
+    out.push(FINALE);
+    FLOOR_GUARDIAN[n] = FINALE.id;
+  } else if (n > 3) {
     out.push({
       id: `guard${n}`, title: "Boss Canh Cửa", start: "route",
       scenes: {

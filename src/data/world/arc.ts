@@ -8,6 +8,9 @@ export interface ArcChoice {
   /** Only selectable when this holds (e.g. a flag from an earlier floor). */
   cond?: Cond;
   hide?: boolean;
+  recruit?: string;
+  /** The beat stays on the map so the player can come back (e.g. once they have what it needs). */
+  keep?: boolean;
   reply: string;
   flag?: string;
   give?: Record<string, number>;
