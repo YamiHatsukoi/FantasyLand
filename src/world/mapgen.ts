@@ -1,9 +1,11 @@
 import { Rng, makeNoise } from "../core/rng";
 import { PASSABLE, T, VARIANTS } from "../render/tiles";
 import { BIOMES } from "./biomes";
+import { BUILDINGS } from "../data/buildings";
 import { settlementCount, type FloorDef } from "./floors";
+import { getSettlement } from "./people";
 
-export type EntityKind = "monster" | "node" | "event" | "random" | "chest" | "camp" | "stairs" | "portal" | "guardian" | "town";
+export type EntityKind = "monster" | "node" | "event" | "random" | "chest" | "camp" | "stairs" | "portal" | "guardian" | "town" | "building" | "npc";
 
 export interface MapEntity {
   id: string;
@@ -17,6 +19,7 @@ export interface MapEntity {
   group?: string[];
   level?: number;
   tint?: Record<string, string>;
+  foot?: [x: number, y: number, w: number, h: number]; // building footprint
 }
 
 export interface FloorMap {
@@ -29,6 +32,7 @@ export interface FloorMap {
   entities: MapEntity[];
   start: { x: number; y: number };
   stairs: { x: number; y: number };
+  towns: TownRect[];
 }
 
 export const MAP_W = 144;
@@ -223,23 +227,167 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
   }
 
   // Settlements are placed last (with their own RNG) so older saves keep the same entity ids.
+  // Each one is laid out as a real town: paved streets, a plaza, shops, an inn and homes.
   const trng = new Rng(seed ^ 0x70a7);
+  const towns: TownRect[] = [];
   const nTown = settlementCount(def.n);
+  const important = entities.filter((e) => e.kind === "portal" || e.kind === "stairs" || e.kind === "guardian" || e.kind === "event");
   for (let i = 0; i < nTown; i++) {
-    const c = centers[(i * 2 + 1) % centers.length];
-    let spot: { x: number; y: number } | null = null;
-    for (let tries = 0; tries < 300 && !spot; tries++) {
-      const r = 2 + Math.floor(tries / 25);
-      const x = c.x + trng.int(-r, r), y = c.y + trng.int(-r, r);
-      if (x > 4 && y > 4 && x < w - 5 && y < h - 5 && free(x, y, 2) && free(x, y + 1, 0)) spot = { x, y };
+    const s = getSettlement(def.n, i);
+    const rows = s.size === "village" ? 1 : s.size === "town" ? 2 : 3;
+    const TW = s.size === "village" ? 19 : s.size === "town" ? 23 : 29, TH = 3 + rows * 4;
+    let best: { x: number; y: number; cost: number } | null = null;
+    for (let tries = 0; tries < 160 * centers.length && !(best && tries >= 160); tries++) {
+      const c = centers[(i * 2 + 1 + Math.floor(tries / 160)) % centers.length];
+      const r = 2 + Math.floor((tries % 160) / 8);
+      const x0 = c.x - (TW >> 1) + trng.int(-r, r), y0 = c.y - (TH >> 1) + trng.int(-r, r);
+      if (x0 < 5 || y0 < 5 || x0 + TW > w - 5 || y0 + TH > h - 5) continue;
+      if (towns.some((t) => x0 < t.x + t.w + 4 && t.x < x0 + TW + 4 && y0 < t.y + t.h + 4 && t.y < y0 + TH + 4)) continue;
+      if (important.some((e) => e.x >= x0 - 2 && e.x < x0 + TW + 2 && e.y >= y0 - 2 && e.y < y0 + TH + 2)) continue;
+      let cost = 0, reach = 0;
+      for (let y = y0; y < y0 + TH; y++) for (let x = x0; x < x0 + TW; x++) {
+        const t = tiles[idx(x, y)];
+        if (t === T.WATER || t === T.WALL) cost += 2; else if (t === T.OBSTACLE) cost += 0.3;
+        if (dist[idx(x, y)] >= 0) reach++;
+      }
+      if (reach < TW * TH * 0.4) continue;
+      if (!best || cost < best.cost) best = { x: x0, y: y0, cost };
+      if (cost === 0) break;
     }
-    if (!spot) continue;
-    place({ kind: "town", x: spot.x, y: spot.y, sprite: "town", ref: String(i) });
-    occupied.add(idx(spot.x, spot.y + 1));
+    if (!best) continue;
+    const rect: TownRect = { i, x: best.x, y: best.y, w: TW, h: TH };
+    towns.push(rect);
+    layoutTown(rect, s.size, s.shops, s.npcs, def.family, trng);
   }
 
-  return { w, h, tiles, variant, region, regionCenters: centers, entities, start, stairs };
+  // Safety net: the gatekeeper and the stairs must always be reachable, whatever the terrain,
+  // towns or permanent props did. If not, dig a road to them.
+  const solid = new Set(entities.filter((e) => e.kind === "building" || e.kind === "town").map((e) => idx(e.x, e.y)));
+  const reachFrom = () => {
+    const seen = new Uint8Array(w * h);
+    const q = [idx(start.x + 1, start.y)];
+    seen[q[0]] = 1;
+    for (let k = 0; k < q.length; k++) {
+      const x = q[k] % w, y = Math.floor(q[k] / w);
+      for (const [dx, dy] of DIRS) {
+        const ni = idx(x + dx, y + dy);
+        if (!seen[ni] && passable(x + dx, y + dy) && !solid.has(ni)) { seen[ni] = 1; q.push(ni); }
+      }
+    }
+    return seen;
+  };
+  const guard = entities.find((e) => e.kind === "guardian")!;
+  for (const goal of [guard, stairs]) {
+    const seen = reachFrom();
+    if (DIRS.some(([dx, dy]) => seen[idx(goal.x + dx, goal.y + dy)])) continue;
+    let x = goal.x - 1, y = goal.y;
+    for (let guardN = 0; guardN < 800 && !seen[idx(x, y)]; guardN++) {
+      const i = idx(x, y);
+      if (!passable(x, y) || solid.has(i)) { tiles[i] = tiles[i] === T.WATER ? T.SHALLOW : T.ALT; solid.delete(i); }
+      if (x !== start.x + 1) x += Math.sign(start.x + 1 - x); else y += Math.sign(start.y - y);
+    }
+  }
+
+  return { w, h, tiles, variant, region, regionCenters: centers, entities, start, stairs, towns };
+
+  function layoutTown(r: TownRect, size: string, shops: string[], npcs: string[], fam: string, tr: Rng) {
+    const { x: x0, y: y0, w: TW, h: TH } = r;
+    const inside = (x: number, y: number) => x >= x0 && x < x0 + TW && y >= y0 && y < y0 + TH;
+    // clear the ground and drop whatever was generated here
+    for (let i = entities.length - 1; i >= 0; i--) if (inside(entities[i].x, entities[i].y)) { occupied.delete(idx(entities[i].x, entities[i].y)); entities.splice(i, 1); }
+    for (let y = y0 - 1; y <= y0 + TH; y++) for (let x = x0 - 1; x <= x0 + TW; x++) {
+      const i = idx(x, y);
+      if (inside(x, y) || !PASSABLE.has(tiles[i])) tiles[i] = T.GROUND;
+    }
+    const rows = (TH - 3) / 4;
+    const streets = Array.from({ length: rows }, (_, k) => y0 + 4 + k * 4);
+    const mid = x0 + (TW >> 1);
+    const pave = (x: number, y: number) => { if (inside(x, y)) tiles[idx(x, y)] = T.PAVE; };
+    for (const sy of streets) for (let x = x0; x < x0 + TW; x++) pave(x, sy);
+    for (let y = y0 + 1; y <= streets[rows - 1]; y++) { pave(x0, y); pave(x0 + TW - 1, y); pave(mid, y); }
+    // plaza below the middle street
+    const ps = streets[rows >> 1];
+    for (let y = ps; y <= ps + 2; y++) for (let x = mid - 3; x <= mid + 3; x++) pave(x, y);
+    // roads out of town: extend the first street both ways until it meets the reachable map
+    for (const [sx, dx] of [[x0 - 1, -1], [x0 + TW, 1]] as const) {
+      const sy = streets[0];
+      for (let k = 0, x = sx; k < 14 && x > 2 && x < w - 3; k++, x += dx) {
+        const i = idx(x, sy);
+        if (dist[i] >= 0 && PASSABLE.has(tiles[i]) && k > 1) break;
+        if (!PASSABLE.has(tiles[i])) tiles[i] = tiles[i] === T.WATER ? T.SHALLOW : T.ALT;
+      }
+    }
+    // the town hall / notice board sits in the plaza
+    const hall = { kind: "town" as const, x: mid, y: ps + 2, sprite: size === "village" ? "well" : "fountain", ref: String(r.i) };
+    tiles[idx(hall.x, hall.y)] = T.PAVE;
+    place(hall);
+
+    const homes = HOMES[fam] ?? HOMES.forest;
+    const queue: { type: string; ref: string }[] = [
+      ...shops.map((k) => ({ type: SHOP_BUILDING[k] ?? "stonehouse", ref: `shop:${k}` })),
+      { type: size === "city" ? "tavern" : "inn", ref: "inn" },
+    ];
+    let homeIdx = 0;
+    const nextHome = () => {
+      const pool = size === "city" ? [...homes, "manor", "apartment", "stonehouse"] : size === "town" ? [...homes, "stonehouse"] : homes;
+      return { type: pool[tr.int(0, pool.length - 1)], ref: `home:${npcs[(shops.length + homeIdx++) % npcs.length]}` };
+    };
+    const underPlaza = streets[(rows >> 1) + 1];
+    for (const sy of streets) {
+      const blocked = (x: number) => x === mid || x === x0 || x === x0 + TW - 1 || (sy === underPlaza && Math.abs(x - mid) <= 3);
+      let x = x0 + 1;
+      while (x < x0 + TW - 1) {
+        const b = queue[0] ?? nextHome();
+        const [bw, bh] = BUILDING_SIZE[b.type] ?? [2, 2];
+        let fits = x + bw <= x0 + TW - 1;
+        for (let k = 0; k < bw && fits; k++) if (blocked(x + k)) fits = false;
+        if (!fits) { x++; continue; }
+        if (queue.length) queue.shift();
+        const fy = sy - bh;
+        for (let yy = fy; yy < sy; yy++) for (let xx = x; xx < x + bw; xx++) tiles[idx(xx, yy)] = T.LOT;
+        place({ kind: "building", x: x + (bw >> 1), y: sy - 1, sprite: b.type, ref: b.ref, foot: [x, fy, bw, bh] });
+        x += bw;
+        // a lamp, tree or flower bed between some houses
+        if (x < x0 + TW - 1 && !blocked(x) && tr.chance(0.45)) {
+          const prop = tr.pick(["lamp", "tree", "flowers"]);
+          tiles[idx(x, sy - 1)] = T.LOT;
+          place({ kind: "building", x, y: sy - 1, sprite: prop, ref: "prop", foot: [x, sy - 1, 1, 1] });
+        }
+        x++;
+      }
+    }
+    // yard south of the last street: fields, trees and lamps
+    const ly = streets[rows - 1] + 2;
+    for (let x = x0 + 1; x < x0 + TW - 1; x += 2) {
+      if (Math.abs(x - mid) <= 3 || !tr.chance(0.4)) continue;
+      tiles[idx(x, ly)] = T.LOT;
+      place({ kind: "building", x, y: ly, sprite: tr.pick(["tree", "flowers", "farm", "lamp"]), ref: "prop", foot: [x, ly, 1, 1] });
+    }
+    // townsfolk wander the streets
+    const walkers = npcs.slice(0, size === "village" ? 3 : size === "town" ? 5 : 7);
+    walkers.forEach((id, k) => {
+      for (let tries = 0; tries < 40; tries++) {
+        const x = x0 + tr.int(0, TW - 1), y = streets[k % rows] + (tries > 20 ? 0 : tr.int(0, 1));
+        if (tiles[idx(x, y)] !== T.PAVE || occupied.has(idx(x, y))) continue;
+        place({ kind: "npc", x, y, sprite: "", ref: id });
+        break;
+      }
+    });
+  }
 }
+
+export interface TownRect { i: number; x: number; y: number; w: number; h: number }
+
+const SHOP_BUILDING: Record<string, string> = {
+  general: "stonehouse", smith: "forge", apothecary: "alchemy", seeds: "cottage", tailor: "tailor", arcane: "library", jeweler: "workshop", market: "market",
+};
+const HOMES: Record<string, string[]> = {
+  forest: ["cottage", "treehouse"], jungle: ["treehouse", "cottage"], bamboo: ["bamboohouse"], sakura: ["bamboohouse", "cottage"],
+  desert: ["tent", "stonehouse"], tundra: ["stonehouse", "cottage"], glacier: ["stonehouse"], volcano: ["stonehouse"], ruins: ["stonehouse"],
+  bonewaste: ["tent", "stonehouse"], swamp: ["cottage", "fisherhut"], reef: ["fisherhut", "cottage"], fungal: ["cottage"], crystal: ["stonehouse"], autumn: ["cottage"],
+};
+const BUILDING_SIZE: Record<string, [number, number]> = Object.fromEntries(Object.values(BUILDINGS).map((b) => [b.id, b.size]));
+
 
 // ------------------------------------------------------------ fog of war bitset helpers
 export function decodeFog(s: string, size: number): Uint8Array {

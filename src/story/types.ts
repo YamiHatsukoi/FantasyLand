@@ -9,6 +9,7 @@ export type Cond =
   | { party: string }
   | { recruited: string }
   | { gold: number }
+  | { rank: number }
   | { all: Cond[] }
   | { any: Cond[] }
   | { not: Cond };

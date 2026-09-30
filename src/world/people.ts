@@ -11,6 +11,7 @@ import {
 } from "../data/npcText";
 import { PLAYER_PASSIVES } from "../data/passives";
 import { getFloor, settlementCount } from "./floors";
+import { SPECS } from "./floorSpec";
 import { WEATHER } from "./town";
 
 // ============================================================ settlements
@@ -57,7 +58,8 @@ export function getSettlement(floor: number, idx: number): Settlement {
   const score = floor / 6 + rng.next() * 1.2 - idx * 0.35;
   const size: SettlementSize = idx === 0 && floor <= 2 ? "village" : score < 0.8 ? "village" : score < 1.7 ? "town" : "city";
   const words = SETTLEMENT_WORDS[def.family] ?? SETTLEMENT_WORDS.forest;
-  const name = `${rng.pick(SETTLEMENT_PREFIX[size])} ${words[(idx * 2 + floor) % words.length]}`;
+  const given = SPECS[floor]?.towns?.[idx];
+  const name = given ?? `${rng.pick(SETTLEMENT_PREFIX[size])} ${words[(idx * 2 + floor) % words.length]}`;
   const shops: ShopKind[] = size === "village" ? ["general", rng.pick<ShopKind>(["seeds", "market", "apothecary"])]
     : size === "town" ? ["general", "smith", "apothecary", "seeds", rng.pick<ShopKind>(["tailor", "market"])]
     : ["general", "smith", "apothecary", "seeds", "tailor", "arcane", "jeweler", "market"];

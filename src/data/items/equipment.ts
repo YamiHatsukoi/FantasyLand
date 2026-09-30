@@ -310,3 +310,15 @@ for (const [id, name, kind, t, passive, col, biome] of legendary) {
     { tier: t, equip: { slot: k.slot, stats: base, passive, kind, hands: k.hands, rarity: "legendary" }, icon: "🌟", tags: ["legendary"] });
   (LEGENDARY_BY_BIOME[biome] ??= []).push(id);
 }
+
+// ------------------------------------------------------------ floor relics (one unique piece per floor)
+export const RELIC_KINDS = KINDS.map((k) => k.id);
+/** A one-of-a-kind item that only the gatekeeper of floor `floor` carries. */
+export function registerRelic(id: string, name: string, kind: string, floor: number, passive: string | undefined, col: string, desc: string): ItemDef {
+  const k = KIND_BY_ID[kind] ?? KIND_BY_ID.ring;
+  const t = metalTierForFloor(floor);
+  return I(id, name, "equip", r(80 * Math.pow(floorTier(floor), 1.7)), desc, k.id, [col, shade(col, -0.45), "#ffe14a"], {
+    tier: t, icon: "🏺", tags: ["legendary", "relic"],
+    equip: { slot: k.slot, stats: k.stats(tierUnit(floorTier(floor)) * 1.3, t), passive: passive ?? k.passives[floor % k.passives.length], kind: k.id, hands: k.hands, floor, rarity: "legendary" },
+  });
+}

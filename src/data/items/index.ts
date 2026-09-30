@@ -16,7 +16,7 @@ export { METALS, BIOME_MATS, ESSENCES, metalTierForFloor } from "./materials";
 export { CROPS, CROP_LIST, SEASON_NAMES, SEASON_ICONS, DAYS_PER_SEASON, seasonOf } from "./farm";
 export type { CropDef, Season } from "./farm";
 export { CONSUMABLE_RECIPES } from "./consumables";
-export { EQUIP_RECIPES, EQUIP_KINDS, KIND_NAMES, KIND_BY_ID, GEAR_BY_FLOOR, LEGENDARY_BY_BIOME, gearForFloor, tierUnit } from "./equipment";
+export { EQUIP_RECIPES, EQUIP_KINDS, KIND_NAMES, KIND_BY_ID, GEAR_BY_FLOOR, LEGENDARY_BY_BIOME, RELIC_KINDS, gearForFloor, registerRelic, tierUnit } from "./equipment";
 
 const tomeCache: Record<string, ItemDef> = {};
 

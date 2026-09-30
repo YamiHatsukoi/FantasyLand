@@ -255,6 +255,11 @@ export const COMPANIONS: Record<string, CompanionDef> = {
     bio: "Nữ tư tế của đoàn lữ hành sa mạc, mang theo ngọn lửa thánh không bao giờ tắt.",
     extraSkills: ["healing_rain"], extraPassives: ["p_pure_soul"],
   },
+  hana: {
+    id: "hana", name: "Hana Người Đếm Sao", classId: "astromancer", sprite: "hana",
+    bio: "Nghiên cứu sinh vật lý thiên văn ở Osaka, người chuyển sinh thứ ba. Đã đứng đếm sao suốt thời gian bị ép để không quên chính mình.",
+    extraSkills: [], extraPassives: ["p_wisdom"],
+  },
   morwen: {
     id: "morwen", name: "Morwen Đèn Lồng", classId: "witch", sprite: "morwen",
     bio: "Phù thủy đầm lầy bị lưu đày, kẻ nghe được tiếng nói của người chết đuối.",

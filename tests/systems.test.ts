@@ -65,8 +65,10 @@ describe("farming & town", () => {
 });
 
 describe("settlements & npcs", () => {
-  it("every floor has settlements with shops and npcs placed on the map", () => {
-    for (const n of [1, 2, 5, 12, 40, 99]) {
+  it("every inhabited floor has settlements with shops and npcs placed on the map", () => {
+    // floor 99 (and a few others) are uninhabitable on purpose
+    expect(floorSettlements(99).length).toBe(0);
+    for (const n of [1, 2, 5, 12, 40, 98]) {
       const ss = floorSettlements(n);
       expect(ss.length).toBeGreaterThan(0);
       const map = generateFloor(getFloor(n), 1000 + n);

@@ -15,9 +15,10 @@ import { giveToGame, randomLoot } from "../story/runner";
 import type { BattleSpec } from "../story/types";
 import { BIOMES } from "../world/biomes";
 import { getFloor, type FloorDef } from "../world/floors";
-import { getSettlement } from "../world/people";
+import { SHOP_NAMES, SIZE_NAMES, activeQuest, getNpc, getSettlement, type ShopKind } from "../world/people";
+import { openNpc } from "./npcTalk";
 import { buildingCanvas } from "../render/buildings";
-import { openSettlement } from "./settlement";
+import { openSettlement, openShop } from "./settlement";
 import { decodeFog, encodeFog, findPath, generateFloor, type FloorMap, type MapEntity } from "../world/mapgen";
 import { confirmBox, h, nn, openModal, toast, topModalOpen } from "../ui/dom";
 import { runBattle, type BattleOutcome } from "./combat";
@@ -79,10 +80,10 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   const alive = (e: MapEntity) => {
     if (e.kind === "monster" || e.kind === "node" || e.kind === "camp") return !ex.done.includes(e.id);
     if (e.kind === "guardian") return !fs.cleared;
-    if (e.kind === "stairs" || e.kind === "portal" || e.kind === "town") return true;
+    if (e.kind === "stairs" || e.kind === "portal" || e.kind === "town" || e.kind === "building" || e.kind === "npc") return true;
     return !fs.done.includes(e.id);
   };
-  const ents = map.entities.map((e) => ({ ...e, px: e.x, py: e.y, stun: 0 }));
+  const ents = map.entities.map((e) => ({ ...e, px: e.x, py: e.y, stun: 0, dir: 0 as Dir, flip: false }));
   const player = { x: map.start.x + 1, y: map.start.y, px: 0, py: 0, flip: false, dir: 0 as Dir, path: [] as { x: number; y: number }[], t: 0 };
   if (fs.px !== undefined && fs.py !== undefined && PASSABLE.has(map.tiles[idx(fs.px, fs.py)])) { player.x = fs.px; player.y = fs.py; }
   if (!PASSABLE.has(map.tiles[idx(player.x, player.y)])) { player.x = map.start.x; player.y = map.start.y + 1; }
@@ -92,6 +93,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   let busy = false;
   let destroyed = false;
   let region = -1;
+  let inTown = -1;
 
   const el = h("div", { class: "screen" });
   root.append(el);
@@ -104,7 +106,9 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   const regionChip = h("div", { class: "chip" }, "");
   const info = h("div", { class: "chip" });
   const party = partyMini();
+  const bagBadge = h("span", { class: "dock-badge" });
   const updateHud = () => {
+    bagBadge.textContent = String(g.newItems?.length || "");
     info.replaceChildren("💰 ", h("b", null, String(g.gold)), "  🎒 ", h("b", null, String(Object.keys(ex.bag).length)), "  ", saveDot());
     party.update();
   };
@@ -113,7 +117,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     h("button", { class: "icon-btn", onclick: () => view.zoom(1) }, "＋"),
     h("button", { class: "icon-btn", onclick: () => view.zoom(-1) }, "－")));
   el.append(h("div", { class: "dock" },
-    dockBtn("🎒", "Túi", () => openInventory({ canSell: false, onChange: updateHud })),
+    dockBtn("🎒", "Túi", () => openInventory({ canSell: false, onChange: updateHud }), bagBadge),
     dockBtn("👥", "Đội", () => openParty({ inDungeon: true, onChange: updateHud })),
     dockBtn("🗺️", "Bản đồ", () => openMinimap()),
     dockBtn("📜", "Nhật ký", () => openJournal()),
@@ -126,8 +130,8 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   ));
   updateHud();
 
-  function dockBtn(icon: string, label: string, fn: () => void) {
-    return h("button", { onclick: fn }, h("span", null, icon), h("span", null, label));
+  function dockBtn(icon: string, label: string, fn: () => void, badge?: HTMLElement) {
+    return h("button", { onclick: fn }, h("span", null, icon), h("span", null, label), badge ?? null);
   }
 
   // ------------------------------------------------------------ helpers
@@ -151,6 +155,13 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   }
 
   function checkRegion() {
+    const town = map.towns.find((t) => player.x >= t.x && player.x < t.x + t.w && player.y >= t.y && player.y < t.y + t.h);
+    if (town && town.i !== inTown) {
+      const s = getSettlement(floorN, town.i);
+      showBanner(el, s.name, `${SIZE_NAMES[s.size]} · ${s.shops.length} cửa hàng · ${s.npcs.length} cư dân`);
+      g.flags[`seen_town_${s.id}`] = true;
+    }
+    inTown = town ? town.i : -1;
     const r = map.region[idx(player.x, player.y)];
     if (r !== region) {
       region = r;
@@ -185,7 +196,21 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     if (ex.steps % 12 === 0) savePos();
   }
 
+  function moveTownsfolk() {
+    for (const n of ents) {
+      if (n.kind !== "npc" || !rng.chance(0.35)) continue;
+      const [ox, oy] = rng.pick([[1, 0], [-1, 0], [0, 1], [0, -1]]);
+      const nx = n.x + ox, ny = n.y + oy;
+      if (Math.abs(nx - n.hx) + Math.abs(ny - n.hy) > 8 || map.tiles[idx(nx, ny)] !== T.PAVE || !walkable(nx, ny) || (nx === player.x && ny === player.y)) continue;
+      n.dir = ox ? 2 : oy < 0 ? 1 : 0;
+      n.flip = ox < 0;
+      n.x = nx;
+      n.y = ny;
+    }
+  }
+
   function moveMonsters() {
+    moveTownsfolk();
     if (ex.repel && ex.repel > 0) { ex.repel--; if (ex.repel === 0) toast("Hiệu lực xua quái đã hết.", "info"); }
     const repelled = (ex.repel ?? 0) > 0;
     const lure = (ex.repel ?? 0) < 0;
@@ -211,7 +236,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         nx += ox; ny += oy;
         if (Math.abs(nx - m.hx) + Math.abs(ny - m.hy) > 4) continue;
       }
-      if ((nx !== m.x || ny !== m.y) && walkable(nx, ny) && !(nx === player.x && ny === player.y)) {
+      if ((nx !== m.x || ny !== m.y) && walkable(nx, ny) && map.tiles[idx(nx, ny)] !== T.PAVE && !(nx === player.x && ny === player.y)) {
         m.x = nx;
         m.y = ny;
       }
@@ -331,9 +356,29 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
       case "town": {
         player.path = [];
         const s = getSettlement(floorN, Number(e.ref ?? 0));
-        if (!g.flags[`seen_town_${s.id}`]) { g.flags[`seen_town_${s.id}`] = true; showBanner(el, s.name, s.size === "village" ? "Làng" : s.size === "town" ? "Thị trấn" : "Thành phố"); }
-        openSettlement(s, () => { updateHud(); savePos(); });
+        g.flags[`seen_town_${s.id}`] = true;
+        openSettlement(s, () => { updateHud(); savePos(); }, "people");
         return;
+      }
+      case "building": {
+        player.path = [];
+        const town = map.towns.find((t) => e.x >= t.x && e.x < t.x + t.w && e.y >= t.y && e.y < t.y + t.h);
+        if (!town || e.ref === "prop") return;
+        const s = getSettlement(floorN, town.i);
+        const done = () => { updateHud(); savePos(); };
+        const [kind, arg] = (e.ref ?? "").split(":");
+        if (kind === "shop") { const k = s.shops.indexOf(arg as ShopKind); return openShop(s, arg as ShopKind, s.npcs[Math.max(0, k)], done); }
+        if (kind === "inn") return openSettlement(s, done, "inn");
+        if (kind === "home" && arg) {
+          const npc = getNpc(arg);
+          toast(`🏠 Nhà của ${npc.name}. Bạn gõ cửa…`);
+          return openNpc(npc, done);
+        }
+        return;
+      }
+      case "npc": {
+        player.path = [];
+        return openNpc(getNpc(e.ref!), () => { updateHud(); savePos(); });
       }
       case "stairs": {
         if (!fs.cleared) return toast("🔒 Cầu thang bị phong ấn. Hãy đánh bại Boss Canh Cửa của tầng.", "bad");
@@ -436,7 +481,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     const s = 5;
     const cv = h("canvas", { width: map.w * s, height: map.h * s, class: "pix", style: "width:100%;height:auto;border-radius:8px;background:#000" });
     const c = cv.getContext("2d")!;
-    const col: Record<number, string> = { [T.GROUND]: biome.ground[0], [T.ALT]: biome.alt[0], [T.DECOR]: biome.ground[1], [T.OBSTACLE]: biome.obs[1], [T.WATER]: biome.water[0], [T.SHALLOW]: biome.water[1], [T.WALL]: biome.wall[0] };
+    const col: Record<number, string> = { [T.GROUND]: biome.ground[0], [T.ALT]: biome.alt[0], [T.DECOR]: biome.ground[1], [T.OBSTACLE]: biome.obs[1], [T.WATER]: biome.water[0], [T.SHALLOW]: biome.water[1], [T.WALL]: biome.wall[0], [T.PAVE]: "#b8b0a0", [T.LOT]: "#a0503a" };
     for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
       if (!fog[idx(x, y)]) continue;
       c.fillStyle = col[map.tiles[idx(x, y)]];
@@ -543,9 +588,19 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     const bob = (seed: number) => Math.sin(t / 260 + seed) * 0.06;
     for (const e of ents) {
       if (!alive(e) || !fog[idx(e.x, e.y)]) continue;
-      if (e.x < vr.x0 - 1 || e.x > vr.x1 + 1 || e.y < vr.y0 - 1 || e.y > vr.y1 + 1) continue;
-      drawables.push({ y: e.py + (e.kind === "town" ? 1.2 : 1), fn: () => drawEntity(e) });
+      if (e.x < vr.x0 - 3 || e.x > vr.x1 + 3 || e.y < vr.y0 - 1 || e.y > vr.y1 + 4) continue;
+      drawables.push({ y: e.py + 1, fn: () => drawEntity(e) });
     }
+    const townLabel = (e: (typeof ents)[number], name: string) => {
+      c.font = `bold ${Math.round(view.tile * 0.3)}px sans-serif`;
+      c.fillStyle = "#fff";
+      c.strokeStyle = "#000";
+      c.lineWidth = 3;
+      const label = `📜 ${name}`;
+      const tw = c.measureText(label).width;
+      c.strokeText(label, view.sx(e.x) + view.tile / 2 - tw / 2, view.sy(e.y) + view.tile * 1.3);
+      c.fillText(label, view.sx(e.x) + view.tile / 2 - tw / 2, view.sy(e.y) + view.tile * 1.3);
+    };
     const drawEntity = (e: (typeof ents)[number]) => {
       const seen = inSight(e.x, e.y);
       if (e.kind === "monster") {
@@ -568,23 +623,49 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         }
         return;
       }
+      if (e.kind === "building") {
+        const [fx, fy, fw, fh] = e.foot!;
+        const cv = buildingCanvas(e.sprite, 1);
+        const bw = cv.width / 16, bh = cv.height / 16;
+        view.img(cv, fx + (fw - bw) / 2, fy + fh - bh, { w: bw, h: bh, alpha: seen ? 1 : 0.75 });
+        const [kind, arg] = (e.ref ?? "").split(":");
+        const sign = kind === "shop" ? SHOP_NAMES[arg as ShopKind]?.icon : kind === "inn" ? "🛏️" : "";
+        if (sign) {
+          const sx = view.sx(e.x) + TL / 2, sy = view.sy(fy) - TL * 0.35;
+          c.fillStyle = "rgba(20,14,8,.78)";
+          c.beginPath();
+          c.arc(sx, sy, TL * 0.34, 0, Math.PI * 2);
+          c.fill();
+          c.font = `${Math.round(TL * 0.42)}px sans-serif`;
+          c.textAlign = "center";
+          c.fillText(sign, sx, sy + TL * 0.15);
+          c.textAlign = "start";
+        }
+        return;
+      }
+      if (e.kind === "npc") {
+        const npc = getNpc(e.ref!);
+        c.fillStyle = "rgba(20,10,40,0.28)";
+        c.beginPath();
+        c.ellipse(view.sx(e.px) + TL / 2, view.sy(e.py) + TL * 0.92, TL * 0.28, TL * 0.09, 0, 0, Math.PI * 2);
+        c.fill();
+        const moving = Math.abs(e.px - e.x) + Math.abs(e.py - e.y) > 0.05;
+        const fr = moving ? Math.floor(t / 150) % 4 : 0;
+        if (isPerson(npc.sprite)) view.img(personCanvas(npc.sprite, npc.pal, e.dir, fr), e.px, e.py - 1, { h: 2, flip: e.dir === 2 && e.flip });
+        else view.img(spriteCanvas(npc.sprite, npc.pal), e.px, e.py);
+        if (activeQuest(g, npc.id)) {
+          c.font = `${Math.round(TL * 0.4)}px sans-serif`;
+          c.fillText("📋", view.sx(e.px) + TL * 0.3, view.sy(e.py) - TL * 1.05);
+        }
+        return;
+      }
       if (e.kind === "town") {
         const s = getSettlement(floorN, Number(e.ref ?? 0));
-        const types = s.size === "village" ? ["cottage", "tent", "cottage"] : s.size === "town" ? ["stonehouse", "market", "cottage"] : ["manor", "apartment", "stonehouse"];
-        const offs = [[-1.2, -0.6], [0.9, -0.9], [-0.1, 0.1]];
-        types.forEach((t, k) => {
-          const cv = buildingCanvas(t, 1);
-          const bw = cv.width / 16, bh = cv.height / 16;
-          const sc = 0.62;
-          view.img(cv, e.x + offs[k][0] - (bw * sc - 1) / 2, e.y + offs[k][1] - (bh * sc - 1) + 0.4, { w: bw * sc, h: bh * sc, alpha: seen ? 1 : 0.7 });
-        });
-        c.font = `bold ${Math.round(view.tile * 0.3)}px sans-serif`;
-        c.fillStyle = "#fff";
-        c.strokeStyle = "#000";
-        c.lineWidth = 3;
-        const tw = c.measureText(s.name).width;
-        c.strokeText(s.name, view.sx(e.x) + view.tile / 2 - tw / 2, view.sy(e.y) + view.tile * 1.25);
-        c.fillText(s.name, view.sx(e.x) + view.tile / 2 - tw / 2, view.sy(e.y) + view.tile * 1.25);
+        const cv = buildingCanvas(e.sprite, 1);
+        const sc = Math.min(1, 1.5 / (cv.width / 16));
+        const bw = (cv.width / 16) * sc, bh = (cv.height / 16) * sc;
+        view.img(cv, e.x + 0.5 - bw / 2, e.y + 1 - bh, { w: bw, h: bh, alpha: seen ? 1 : 0.7 });
+        drawables.push({ y: 1e6, fn: () => townLabel(e, s.name) });
         return;
       }
       const sprite = e.kind === "guardian" ? "marker" : e.sprite;
@@ -631,7 +712,6 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     drawables.sort((a, b) => a.y - b.y);
     for (const d of drawables) d.fn();
     drawParticles(c, biome.particles, view.w, view.h, t, view.camX, view.camY, TL);
-
     // lighting
     if (biome.night) {
       const cx = view.sx(player.px) + view.tile / 2, cy = view.sy(player.py) + view.tile / 2;
@@ -680,7 +760,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   reveal();
   checkRegion();
   savePos();
-  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__dungeon = { ents, interact, player, tryStep, map };
+  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__dungeon = { ents, interact, player, tryStep, map, reveal };
 
   if (fresh) {
     busy = true;

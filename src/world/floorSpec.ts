@@ -1,7 +1,8 @@
 import type { Element, Stats } from "../combat/types";
 import { Rng, hashString } from "../core/rng";
 import { ELEMENT_SKILL, ENEMIES, WEAKNESS, type EnemyDef } from "../data/enemies";
-import { I } from "../data/items/core";
+import { I, ITEMS } from "../data/items/core";
+import { registerRelic } from "../data/items/equipment";
 import { BIOME_MATS, METALS, metalTierForFloor } from "../data/items/materials";
 import { creatureKey, type Plan } from "../render/creatures";
 import { mix, sh } from "../render/tiles";
@@ -42,7 +43,10 @@ export interface FloorSpec {
   mem: string;
   /** Signature material only found on this floor: [name, icon shape, colour, description]. */
   sig: [name: string, shape: string, col: string, desc: string];
+  /** Settlement names. An empty list marks a floor nobody can live on. */
   towns?: string[];
+  /** One-of-a-kind item carried by the gatekeeper: [name, equipment kind, passive?, description]. */
+  relic?: [name: string, kind: string, passive: string | undefined, desc: string];
 }
 
 export const SPECS: Record<number, FloorSpec> = {};
@@ -85,10 +89,23 @@ export function biomeFromSpec(s: FloorSpec): Biome {
 }
 
 export const sigId = (n: number) => `sig_f${n}`;
+export const relicId = (n: number) => `relic_f${n}`;
+
+const RELIC_BY_EL: Record<Element, string[]> = {
+  physical: ["greatsword", "gauntlets"], fire: ["greataxe", "ring"], ice: ["katana", "amulet"], lightning: ["spear", "earring"],
+  water: ["orb", "charm"], earth: ["hammer", "shield"], wind: ["bow", "boots"], light: ["staff", "amulet"],
+  dark: ["scythe", "ring"], poison: ["dagger", "cap"], arcane: ["tome", "earring"],
+};
 
 export function registerSig(s: FloorSpec) {
   const [name, shape, col, desc] = s.sig;
-  I(sigId(s.n), name, "material", 20 + s.n * 6, `${desc} (Đặc sản tầng ${s.n}.)`, shape, [col, sh(col, -0.4), sh(col, 0.6)], { tier: Math.max(1, Math.ceil(s.n / 7)), icon: "✨", tags: ["signature"] });
+  if (!ITEMS[sigId(s.n)]) I(sigId(s.n), name, "material", 20 + s.n * 6, `${desc} (Đặc sản tầng ${s.n}.)`, shape, [col, sh(col, -0.4), sh(col, 0.6)], { tier: Math.max(1, Math.ceil(s.n / 7)), icon: "✨", tags: ["signature"] });
+  if (s.n < 4 || ITEMS[relicId(s.n)]) return;
+  const [rn, kind, passive, rdesc] = s.relic ?? [
+    `Kỷ Vật Của ${s.boss[0]}`, RELIC_BY_EL[s.el][s.n % 2], undefined,
+    `Thứ duy nhất ${s.boss[0]} còn giữ lại từ ${s.biome}.`,
+  ];
+  registerRelic(relicId(s.n), rn, kind, s.n, passive, s.boss[2], `${rdesc} (Di vật độc nhất của tầng ${s.n}.)`);
 }
 
 // ------------------------------------------------------------ monsters
@@ -186,7 +203,7 @@ export function registerMonsters(s: FloorSpec) {
     skills: [...new Set([...(PLAN_SKILLS[plan] ?? ["bite"]), ...elSkills, s.n % 3 === 0 ? "cataclysm" : s.n % 3 === 1 ? "roar" : "rage"])],
     passives: ["e_boss", "e_enrage", ...(s.n >= 30 ? ["e_regen"] : [])], boss: true, scale: 2, ai: "smart",
     drops: [
-      { item: sigId(s.n), ch: 1, min: 2, max: 4 }, { item: mats.gem, ch: 1, min: 1, max: 2 },
+      { item: sigId(s.n), ch: 1, min: 2, max: 4 }, { item: relicId(s.n), ch: 1 }, { item: mats.gem, ch: 1, min: 1, max: 2 },
       { item: "mana_crystal", ch: 1, min: 3, max: 5 }, { item: "monster_core", ch: 1, min: 2, max: 3 },
       { item: METALS[metalTierForFloor(s.n) - 1].ore, ch: 1, min: 3, max: 5 },
     ],

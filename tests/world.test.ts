@@ -42,6 +42,11 @@ describe("floors", () => {
         }
         for (const e of m.entities) {
           if (e.kind === "portal") continue;
+          if (e.kind === "building") {
+            // buildings stand on blocked lots; shops and homes need a reachable doorstep
+            if (e.ref !== "prop") expect([[0, 1], [1, 0], [-1, 0], [0, -1]].some(([dx, dy]) => seen[(e.y + dy) * m.w + e.x + dx]), `${n}/${seed} door ${e.ref}`).toBe(true);
+            continue;
+          }
           expect(passable(e.x, e.y), `${n}/${seed} ${e.kind} on passable tile`).toBe(true);
           expect(seen[e.y * m.w + e.x], `${n}/${seed} ${e.kind} ${e.id} reachable`).toBe(1);
         }
@@ -103,4 +108,24 @@ describe("save data", () => {
     const copy = JSON.parse(JSON.stringify(g));
     expect(copy).toEqual(g);
   });
+
+  it("never locks the player out of the gatekeeper or the stairs (all 100 floors)", () => {
+    for (let n = 1; n <= 100; n++) {
+      for (const seed of [7, 4242, 987654]) {
+        const m = generateFloor(getFloor(n), seed * 13 + n);
+        const solid = new Set(m.entities.filter((e) => e.kind === "building" || e.kind === "town").map((e) => e.y * m.w + e.x));
+        const ok = (x: number, y: number) => x >= 0 && y >= 0 && x < m.w && y < m.h && PASSABLE.has(m.tiles[y * m.w + x]) && !solid.has(y * m.w + x);
+        const seen = new Uint8Array(m.w * m.h);
+        const q = [m.start.y * m.w + m.start.x + 1];
+        seen[q[0]] = 1;
+        for (let k = 0; k < q.length; k++) {
+          const x = q[k] % m.w, y = Math.floor(q[k] / m.w);
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (ok(x + dx, y + dy) && !seen[(y + dy) * m.w + x + dx]) { seen[(y + dy) * m.w + x + dx] = 1; q.push((y + dy) * m.w + x + dx); }
+        }
+        const near = (e: { x: number; y: number }) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => seen[(e.y + dy) * m.w + e.x + dx]);
+        expect(near(m.entities.find((e) => e.kind === "guardian")!), `floor ${n} seed ${seed} gatekeeper`).toBe(true);
+        expect(near(m.stairs), `floor ${n} seed ${seed} stairs`).toBe(true);
+      }
+    }
+  }, 120000);
 });

@@ -16,8 +16,9 @@ import { openNpc } from "./npcTalk";
 let tab: "shops" | "people" | "inn" | "quests" = "shops";
 
 /** Hub for a village / town / city inside the dungeon. */
-export function openSettlement(s: Settlement, onChange: () => void) {
+export function openSettlement(s: Settlement, onChange: () => void, startTab?: typeof tab) {
   const g = app.game;
+  if (startTab) tab = startTab;
   const icon = s.size === "village" ? "🏘️" : s.size === "town" ? "🏙️" : "🏰";
   const m = openModal(`${icon} ${s.name}`, { wide: true, onClose: onChange });
   const render = () => {
@@ -87,7 +88,7 @@ export function openSettlement(s: Settlement, onChange: () => void) {
 
 let shopTab: "buy" | "sell" = "buy";
 
-function openShop(s: Settlement, kind: ShopKind, ownerId: string, refresh: () => void) {
+export function openShop(s: Settlement, kind: ShopKind, ownerId: string, refresh: () => void) {
   const g = app.game;
   const owner = getNpc(ownerId);
   const m = openModal(`${SHOP_NAMES[kind].icon} ${SHOP_NAMES[kind].name} — ${s.name}`, { wide: true, onClose: refresh });
