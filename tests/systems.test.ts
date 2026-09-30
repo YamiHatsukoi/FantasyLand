@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addItem, migrate, newGame } from "../src/core/state";
-import { BUILDING_LIST, costFor, expansionCost } from "../src/data/buildings";
+import { BUILDING_LIST, MAX_MATERIAL, costFor, expansionCost } from "../src/data/buildings";
 import { CROP_LIST, ITEMS, ITEM_LIST } from "../src/data/items";
 import { RECIPES } from "../src/data/recipes";
 import { getFloor } from "../src/world/floors";
@@ -190,5 +190,21 @@ describe("pets", () => {
     b.petHit(foe, "fire", 20);
     expect(foe.hp).toBe(70);
     expect(foe.broken).toBe(true);
+  });
+});
+
+describe("sanctuary build costs stay friendly", () => {
+  it("never asks for more than 10 of any material, about 5-6 typically", () => {
+    const amounts: number[] = [];
+    for (const b of BUILDING_LIST) for (let l = 0; l < (b.maxLevel ?? 5); l++) {
+      for (const [k, v] of Object.entries(costFor(b.id, l))) if (k !== "gold") amounts.push(v);
+    }
+    for (let l = 0; l < 12; l++) for (const [k, v] of Object.entries(expansionCost(l))) if (k !== "gold") amounts.push(v);
+    expect(Math.max(...amounts)).toBeLessThanOrEqual(MAX_MATERIAL);
+    expect(Math.min(...amounts)).toBeGreaterThan(0);
+    amounts.sort((a, b) => a - b);
+    const median = amounts[amounts.length >> 1];
+    expect(median).toBeGreaterThanOrEqual(4);
+    expect(median).toBeLessThanOrEqual(7);
   });
 });

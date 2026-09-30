@@ -224,8 +224,25 @@ const POOLS: string[][] = [
   ["mithril_ingot", "darkiron_ingot", "jade", "aquamarine", "block_reef", "plank_bamboo", "amethyst"],
 ];
 
+/** Most materials a single build or upgrade asks for, of any one kind. */
+export const MAX_MATERIAL = 10;
+/**
+ * Squeezes a raw material amount into a friendly one: everyday builds ask for about 5–6 of
+ * each, the biggest upgrades for 10 at most. Gold is left as it is; small amounts never grow.
+ */
+export const tameAmount = (n: number) => Math.min(n, MAX_MATERIAL, Math.max(1, Math.round(2 + 2 * Math.log(1 + n / 4))));
+export function tameCost(c: Cost): Cost {
+  const out: Cost = {};
+  for (const [k, v] of Object.entries(c)) out[k] = k === "gold" ? v : tameAmount(v);
+  return out;
+}
+
 /** Cost to build (level 0) or upgrade to level+1. */
 export function costFor(type: string, level: number): Cost {
+  return tameCost(rawCostFor(type, level));
+}
+
+function rawCostFor(type: string, level: number): Cost {
   const def = BUILDINGS[type];
   if (level === 0 && def.first) return def.first;
   const rank = Math.min(6, def.rank + level);
@@ -252,7 +269,7 @@ export function expansionCost(level: number): Cost {
   const rank = Math.min(6, 1 + Math.floor(level * 0.62));
   const pool = POOLS[rank];
   const s = 1 + level * 0.8;
-  return { [pool[0]]: Math.round(12 * s), [pool[1]]: Math.round(10 * s), [pool[pool.length - 1]]: Math.round(6 * s), gold: Math.round(80 * rank * rank * s) };
+  return tameCost({ [pool[0]]: Math.round(12 * s), [pool[1]]: Math.round(10 * s), [pool[pool.length - 1]]: Math.round(6 * s), gold: Math.round(80 * rank * rank * s) });
 }
 
 export function houseRequirement(nextLevel: number) {
