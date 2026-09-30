@@ -1,3 +1,4 @@
+import { passiveText } from "../combat/describe";
 import { app } from "../app";
 import { CLASSES } from "../data/classes";
 import { getPassive } from "../data/passives";
@@ -21,7 +22,7 @@ export function openTavern(onChange?: () => void) {
         h("div", { class: "meta" },
           h("div", { class: "name" }, o.name, h("span", { class: "tag" }, `${cls.icon} ${cls.name}`), h("span", { class: "tag" }, `Cấp ${o.level}`)),
           h("div", { class: "desc" }, o.bio),
-          o.passive ? h("div", { class: "desc" }, `✦ ${getPassive(o.passive).name}: ${getPassive(o.passive).desc}`) : null),
+          o.passive ? h("div", { class: "desc" }, `✦ ${getPassive(o.passive).name}: ${passiveText(getPassive(o.passive).desc)}`) : null),
         h("button", {
           class: "btn small primary", disabled: g.gold < o.price || !!room, title: room ?? "",
           onclick: () => {

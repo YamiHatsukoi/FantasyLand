@@ -1,4 +1,4 @@
-import { describeSkill, skillCostText } from "../combat/describe";
+import { describeSkill, skillCostText, passiveText } from "../combat/describe";
 import { ENH_STEP, enhLevel, getItem, type GearKey, type ItemDef } from "../data/items";
 import { getPassive } from "../data/passives";
 import { getSkill } from "../data/skills";
@@ -97,7 +97,7 @@ function passiveBlock(id: string) {
   const p = getPassive(id);
   return h("div", { class: "tip-sub" },
     h("div", { class: "tip-name" }, `${p.icon} ${p.name}`),
-    h("div", { class: "tip-desc" }, p.desc));
+    h("div", { class: "tip-desc" }, passiveText(p.desc)));
 }
 
 /** Card for any item; enhanced gear ("sword+4") already carries its boosted stats. */

@@ -1,5 +1,5 @@
 import { ELEMENTS, STATUSES } from "./statuses";
-import type { Eff, Skill, Special, TargetType } from "./types";
+import type { Eff, Skill, Special, StatusId, TargetType } from "./types";
 
 const TARGET: Record<TargetType, string> = {
   enemy: "1 kẻ địch",
@@ -66,8 +66,32 @@ export function describeSkill(sk: Skill): string[] {
   for (const s of sk.sp ?? []) if (s.k !== "useDef" || sk.power) lines.push(specialText(s));
   if (sk.hpCost) lines.push(`Tiêu hao ${pct(sk.hpCost)} máu.`);
   if (sk.flavor) lines.push(sk.flavor);
+  lines.push(...statusNotes(skillStatuses(sk)));
   return lines;
 }
+
+/** Every status a skill applies or cares about. */
+export function skillStatuses(sk: Skill): StatusId[] {
+  const ids = [...(sk.fx ?? []), ...(sk.self ?? [])].map((e) => e.s);
+  for (const s of sk.sp ?? []) if (s.k === "bonusIf" || s.k === "consume") ids.push(s.s);
+  return [...new Set(ids)];
+}
+
+/** "(❌ Bị đánh dấu: every hit on it is a critical)" — what each named effect actually does. */
+export function statusNotes(ids: Iterable<StatusId>): string[] {
+  return [...new Set(ids)].filter((id) => STATUSES[id]).map((id) => `(${STATUSES[id].icon} ${STATUSES[id].name}: ${STATUSES[id].desc})`);
+}
+
+/**
+ * Effects mentioned by name in free text (passive descriptions). Names are matched with their
+ * capital letter so the stats "phòng thủ" / "né tránh" don't read as the statuses of that name.
+ */
+export function statusNotesInText(text: string): string[] {
+  return statusNotes(Object.values(STATUSES).filter((d) => new RegExp(`(^|[^\\p{L}])${d.name}($|[^\\p{L}])`, "u").test(text)).map((d) => d.id));
+}
+
+/** A passive's description followed by what the effects it names do. */
+export const passiveText = (desc: string) => [desc, ...statusNotesInText(desc)].join(" ");
 
 export function skillCostText(sk: Skill): string {
   const parts: string[] = [];
