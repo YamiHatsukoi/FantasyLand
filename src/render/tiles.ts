@@ -16,9 +16,11 @@ export const T = {
   WATER: 4,
   SHALLOW: 5,
   WALL: 6,
+  PAVE: 7, // town streets
+  LOT: 8, // ground under a town building (blocked)
 } as const;
 
-export const PASSABLE = new Set<number>([T.GROUND, T.ALT, T.DECOR, T.SHALLOW]);
+export const PASSABLE = new Set<number>([T.GROUND, T.ALT, T.DECOR, T.SHALLOW, T.PAVE]);
 export const VARIANTS = 4;
 export const TS = 16;
 
@@ -273,6 +275,21 @@ export function tileSet(b: Biome): TileSet {
     for (let i = 0; i < 4; i++) { const x = r.int(0, 14), y = r.int(0, 14); p.px(x, y, hs(path, -0.22)); p.px(x + 1, y, hs(path, 0.2)); }
   });
   tiles[T.DECOR] = make((p, v, r) => { ground(p, v, r); decor(p, b.decorColors, r, b); });
+  tiles[T.LOT] = make(ground);
+  tiles[T.PAVE] = make((p, v, r) => {
+    // cobblestones tinted by the floor's path colour
+    const stone = mixC(path, "#9a948a", 0.55);
+    p.rect(0, 0, 16, 16, hs(stone, -0.28));
+    for (let row = 0; row < 4; row++) {
+      const off = (row + v) % 2 ? 2 : 0;
+      for (let col = -1; col < 4; col++) {
+        const x = col * 4 + off, y = row * 4;
+        const c = hs(stone, (r.next() - 0.5) * 0.16);
+        p.rect(Math.max(0, x), y, Math.min(3, 16 - Math.max(0, x)), 3, c);
+        if (x >= 0 && x < 16) p.px(x, y, hs(c, 0.18));
+      }
+    }
+  });
   tiles[T.WALL] = make((p, v, r) => {
     // cliff top: a darker, mossier version of the ground
     const top = mixC(g0, cliff, 0.35);

@@ -1,9 +1,8 @@
 import { Rng } from "../core/rng";
 import type { Element } from "../combat/types";
-import { ITEMS } from "../data/items";
 import "../data/world";
 import "../story/world";
-import { FLOOR_EVENTS, FLOOR_GUARDIAN, SPECS, biomeFromSpec, bossId, fallbackSpec, mobId, registerMonsters, registerSig, sigId, type Family, type FloorSpec } from "./floorSpec";
+import { FLOOR_EVENTS, FLOOR_GUARDIAN, SPECS, biomeFromSpec, bossId, fallbackSpec, mobId, registerMonsters, registerSig, type Family, type FloorSpec } from "./floorSpec";
 
 export interface FloorDef {
   n: number;
@@ -86,7 +85,7 @@ export function getFloor(n: number): FloorDef {
   const hit = cache.get(n);
   if (hit) return hit;
   const spec = specFor(n);
-  if (!ITEMS[sigId(n)]) registerSig(spec);
+  registerSig(spec);
   const biome = biomeFromSpec(spec).id;
   let def: FloorDef;
   if (n <= HANDWRITTEN.length) {
@@ -126,8 +125,13 @@ export function getFloor(n: number): FloorDef {
   return def;
 }
 
+// Every floor's signature material and relic exist from the start, so saved inventories resolve.
+for (let n = 1; n <= MAX_FLOOR; n++) registerSig(specFor(n));
+
 /** How many settlements (villages, towns, cities) a floor has. */
 export function settlementCount(n: number): number {
+  const towns = SPECS[n]?.towns;
+  if (towns) return towns.length;
   if (n <= 1) return 2;
   if (n < 5) return 3;
   return 3 + (n % 3 === 0 ? 1 : 0) + (n >= 20 && n % 2 === 0 ? 1 : 0);
