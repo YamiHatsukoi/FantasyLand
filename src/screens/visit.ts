@@ -2,7 +2,7 @@ import { app, type Screen } from "../app";
 import type { CropState, GameState, PlacedBuilding } from "../core/state";
 import { BUILDINGS, RANK_NAMES } from "../data/buildings";
 import type { PlayerVisit, PublicChar } from "../net/api";
-import { buildingCanvas, cropCanvas } from "../render/buildings";
+import { CROP_LIFT, buildingCanvas, cropCanvas } from "../render/buildings";
 import { MapView } from "../render/mapview";
 import { spriteCanvas } from "../render/pixel";
 import { isPerson, personCanvas, type Dir } from "../render/people";
@@ -131,7 +131,7 @@ export function mountVisit(root: HTMLElement, v: PlayerVisit, hooks: { leave: ()
         const crop = b.plot?.crop;
         if (b.type === "farm" && crop) {
           let st = 0;
-          try { st = cropStage(crop); view.img(cropCanvas(crop.id, st), b.x, b.y); } catch { /* unknown crop in an older save */ }
+          try { st = cropStage(crop); view.img(cropCanvas(crop.id, st), b.x, b.y - CROP_LIFT); } catch { /* unknown crop in an older save */ }
           if (st === 3 && isReady(crop)) { c.font = `${Math.round(view.tile * 0.4)}px sans-serif`; c.fillText("✨", view.sx(b.x) + view.tile * 0.55, view.sy(b.y) + view.tile * 0.3 + Math.sin(t / 300) * 3); }
         }
         if (b.type === "gate") {

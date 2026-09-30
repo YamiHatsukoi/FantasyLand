@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { chooseAction } from "../src/combat/ai";
 import { describeSkill } from "../src/combat/describe";
-import { Battle } from "../src/combat/engine";
+import { BREAK_BONUS, Battle } from "../src/combat/engine";
 import { unitFromCharacter, unitFromEnemy } from "../src/combat/factory";
 import { STATUSES } from "../src/combat/statuses";
 import type { Unit } from "../src/combat/types";
@@ -100,6 +100,73 @@ describe("elemental reactions", () => {
   });
 });
 
+describe("shields, courage and intents", () => {
+  it("weakness hits chip the shield; at zero the enemy breaks, loses a turn and takes more damage", () => {
+    const a = dummy("ally", "a");
+    const e = dummy("enemy", "e", { resist: { physical: 1.2 }, shield: 2, shieldMax: 2, enemyId: "x" });
+    const b = new Battle([a], [e], 7);
+    b.act(a, { skill: "attack", target: "e" });
+    expect(e.shield).toBe(1);
+    b.act(a, { skill: "attack", target: "e" });
+    expect(e.broken).toBe(true);
+    expect(b.breaks).toBe(1);
+    const before = e.hp;
+    b.act(a, { skill: "attack", target: "e" });
+    const brokenHit = before - e.hp;
+    // its next turn is skipped, then the shield comes back
+    for (let i = 0; i < 6 && e.broken; i++) { const u = b.nextTurn(); if (u) b.act(u, { skill: "defend" }); }
+    expect(e.broken).toBeFalsy();
+    expect(e.shield).toBe(2);
+    expect(b.drainEvents().some((x) => x.t === "skip" && x.uid === "e")).toBe(true);
+    const h0 = e.hp;
+    b.act(a, { skill: "attack", target: "e" });
+    expect(brokenHit).toBeGreaterThan((h0 - e.hp) * (BREAK_BONUS - 0.3));
+  });
+
+  it("immune elements do not chip the shield", () => {
+    const a = dummy("ally", "a");
+    const e = dummy("enemy", "e", { resist: { fire: 1.5 }, shield: 2, shieldMax: 2 });
+    const b = new Battle([a], [e], 8);
+    b.act(a, { skill: "attack", target: "e" });
+    expect(e.shield).toBe(2);
+  });
+
+  it("courage: +1 per turn, a boosted attack strikes extra times and skips the next gain", () => {
+    const a = dummy("ally", "a", { base: { hp: 1000, mp: 100, atk: 50, mag: 50, def: 0, res: 0, spd: 300, crit: 0, eva: 0 } });
+    const e = dummy("enemy", "e", { base: { hp: 100000, mp: 100, atk: 1, mag: 1, def: 0, res: 0, spd: 1, crit: 0, eva: 0 }, hp: 100000 });
+    const b = new Battle([a], [e], 9);
+    expect(a.bp).toBe(1);
+    let u = b.nextTurn()!;
+    expect(u).toBe(a);
+    expect(a.bp).toBe(2);
+    b.drainEvents();
+    b.act(a, { skill: "attack", target: "e", boost: 2 });
+    expect(b.drainEvents().filter((x) => x.t === "dmg" && x.uid === "e").length).toBe(3);
+    expect(a.bp).toBe(0);
+    u = b.nextTurn()!;
+    expect(u).toBe(a);
+    expect(a.bp).toBe(0);
+    b.act(a, { skill: "defend" });
+    b.nextTurn();
+    expect(a.bp).toBe(1);
+  });
+
+  it("enemies announce an intent; a charged boss hits harder unless broken first", () => {
+    const a = dummy("ally", "a", { base: { hp: 100000, mp: 100, atk: 50, mag: 50, def: 0, res: 0, spd: 100, crit: 0, eva: 0 }, hp: 100000 });
+    const boss = dummy("enemy", "boss", { boss: true, resist: { physical: 1.2 }, shield: 1, shieldMax: 1 });
+    const b = new Battle([a], [boss], 10);
+    expect(boss.intent).toBeTruthy();
+    boss.intent = { skill: "attack", charge: true };
+    b.enemyAct(boss);
+    expect(boss.charged).toBe(true);
+    expect(boss.intent?.charge).toBeFalsy();
+    // breaking it cancels the charge
+    b.act(a, { skill: "attack", target: "boss" });
+    expect(boss.broken).toBe(true);
+    expect(boss.charged).toBe(false);
+  });
+});
+
 function simulate(allies: () => Unit[], enemies: () => Unit[], runs = 60): number {
   let wins = 0;
   for (let r = 0; r < runs; r++) {
@@ -107,7 +174,8 @@ function simulate(allies: () => Unit[], enemies: () => Unit[], runs = 60): numbe
     for (let i = 0; i < 400; i++) {
       const u = b.nextTurn();
       if (!u) break;
-      b.act(u, chooseAction(b, u));
+      if (u.side === "enemy") b.enemyAct(u);
+      else b.act(u, chooseAction(b, u));
     }
     if (b.outcome() === "win") wins++;
   }

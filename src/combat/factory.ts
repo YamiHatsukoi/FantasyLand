@@ -1,5 +1,6 @@
 import { charPassives, charStats, dualWielding, type Character } from "../core/state";
-import type { StatMods } from "./types";
+import type { Element, StatMods } from "./types";
+import { hashString } from "../core/rng";
 import { ENEMIES, type EnemyDef } from "../data/enemies";
 import type { Stats, Unit } from "./types";
 
@@ -37,11 +38,13 @@ export function unitFromCharacter(ch: Character, buffs: StatMods = {}): Unit {
 export function enemyStats(def: EnemyDef, level: number): Stats {
   const g = 1 + 0.14 * (level - 1);
   const b = def.base;
+  // a bit tougher than before: breaking shields and boosting is how the party gets ahead
+  const tough = def.boss ? 1.1 : 1.05;
   return {
-    hp: Math.round(b.hp * g * (def.boss ? 1 + 0.05 * (level - 1) : 1)),
+    hp: Math.round(b.hp * g * tough * (def.boss ? 1 + 0.05 * (level - 1) : 1)),
     mp: Math.round(b.mp * (1 + 0.05 * (level - 1))),
-    atk: Math.round(b.atk * g),
-    mag: Math.round(b.mag * g),
+    atk: Math.round(b.atk * g * (def.boss ? 1.05 : 1)),
+    mag: Math.round(b.mag * g * (def.boss ? 1.05 : 1)),
     def: Math.round(b.def * g),
     res: Math.round(b.res * g),
     spd: Math.round(b.spd + 0.6 * (level - 1)),
@@ -50,10 +53,33 @@ export function enemyStats(def: EnemyDef, level: number): Stats {
   };
 }
 
+const WEAK_POOL: Element[] = ["fire", "ice", "lightning", "earth", "wind", "light", "dark", "water"];
+
+/** Every enemy has at least one weakness (two for bosses) so its shield can always be broken. */
+export function enemyResist(def: EnemyDef): Partial<Record<Element, number>> {
+  const r: Partial<Record<Element, number>> = { ...def.resist };
+  const want = def.boss ? 2 : 1;
+  let h = hashString(def.id);
+  for (let guard = 0; Object.values(r).filter((v) => (v ?? 1) > 1).length < want && guard < 20; guard++) {
+    // ordinary monsters may be weak to plain weapons, so even a fresh party can break them
+    const pool = def.boss ? WEAK_POOL : ["physical" as Element, ...WEAK_POOL];
+    const el = pool[h % pool.length];
+    h = Math.floor(h / 7) + 13 + guard;
+    if (r[el] === undefined) r[el] = 1.15;
+  }
+  return r;
+}
+
+/** Shield points: tougher and deeper enemies take more weakness hits to break. */
+export function shieldFor(def: EnemyDef, level: number): number {
+  return def.boss ? Math.min(8, 4 + Math.floor(level / 12)) : Math.min(4, 2 + Math.floor(level / 18));
+}
+
 export function unitFromEnemy(id: string, level: number, index: number): Unit {
   const def = ENEMIES[id];
   if (!def) throw new Error(`Unknown enemy ${id}`);
   const base = enemyStats(def, level);
+  const shield = shieldFor(def, level);
   return {
     uid: `e_${index}_${id}`,
     side: "enemy",
@@ -70,7 +96,9 @@ export function unitFromEnemy(id: string, level: number, index: number): Unit {
     cooldowns: {},
     av: 0,
     tags: [...def.tags],
-    resist: { ...def.resist },
+    resist: enemyResist(def),
+    shield,
+    shieldMax: shield,
     boss: def.boss,
     enemyId: id,
     ai: def.ai ?? (def.boss ? "smart" : "random"),

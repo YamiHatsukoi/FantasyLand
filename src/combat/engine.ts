@@ -1,3 +1,4 @@
+import { chooseAction } from "./ai";
 import { critChance, dodgeChance } from "./rates";
 import { Rng } from "../core/rng";
 import type { ItemUse } from "../data/items";
@@ -21,13 +22,26 @@ export interface HitResult {
 export interface Action {
   skill: string;
   target?: string;
+  /** Allies: courage points spent (0..3). */
+  boost?: number;
+  /** Damage/heal multiplier (a charged boss attack). */
+  mult?: number;
 }
+
+export const MAX_BP = 5;
+export const MAX_BOOST = 3;
+/** Extra damage taken while broken. */
+export const BREAK_BONUS = 1.5;
+/** A charged boss attack hits this much harder. */
+export const CHARGE_MULT = 2.2;
 
 export class Battle {
   units: Unit[];
   rng: Rng;
   events: BattleEvent[] = [];
   turn = 0;
+  /** Shields broken this battle (rewards scale with it). */
+  breaks = 0;
   private extraTurn = false;
 
   constructor(allies: Unit[], enemies: Unit[], seed = Date.now()) {
@@ -42,6 +56,8 @@ export class Battle {
       if (u.hp <= 0) continue;
       for (const h of this.hooks(u, "battleStart")) for (const e of h.fx) this.applyEff(u, u, e, "magical");
     }
+    for (const u of this.units) if (u.side === "ally" && u.bp === undefined) u.bp = 1;
+    for (const u of this.enemies) this.plan(u);
   }
 
   // ------------------------------------------------------------ queries
@@ -191,6 +207,11 @@ export class Battle {
     this.gainMp(u, this.maxMp(u) * mpGain, false);
     // cooldowns
     for (const k of Object.keys(u.cooldowns)) if (u.cooldowns[k] > 0) u.cooldowns[k]--;
+    // courage: +1 each turn, except right after spending some
+    if (u.bp !== undefined) {
+      if (!u.boosted) u.bp = Math.min(MAX_BP, u.bp + 1);
+      u.boosted = false;
+    }
 
     const disabled = this.isDisabled(u);
     const disabledBy = u.statuses.find((s) => STATUSES[s.id].disables);
@@ -206,6 +227,14 @@ export class Battle {
       }
     }
     if (u.hp <= 0) return false;
+    // a broken unit spends this turn reeling, then its shield comes back
+    if (u.broken) {
+      u.broken = false;
+      u.shield = u.shieldMax;
+      this.emit({ t: "skip", uid: u.uid, reason: "Choáng (vỡ khiên)" });
+      this.emit({ t: "recover", uid: u.uid });
+      return false;
+    }
     if (disabled) {
       this.emit({ t: "skip", uid: u.uid, reason: disabledBy ? STATUSES[disabledBy.id].name : "" });
       return false;
@@ -225,8 +254,18 @@ export class Battle {
     const targets = this.resolveTargets(actor, sk, action.target);
     this.emit({ t: "use", uid: actor.uid, skill: sk.id, targets: targets.map((t) => t.uid) });
 
+    // courage boost: a basic attack strikes once more per point, anything else gets stronger
+    const boost = actor.bp !== undefined ? Math.max(0, Math.min(MAX_BOOST, actor.bp, Math.floor(action.boost ?? 0))) : 0;
+    if (boost > 0) {
+      actor.bp! -= boost;
+      actor.boosted = true;
+      this.emit({ t: "boost", uid: actor.uid, n: boost });
+    }
+    const extraHits = sk.id === "attack" ? boost : 0;
+    const boostMult = sk.id === "attack" ? 1 : 1 + 0.5 * boost;
+
     const damaging = (sk.power ?? 0) > 0;
-    let mult = 1;
+    let mult = boostMult * (action.mult ?? 1);
     if (damaging && this.has(actor, "empower")) {
       mult = 1.6;
       this.removeStatus(actor, "empower");
@@ -236,7 +275,7 @@ export class Battle {
     const hitTargets = new Set<Unit>();
     if (damaging) {
       if (sk.target === "random") {
-        for (let i = 0; i < (sk.hits ?? 1); i++) {
+        for (let i = 0; i < (sk.hits ?? 1) + extraHits; i++) {
           const pool = this.opponents(actor);
           if (!pool.length) break;
           const confused = this.has(actor, "confuse");
@@ -245,7 +284,7 @@ export class Battle {
         }
       } else {
         for (const t of targets) {
-          for (let i = 0; i < (sk.hits ?? 1); i++) {
+          for (let i = 0; i < (sk.hits ?? 1) + extraHits; i++) {
             if (t.hp <= 0 || actor.hp <= 0) break;
             if (this.hit(actor, t, sk, mult).hit) hitTargets.add(t);
           }
@@ -264,7 +303,7 @@ export class Battle {
     if (sk.heal) {
       for (const t of targets) {
         if (t.hp <= 0) continue;
-        let amt = sk.heal * this.stat(actor, "mag");
+        let amt = sk.heal * this.stat(actor, "mag") * boostMult;
         for (const h of this.hooks(actor, "healPower")) amt *= h.mult;
         this.heal(t, amt);
         if (sk.el === "water" && this.has(t, "burn")) {
@@ -472,6 +511,7 @@ export class Battle {
     }
 
     if (this.has(target, "vulnerable")) dmg *= 1.25;
+    if (target.broken) dmg *= BREAK_BONUS;
     const shock = this.has(target, "shock");
     if (shock) dmg *= 1 + 0.08 * shock.stacks;
     if (el === "dark" && this.has(target, "curse")) dmg *= 1.3;
@@ -492,6 +532,7 @@ export class Battle {
       final = Math.max(1, Math.round(dmg));
       this.damage(target, final, el, { crit });
     }
+    this.chip(target, el);
 
     if (reaction.splash > 0) {
       for (const o of this.alive(target.side)) {
@@ -605,6 +646,77 @@ export class Battle {
       extra *= rmult;
     }
     return { mult, extra, splash };
+  }
+
+  // ------------------------------------------------------------ shields, break, intents
+  isWeak(u: Unit, el: Element) { return (u.resist[el] ?? 1) > 1; }
+
+  /** A hit of element `el` landed: reveal it, and chip the shield when it is a weakness. */
+  private chip(t: Unit, el: Element) {
+    if (t.enemyId) this.emit({ t: "scan", uid: t.uid, el });
+    if (!t.shieldMax || t.hp <= 0 || t.broken || !this.isWeak(t, el)) return;
+    t.shield = Math.max(0, (t.shield ?? t.shieldMax) - 1);
+    this.emit({ t: "shield", uid: t.uid, left: t.shield });
+    if (t.shield === 0) this.breakUnit(t);
+  }
+
+  breakUnit(u: Unit) {
+    u.broken = true;
+    this.breaks++;
+    this.emit({ t: "break", uid: u.uid });
+    if (u.charged) {
+      u.charged = false;
+      this.emit({ t: "reaction", uid: u.uid, name: "Phá Thế Tụ Lực" });
+    }
+    this.plan(u);
+  }
+
+  /** Decides (and shows) what an enemy will do on its next turn. */
+  plan(u: Unit) {
+    if (u.side !== "enemy" || u.hp <= 0) return;
+    if (u.boss && !u.charged) {
+      u.chargeCd = (u.chargeCd ?? 2) - 1;
+      if (u.chargeCd <= 0 && this.rng.next() < 0.6) {
+        u.chargeCd = 4;
+        u.intent = { skill: "attack", charge: true };
+        return;
+      }
+    }
+    if (u.charged) {
+      // unleash the heaviest hit it has
+      const usable = [...u.skills, "attack"].map(getSkill).filter((s) => (s.power ?? 0) > 0 && this.canUse(u, s).ok);
+      const best = usable.sort((a, b) => (b.power ?? 0) * (b.hits ?? 1) * (b.target === "enemies" ? 1.4 : 1) - (a.power ?? 0) * (a.hits ?? 1) * (a.target === "enemies" ? 1.4 : 1))[0] ?? getSkill("attack");
+      const pool = this.validTargets(u, best);
+      u.intent = { skill: best.id, target: pool.length ? this.rng.pick(pool).uid : undefined };
+      return;
+    }
+    const a = chooseAction(this, u);
+    u.intent = { skill: a.skill, target: a.target };
+  }
+
+  /** An enemy carries out its planned action (re-aiming if the plan went stale), then plans the next. */
+  enemyAct(u: Unit) {
+    const it = u.intent ?? chooseAction(this, u);
+    u.intent = undefined;
+    if ("charge" in it && it.charge) {
+      u.charged = true;
+      this.emit({ t: "charge", uid: u.uid });
+      u.av = this.avFor(u);
+      this.plan(u);
+      return;
+    }
+    let a: Action = { skill: it.skill, target: it.target };
+    const sk = getSkill(a.skill);
+    if (!this.canUse(u, sk).ok || this.has(u, "confuse")) a = chooseAction(this, u);
+    else if (a.target) {
+      const t = this.unit(a.target);
+      const ok = t && (sk.target === "deadAlly" ? t.hp <= 0 : t.hp > 0) && (!this.needsTarget(sk) || sk.target !== "enemy" || this.validTargets(u, sk).includes(t));
+      if (!ok) a = { skill: a.skill };
+    }
+    const mult = u.charged ? CHARGE_MULT : 1;
+    u.charged = false;
+    this.act(u, { ...a, mult });
+    this.plan(u);
   }
 
   private tryDisable(actor: Unit, target: Unit, s: StatusId, turns: number) {
@@ -739,7 +851,9 @@ export class Battle {
         let dmg = use.dmg.base * (1 + 0.35 * (floor - 1));
         dmg = this.react(actor, t, use.dmg.el, "magical", getSkill("attack")).mult * dmg;
         dmg *= t.resist[use.dmg.el] ?? 1;
+        if (t.broken) dmg *= BREAK_BONUS;
         this.damage(t, Math.max(1, Math.round(dmg)), use.dmg.el, {});
+        this.chip(t, use.dmg.el);
       }
       if (use.healPct) this.heal(t, this.maxHp(t) * use.healPct);
       if (use.mpPct) this.gainMp(t, this.maxMp(t) * use.mpPct, true);

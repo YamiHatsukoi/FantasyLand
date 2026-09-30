@@ -153,6 +153,24 @@ export interface Unit {
   charId?: string;
   enemyId?: string;
   ai?: "random" | "smart" | "support";
+  /** Break shield: weakness hits chip it away; at 0 the unit is broken (loses its next turn, takes +50%). */
+  shield?: number;
+  shieldMax?: number;
+  broken?: boolean;
+  /** Allies: courage points (0..5) spent to boost an action. */
+  bp?: number;
+  boosted?: boolean;
+  /** Enemies: what they plan to do on their next turn (shown to the player). */
+  intent?: Intent;
+  /** Bosses: gathering power; the next action hits much harder unless they are broken first. */
+  charged?: boolean;
+  chargeCd?: number;
+}
+
+export interface Intent {
+  skill: string;
+  target?: string;
+  charge?: boolean;
 }
 
 export type BattleEvent =
@@ -166,4 +184,10 @@ export type BattleEvent =
   | { t: "reaction"; uid: string; name: string }
   | { t: "death"; uid: string }
   | { t: "revive"; uid: string }
-  | { t: "log"; text: string };
+  | { t: "log"; text: string }
+  | { t: "shield"; uid: string; left: number }
+  | { t: "break"; uid: string }
+  | { t: "recover"; uid: string }
+  | { t: "boost"; uid: string; n: number }
+  | { t: "charge"; uid: string }
+  | { t: "scan"; uid: string; el: Element };

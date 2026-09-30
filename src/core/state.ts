@@ -134,6 +134,8 @@ export interface GameState {
   report: string[];
   /** Relationships with residents of the sanctuary, by character id. */
   bonds: Record<string, Bond>;
+  /** Elements the party has tried on each enemy kind (reveals weaknesses in battle). */
+  scan?: Record<string, string[]>;
 }
 
 /** Friendship / romance with a resident. Points: 100 per heart, 10 hearts max. */
