@@ -3,8 +3,12 @@ import { charStats, removeItem } from "../core/state";
 import { TYPE_NAMES, getItem, type ItemDef, type ItemType } from "../data/items";
 import { getPassive } from "../data/passives";
 import { spriteImg } from "../render/pixel";
-import { h, openModal, toast, type ModalHandle } from "../ui/dom";
+import { confirmBox, h, openModal, toast, type ModalHandle } from "../ui/dom";
 import { itemImg } from "../ui/icon";
+import { GEAR_NAMES, gearTags, rarityClass } from "../ui/gear";
+
+const EQUIP_FILTERS = ["weapon", "offhand", "head", "armor", "hands", "legs", "feet", "neck", "ring", "earring"] as const;
+let slotFilter = "";
 import { statText } from "./party";
 
 const GROUPS: { id: string; label: string; types: ItemType[] }[] = [
@@ -31,7 +35,21 @@ function renderInv(m: ModalHandle, group: string, q: string, canSell: boolean, s
   const items = Object.keys(g.inventory)
     .map(getItem)
     .filter((it) => (g.inventory[it.id] ?? 0) > 0 && (!grp.types.length || grp.types.includes(it.type)) && (!q || it.name.toLowerCase().includes(q.toLowerCase())))
-    .sort((a, b) => a.type.localeCompare(b.type) || (b.tier ?? 0) - (a.tier ?? 0) || a.name.localeCompare(b.name));
+    .filter((it) => group !== "equip" || !slotFilter || it.equip?.slot === slotFilter)
+    .sort((a, b) => a.type.localeCompare(b.type) || (b.equip?.floor ?? 0) - (a.equip?.floor ?? 0) || (b.tier ?? 0) - (a.tier ?? 0) || a.name.localeCompare(b.name));
+  const slotChips = group === "equip" ? h("div", { class: "cat-list" },
+    h("button", { class: slotFilter ? "" : "on", onclick: () => { slotFilter = ""; rerender(); } }, "Mọi ô"),
+    EQUIP_FILTERS.map((k) => h("button", { class: slotFilter === k ? "on" : "", onclick: () => { slotFilter = k; rerender(); } }, GEAR_NAMES[k].replace(" 1", "")))) : null;
+  const commons = items.filter((it) => it.equip && (it.equip.rarity ?? "common") === "common");
+  const sellCommons = group === "equip" && canSell && commons.length ? h("button", {
+    class: "btn small",
+    onclick: async () => {
+      const total = commons.reduce((a, it) => a + it.value * (g.inventory[it.id] ?? 0), 0);
+      if (!(await confirmBox("Bán trang bị Thường", `Bán ${commons.length} loại trang bị phẩm chất Thường đang hiện trong danh sách, được ${total} vàng?`, "Bán"))) return;
+      for (const it of commons) { const k = g.inventory[it.id] ?? 0; if (removeItem(g, it.id, k)) g.gold += it.value * k; }
+      app.dirty(); toast(`+${total} vàng`, "good"); rerender();
+    },
+  }, "💰 Bán hết đồ Thường") : null;
   const tabs = h("div", { class: "cat-list" }, GROUPS.map((x) => h("button", { class: x.id === group ? "on" : "", onclick: () => setGroup(x.id) }, x.label)));
   const search = h("input", { class: "input", placeholder: "Tìm vật phẩm…", value: q, onchange: (e: Event) => setQ((e.target as HTMLInputElement).value) });
   const list = h("div", { class: "list" });
@@ -43,7 +61,7 @@ function renderInv(m: ModalHandle, group: string, q: string, canSell: boolean, s
   m.body.replaceChildren(
     h("div", { class: "row between" }, h("div", null, "💰 ", h("b", { class: "gold" }, String(g.gold)), " vàng"),
       ex ? h("div", { class: "muted small" }, `Chiến lợi phẩm chuyến này: ${bag.length} loại, ${ex.bagGold} vàng (mất 50% nếu gục ngã)`) : null),
-    tabs, h("div", { class: "searchbar" }, search, h("span", { class: "small muted" }, `${Object.keys(g.inventory).length} loại`)), list);
+    tabs, slotChips ?? "", h("div", { class: "searchbar" }, search, sellCommons ?? "", h("span", { class: "small muted" }, `${Object.keys(g.inventory).length} loại`)), list);
 }
 
 function itemRow(it: ItemDef, canSell: boolean, rerender: () => void) {
@@ -67,7 +85,8 @@ function itemRow(it: ItemDef, canSell: boolean, rerender: () => void) {
   return h("div", { class: "item-row" },
     h("span", { class: "ico" }, itemImg(it.id)),
     h("div", { class: "meta" },
-      h("div", { class: "name" }, it.name, h("span", { class: "tag" }, TYPE_NAMES[it.type]), it.tier ? h("span", { class: "tag" }, `Bậc ${it.tier}`) : null),
+      h("div", { class: "name" }, h("span", { class: it.equip ? rarityClass(it) : "" }, it.name), h("span", { class: "tag" }, TYPE_NAMES[it.type]), it.tier ? h("span", { class: "tag" }, `Bậc ${it.tier}`) : null),
+      it.equip ? h("div", { class: "desc muted" }, gearTags(it).join(" · ")) : null,
       it.meal ? h("div", { class: "desc good" }, `Bữa ăn: ${it.meal.name} (${statText(it.meal.mods as Record<string, number>)}) tới khi về nhà`) : null,
       h("div", { class: "desc" }, desc)),
     h("span", { class: "qty" }, `×${n}`),

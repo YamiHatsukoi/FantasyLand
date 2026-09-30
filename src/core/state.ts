@@ -1,7 +1,7 @@
 import type { StatMods, Stats } from "../combat/types";
 import { PARTY_SIZE, costFor, type Cost, passiveSlotsFor, skillSlotsFor } from "../data/buildings";
 import { CLASSES, COMPANIONS, classStats, xpForLevel } from "../data/classes";
-import { getItem, type EquipSlot, type MealBuff } from "../data/items";
+import { getItem, type GearKey, type MealBuff } from "../data/items";
 
 export const SAVE_VERSION = 3;
 
@@ -18,7 +18,7 @@ export interface Character {
   equipped: string[];
   passives: string[];
   equippedPassives: string[];
-  gear: Partial<Record<EquipSlot, string>>;
+  gear: Partial<Record<GearKey, string>>;
   pal?: Record<string, string>; // palette override for generated recruits
   origin?: string; // npc id this character was recruited from
   bio?: string;
@@ -205,28 +205,87 @@ export function partyBuffs(g: GameState): StatMods {
   return out;
 }
 
-/** Full stats of a character including gear. */
+/** Gear slots in display order. */
+export const GEAR_KEYS: GearKey[] = ["weapon", "offhand", "head", "armor", "hands", "legs", "feet", "neck", "ring", "ring2", "earring"];
+
+/** Can this item go into that gear slot? (rings fit both fingers, one-handed weapons fit the off hand) */
+export function fitsGear(key: GearKey, id: string): boolean {
+  const eq = getItem(id).equip;
+  if (!eq) return false;
+  if (key === "ring2") return eq.slot === "ring";
+  if (key === "offhand") return eq.slot === "offhand" || (eq.slot === "weapon" && eq.hands === 1);
+  return eq.slot === key;
+}
+export const isTwoHanded = (id?: string) => !!id && getItem(id).equip?.hands === 2;
+/** True when the character holds a weapon in each hand. */
+export const dualWielding = (ch: Character) => !!ch.gear.offhand && getItem(ch.gear.offhand).equip?.slot === "weapon";
+
+/**
+ * Puts an item (already taken out of the inventory) into a slot and returns whatever had to come
+ * off: the old piece, the off hand when a two-handed weapon goes in, or the two-hander when
+ * something is put into the off hand.
+ */
+export function equipGear(ch: Character, key: GearKey, id: string): string[] {
+  const off: string[] = [];
+  const take = (k: GearKey) => { const x = ch.gear[k]; if (x) { off.push(x); delete ch.gear[k]; } };
+  take(key);
+  if (key === "weapon" && isTwoHanded(id)) take("offhand");
+  if (key === "offhand" && isTwoHanded(ch.gear.weapon)) take("weapon");
+  ch.gear[key] = id;
+  return off;
+}
+
+/** Full stats of a character including gear. A weapon in the off hand counts for half. */
 export function charStats(ch: Character): Stats {
   const s = classStats(ch.classId, ch.level);
-  for (const id of Object.values(ch.gear)) {
+  for (const [key, id] of Object.entries(ch.gear) as [GearKey, string][]) {
     if (!id) continue;
     const eq = getItem(id).equip;
     if (!eq) continue;
-    for (const [k, v] of Object.entries(eq.stats)) s[k as keyof Stats] += v as number;
+    const f = key === "offhand" && eq.slot === "weapon" ? 0.5 : 1;
+    for (const [k, v] of Object.entries(eq.stats)) s[k as keyof Stats] += Math.round((v as number) * f);
   }
   return s;
 }
 
-/** Copies the look of equipped armor / weapon into the character's palette so sprites show gear. */
+/** Copies the look of equipped gear into the character's palette so sprites show it. */
 export function syncLook(ch: Character) {
   const pal: Record<string, string> = { ...(ch.pal ?? {}) };
-  delete pal.a;
-  delete pal.w;
-  const arm = ch.gear.armor ? getItem(ch.gear.armor) : null;
-  pal.a = arm?.equip ? `${arm.equip.kind ?? arm.shape}|${arm.col[0]}|${arm.col[2]}` : "none";
-  const wp = ch.gear.weapon ? getItem(ch.gear.weapon) : null;
-  if (wp?.equip) pal.w = `${wp.equip.kind ?? wp.shape}|${wp.col[0]}|${wp.col[1]}|${wp.col[2]}`;
+  for (const k of ["a", "w", "o", "hg", "gl", "lg", "ft"]) delete pal[k];
+  const it = (k: GearKey) => { const id = ch.gear[k]; const x = id ? getItem(id) : null; return x?.equip ? x : null; };
+  const arm = it("armor");
+  pal.a = arm ? `${arm.equip!.kind ?? arm.shape}|${arm.col[0]}|${arm.col[2]}` : "none";
+  const wp = it("weapon");
+  if (wp) pal.w = `${wp.equip!.kind ?? wp.shape}|${wp.col[0]}|${wp.col[1]}|${wp.col[2]}`;
+  const oh = it("offhand");
+  if (oh) pal.o = `${oh.equip!.kind ?? oh.shape}|${oh.col[0]}|${oh.col[1]}|${oh.col[2]}`;
+  const hd = it("head");
+  if (hd) pal.hg = `${hd.equip!.kind ?? hd.shape}|${hd.col[0]}|${hd.col[2]}`;
+  const gl = it("hands");
+  if (gl) pal.gl = gl.col[0];
+  const lg = it("legs");
+  if (lg) pal.lg = lg.col[0];
+  const ft = it("feet");
+  if (ft) pal.ft = ft.col[0];
   ch.pal = Object.keys(pal).length ? pal : undefined;
+}
+
+/** Moves gear from older saves (single accessory slot, shields in the weapon hand) to the new slots. */
+function fixGear(g: GameState, ch: Character) {
+  const items = Object.entries(ch.gear) as [string, string][];
+  ch.gear = {};
+  const homeless: string[] = [];
+  for (const [key, id] of items) {
+    if (!id) continue;
+    if (GEAR_KEYS.includes(key as GearKey) && fitsGear(key as GearKey, id) && !ch.gear[key as GearKey]) { ch.gear[key as GearKey] = id; continue; }
+    homeless.push(id);
+  }
+  for (const id of homeless) {
+    const key = GEAR_KEYS.find((k) => fitsGear(k, id) && !ch.gear[k] && !(k === "offhand" && isTwoHanded(ch.gear.weapon)));
+    if (key) ch.gear[key] = id;
+    else addItem(g, id, 1);
+  }
+  if (isTwoHanded(ch.gear.weapon) && ch.gear.offhand) { addItem(g, ch.gear.offhand, 1); delete ch.gear.offhand; }
 }
 
 export function charPassives(ch: Character): string[] {
@@ -345,6 +404,6 @@ export function migrate(raw: unknown): GameState {
   g.stats ??= { battles: 0, kills: 0, deaths: 0, steps: 0 };
   g.learnedRecipes ??= [];
   g.floors ??= {};
-  for (const ch of Object.values(g.chars)) syncLook(ch);
+  for (const ch of Object.values(g.chars)) { fixGear(g, ch); syncLook(ch); }
   return g;
 }

@@ -11,12 +11,12 @@ import { ITEMS, ITEM_LIST, type ItemDef } from "./core";
 applyHerbUses();
 
 export { ITEMS, ITEM_LIST, TYPE_NAMES, TYPE_EMOJI } from "./core";
-export type { ItemDef, ItemType, ItemUse, EquipSlot, MealBuff } from "./core";
+export type { ItemDef, ItemType, ItemUse, EquipSlot, GearKey, Rarity, MealBuff } from "./core";
 export { METALS, BIOME_MATS, ESSENCES, metalTierForFloor } from "./materials";
 export { CROPS, CROP_LIST, SEASON_NAMES, SEASON_ICONS, DAYS_PER_SEASON, seasonOf } from "./farm";
 export type { CropDef, Season } from "./farm";
 export { CONSUMABLE_RECIPES } from "./consumables";
-export { EQUIP_RECIPES, EQUIP_KINDS, LEGENDARY_BY_BIOME, tierUnit } from "./equipment";
+export { EQUIP_RECIPES, EQUIP_KINDS, KIND_NAMES, KIND_BY_ID, GEAR_BY_FLOOR, LEGENDARY_BY_BIOME, gearForFloor, tierUnit } from "./equipment";
 
 const tomeCache: Record<string, ItemDef> = {};
 

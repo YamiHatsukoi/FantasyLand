@@ -4,7 +4,10 @@ import type { Palette } from "../../render/icons";
 export type ItemType =
   | "material" | "seed" | "crop" | "food" | "potion" | "bomb" | "equip" | "tome" | "key"
   | "herb" | "scroll" | "fertilizer" | "animal" | "sapling";
-export type EquipSlot = "weapon" | "armor" | "accessory";
+export type EquipSlot = "weapon" | "offhand" | "head" | "armor" | "hands" | "legs" | "feet" | "neck" | "ring" | "earring";
+/** Character gear slots: every item slot, plus a second ring finger. */
+export type GearKey = EquipSlot | "ring2";
+export type Rarity = "common" | "rare" | "epic" | "legendary";
 
 /** What a consumable does when used (in battle or on the map). */
 export interface ItemUse {
@@ -39,7 +42,15 @@ export interface ItemDef {
   tier?: number;
   use?: ItemUse;
   meal?: MealBuff;
-  equip?: { slot: EquipSlot; stats: StatMods; passive?: string; kind?: string };
+  equip?: {
+    slot: EquipSlot;
+    stats: StatMods;
+    passive?: string;
+    kind?: string;
+    hands?: 1 | 2; // weapons: 1 = one-handed (can be dual-wielded), 2 = needs both hands
+    floor?: number; // depth the item belongs to
+    rarity?: Rarity;
+  };
   crop?: string; // seed/sapling -> crop id
   skill?: string; // tome
   passive?: string; // passive tome

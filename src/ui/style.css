@@ -364,3 +364,11 @@ img.iicon.lg { width: 48px; height: 48px; }
 .npc-card { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; text-align: left; font-size: 12px; }
 .npc-card img { width: 36px; height: 36px; flex: none; }
 .npc-card .nm { font-weight: 600; font-size: 13px; }
+.r-rare { color: #6ab8ff; }
+.r-epic { color: #c890ff; }
+.r-legendary { color: #ffb838; }
+.gear-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.gear-grid .slot { min-width: 0; }
+.gear-grid .slot .gname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff-up { color: #7be07b; }
+.diff-down { color: #ff7a7a; }

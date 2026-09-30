@@ -8,7 +8,7 @@ import type { BattleEvent, Eff, Skill, Unit } from "../combat/types";
 import { Rng } from "../core/rng";
 import { charStats, giveXp, logMsg, partyBuffs } from "../core/state";
 import { ENEMIES } from "../data/enemies";
-import { BIOME_MATS, ESSENCES, ITEM_LIST, LEGENDARY_BY_BIOME, getItem, metalTierForFloor, type ItemDef } from "../data/items";
+import { BIOME_MATS, ESSENCES, LEGENDARY_BY_BIOME, gearForFloor, getItem, type ItemDef } from "../data/items";
 import { iconURL } from "../render/icons";
 import { getSkill } from "../data/skills";
 import { spriteURL } from "../render/pixel";
@@ -456,10 +456,11 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         if (mats && rng.chance(u.boss ? 1 : 0.3)) { const id = rng.pick([mats.hide, mats.fiber, mats.herb, mats.gem]); loot[id] = (loot[id] ?? 0) + (u.boss ? 3 : 1); }
         const el = ENEMY_EL[fam];
         if (el && ESSENCES[el] && rng.chance(u.boss ? 1 : 0.05)) loot[ESSENCES[el]] = (loot[ESSENCES[el]] ?? 0) + (u.boss ? 2 : 1);
-        if (rng.chance(u.boss ? 0.8 : 0.025)) {
-          const t = Math.min(12, metalTierForFloor(setup.floor) + (u.boss ? 1 : 0));
-          const pool = ITEM_LIST.filter((i) => i.equip && i.tier === t && !i.tags?.includes("legendary"));
-          if (pool.length) { const id = rng.pick(pool).id; loot[id] = (loot[id] ?? 0) + 1; }
+        if (rng.chance(u.boss ? 1 : 0.04)) {
+          for (let k = 0; k < (u.boss ? 2 : 1); k++) {
+            const id = gearForFloor(Math.max(1, setup.floor), (xs) => rng.pick(xs), u.boss ? 1 : 0).id;
+            loot[id] = (loot[id] ?? 0) + 1;
+          }
         }
         const legs = LEGENDARY_BY_BIOME[fam];
         if (u.boss && legs?.length && rng.chance(0.35)) { const id = rng.pick(legs); loot[id] = (loot[id] ?? 0) + 1; }
