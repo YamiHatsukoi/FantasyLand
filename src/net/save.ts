@@ -49,14 +49,19 @@ export class SaveManager {
     }
     const remote = await loadSave(this.session);
     this.version = remote.version;
-    if (local && !local.synced && local.version >= remote.version) {
+    const wiped = !remote.data || (remote.data as { wiped?: boolean }).wiped === true;
+    if (wiped && local && local.version > 0) {
+      // The server copy was deleted (from the dashboard or "Chơi lại từ đầu"): the local copy is stale too.
+      this.clearLocal();
+      this.game = null;
+    } else if (local && !local.synced && local.version >= remote.version) {
       // Unsynced progress from a previous session on this device: prefer it and push it.
       this.game = migrate(local.data);
       this.pending = true;
       void this.flush();
-    } else if (remote.data) {
+    } else if (!wiped) {
       this.game = migrate(remote.data);
-      writeLocal(this.session, { version: this.version, synced: true, data: this.game });
+      writeLocal(this.session, { version: this.version, synced: true, data: this.game! });
     } else {
       this.game = local ? migrate(local.data) : null;
     }
@@ -124,6 +129,15 @@ export class SaveManager {
   async forceSave() {
     this.pending = true;
     await this.flush(true);
+  }
+
+  /** Deletes the progress on the server and on this device; the next load starts a new game. */
+  async wipe() {
+    window.clearTimeout(this.timer);
+    this.pending = false;
+    if (!this.session.offline) this.version = await storeSave(this.session, { wiped: true }, this.version, true);
+    this.game = null;
+    this.clearLocal();
   }
 
   clearLocal() {
