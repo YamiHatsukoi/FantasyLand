@@ -97,6 +97,14 @@ export function openMenu(extra: HTMLElement[] = []) {
       h("button", {
         class: "btn",
         onclick: async () => {
+          if (!(await confirmBox("Chơi lại từ đầu", "Toàn bộ tiến trình của tài khoản này (trên máy chủ và trên thiết bị) sẽ bị XOÁ VĨNH VIỄN. Không thể hoàn tác.", "Xoá và chơi lại"))) return;
+          if (!(await confirmBox("Chắc chắn chứ?", "Lần xác nhận cuối: xoá hết và bắt đầu lại từ đầu?", "Xoá hết"))) return;
+          try { await app.saver?.wipe(); location.reload(); } catch (e) { toast(errorText(e), "bad"); }
+        },
+      }, "🔄 Chơi lại từ đầu"),
+      h("button", {
+        class: "btn",
+        onclick: async () => {
           if (!(await confirmBox("Đăng xuất", "Tiến trình sẽ được lưu trước khi đăng xuất. Lần sau bạn cần nhập lại tên và mật khẩu."))) return;
           try { await app.saver?.flush(true); } catch { /* keep local copy */ }
           if (app.session) await logout(app.session);
