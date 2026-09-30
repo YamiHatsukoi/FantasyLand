@@ -61,7 +61,7 @@ const PS = {
 
 // armor weight profiles (full body = 1.0)
 const LIGHT = (u: number): StatMods => ({ res: r(u * 0.8), mp: r(u * 3), mag: r(u * 0.2) });
-const MEDIUM = (u: number, t: number): StatMods => ({ def: r(u * 0.6), hp: r(u * 3), eva: 4 + (t >> 2) });
+const MEDIUM = (u: number, t: number): StatMods => ({ def: r(u * 0.6), hp: r(u * 3), eva: 2 + (t >> 3) });
 const HEAVY = (u: number): StatMods => ({ def: r(u * 0.9), res: r(u * 0.3), hp: r(u * 6), spd: -2 });
 function part(base: StatMods, f: number, add: StatMods = {}): StatMods {
   const out: StatMods = {};
@@ -79,28 +79,28 @@ const metalCost = (n: number) => (t: number) => ({ [ing(t)]: n, [bm(t).leather]:
 
 const KINDS: Kind[] = [
   // ---- one-handed weapons (main hand, or off hand for dual wielding)
-  { id: "sword", name: "Trường Kiếm", slot: "weapon", hands: 1, mat: "metal", stats: (u, t) => ({ atk: r(u), crit: 3 + (t >> 1) }), cost: (t) => ({ [ing(t)]: 3, [bm(t).leather]: 1 }), passives: PS.blade },
-  { id: "dagger", name: "Đoản Đao", slot: "weapon", hands: 1, mat: "metal", stats: (u, t) => ({ atk: r(u * 0.8), crit: 10 + t, eva: 4 }), cost: (t) => ({ [ing(t)]: 2, [bm(t).leather]: 1 }), passives: PS.sneak },
+  { id: "sword", name: "Trường Kiếm", slot: "weapon", hands: 1, mat: "metal", stats: (u, t) => ({ atk: r(u), crit: 2 + (t >> 2) }), cost: (t) => ({ [ing(t)]: 3, [bm(t).leather]: 1 }), passives: PS.blade },
+  { id: "dagger", name: "Đoản Đao", slot: "weapon", hands: 1, mat: "metal", stats: (u, t) => ({ atk: r(u * 0.8), crit: 5 + (t >> 1), eva: 2 }), cost: (t) => ({ [ing(t)]: 2, [bm(t).leather]: 1 }), passives: PS.sneak },
   { id: "axe", name: "Chiến Phủ", slot: "weapon", hands: 1, mat: "metal", stats: (u) => ({ atk: r(u * 1.15), spd: -2 }), cost: (t) => ({ [ing(t)]: 3, [bm(t).plank]: 2 }), passives: PS.heavy },
   { id: "mace", name: "Chùy Gai", slot: "weapon", hands: 1, mat: "metal", stats: (u) => ({ atk: r(u * 0.95), def: r(u * 0.2), res: r(u * 0.1) }), cost: (t) => ({ [ing(t)]: 4, [bm(t).plank]: 1 }), passives: PS.guard },
-  { id: "wand", name: "Đũa Phép", slot: "weapon", hands: 1, mat: "wood", stats: (u, t) => ({ mag: r(u * 0.95), crit: 6 + (t >> 1), spd: 3 }), cost: (t) => ({ [bm(t).plank]: 1, [bm(t).gem]: 1, [bm(t).extract]: 1 }), passives: PS.spark },
-  { id: "whip", name: "Roi Da", slot: "weapon", hands: 1, mat: "leather", stats: (u, t) => ({ atk: r(u * 0.85), spd: 3 + (t >> 2), crit: 5 }), cost: (t) => ({ [bm(t).leather]: 3, [ing(t)]: 1 }), passives: PS.sneak },
+  { id: "wand", name: "Đũa Phép", slot: "weapon", hands: 1, mat: "wood", stats: (u, t) => ({ mag: r(u * 0.95), crit: 3 + (t >> 2), spd: 3 }), cost: (t) => ({ [bm(t).plank]: 1, [bm(t).gem]: 1, [bm(t).extract]: 1 }), passives: PS.spark },
+  { id: "whip", name: "Roi Da", slot: "weapon", hands: 1, mat: "leather", stats: (u, t) => ({ atk: r(u * 0.85), spd: 3 + (t >> 2), crit: 3 }), cost: (t) => ({ [bm(t).leather]: 3, [ing(t)]: 1 }), passives: PS.sneak },
   // ---- two-handed weapons
-  { id: "greatsword", name: "Đại Kiếm", slot: "weapon", hands: 2, mat: "metal", stats: (u, t) => ({ atk: r(u * 1.5), crit: 4 + (t >> 1), def: r(u * 0.1) }), cost: (t) => ({ [ing(t)]: 5, [bm(t).leather]: 1 }), passives: PS.blade, vf: 1.3 },
-  { id: "greataxe", name: "Đại Phủ", slot: "weapon", hands: 2, mat: "metal", stats: (u) => ({ atk: r(u * 1.75), crit: 6, spd: -5 }), cost: (t) => ({ [ing(t)]: 5, [bm(t).plank]: 2 }), passives: PS.heavy, vf: 1.3 },
+  { id: "greatsword", name: "Đại Kiếm", slot: "weapon", hands: 2, mat: "metal", stats: (u, t) => ({ atk: r(u * 1.5), crit: 2 + (t >> 2), def: r(u * 0.1) }), cost: (t) => ({ [ing(t)]: 5, [bm(t).leather]: 1 }), passives: PS.blade, vf: 1.3 },
+  { id: "greataxe", name: "Đại Phủ", slot: "weapon", hands: 2, mat: "metal", stats: (u) => ({ atk: r(u * 1.75), crit: 3, spd: -5 }), cost: (t) => ({ [ing(t)]: 5, [bm(t).plank]: 2 }), passives: PS.heavy, vf: 1.3 },
   { id: "hammer", name: "Chiến Chùy", slot: "weapon", hands: 2, mat: "metal", stats: (u) => ({ atk: r(u * 1.6), def: r(u * 0.3), spd: -6 }), cost: (t) => ({ [ing(t)]: 6, [bm(t).plank]: 1 }), passives: PS.heavy, vf: 1.3 },
   { id: "spear", name: "Thương", slot: "weapon", hands: 2, mat: "metal", stats: (u, t) => ({ atk: r(u * 1.4), def: r(u * 0.25), spd: 1 + (t >> 2) }), cost: (t) => ({ [ing(t)]: 2, [bm(t).plank]: 2 }), passives: PS.pole, vf: 1.2 },
   { id: "scythe", name: "Lưỡi Hái", slot: "weapon", hands: 2, mat: "metal", stats: (u) => ({ atk: r(u * 1.4), mag: r(u * 0.5) }), cost: (t) => ({ [ing(t)]: 3, [bm(t).plank]: 2 }), passives: PS.reaper, vf: 1.3 },
   { id: "staff", name: "Pháp Trượng", slot: "weapon", hands: 2, mat: "wood", stats: (u) => ({ mag: r(u * 1.5), mp: r(u * 2.5) }), cost: (t) => ({ [bm(t).plank]: 3, [bm(t).gem]: 1 }), passives: PS.arcane, vf: 1.2 },
-  { id: "bow", name: "Trường Cung", slot: "weapon", hands: 2, mat: "wood", stats: (u, t) => ({ atk: r(u * 1.35), crit: 8 + (t >> 1), spd: 2 }), cost: (t) => ({ [bm(t).plank]: 3, [bm(t).cloth]: 1, [ing(t)]: 1 }), passives: PS.ranged, vf: 1.2 },
-  { id: "crossbow", name: "Nỏ Liên Châu", slot: "weapon", hands: 2, mat: "wood", stats: (u, t) => ({ atk: r(u * 1.55), crit: 12 + (t >> 1), spd: -2 }), cost: (t) => ({ [bm(t).plank]: 2, [ing(t)]: 2 }), passives: PS.ranged, vf: 1.3 },
-  { id: "fist", name: "Thiết Thủ", slot: "weapon", hands: 2, mat: "metal", stats: (u, t) => ({ atk: r(u * 1.25), spd: 5 + (t >> 2), crit: 5 }), cost: (t) => ({ [ing(t)]: 1, [bm(t).leather]: 2 }), passives: PS.monk, vf: 1.1 },
-  { id: "katana", name: "Thái Đao", slot: "weapon", hands: 2, mat: "metal", stats: (u, t) => ({ atk: r(u * 1.4), crit: 10 + t, eva: 3 }), cost: (t) => ({ [ing(t)]: 4, [bm(t).cloth]: 1 }), passives: PS.blade, vf: 1.3 },
+  { id: "bow", name: "Trường Cung", slot: "weapon", hands: 2, mat: "wood", stats: (u, t) => ({ atk: r(u * 1.35), crit: 4 + (t >> 2), spd: 2 }), cost: (t) => ({ [bm(t).plank]: 3, [bm(t).cloth]: 1, [ing(t)]: 1 }), passives: PS.ranged, vf: 1.2 },
+  { id: "crossbow", name: "Nỏ Liên Châu", slot: "weapon", hands: 2, mat: "wood", stats: (u, t) => ({ atk: r(u * 1.55), crit: 6 + (t >> 2), spd: -2 }), cost: (t) => ({ [bm(t).plank]: 2, [ing(t)]: 2 }), passives: PS.ranged, vf: 1.3 },
+  { id: "fist", name: "Thiết Thủ", slot: "weapon", hands: 2, mat: "metal", stats: (u, t) => ({ atk: r(u * 1.25), spd: 5 + (t >> 2), crit: 3 }), cost: (t) => ({ [ing(t)]: 1, [bm(t).leather]: 2 }), passives: PS.monk, vf: 1.1 },
+  { id: "katana", name: "Thái Đao", slot: "weapon", hands: 2, mat: "metal", stats: (u, t) => ({ atk: r(u * 1.4), crit: 5 + (t >> 1), eva: 1 }), cost: (t) => ({ [ing(t)]: 4, [bm(t).cloth]: 1 }), passives: PS.blade, vf: 1.3 },
   { id: "lute", name: "Đàn Lute", slot: "weapon", hands: 2, mat: "wood", stats: (u, t) => ({ mag: r(u * 1.1), res: r(u * 0.4), mp: r(u * 2), spd: 2 + (t >> 2) }), cost: (t) => ({ [bm(t).plank]: 3, [bm(t).fiber]: 2 }), passives: PS.song, vf: 1.2 },
   // ---- off hand only
   { id: "shield", name: "Khiên", slot: "offhand", mat: "metal", stats: (u) => ({ def: r(u * 0.7), hp: r(u * 2.8), res: r(u * 0.2) }), cost: (t) => ({ [ing(t)]: 3, [bm(t).plank]: 1, [bm(t).leather]: 1 }), passives: PS.guard },
   { id: "tome", name: "Ma Thư", slot: "offhand", mat: "leather", stats: (u) => ({ mag: r(u * 0.6), res: r(u * 0.2), mp: r(u * 1.5) }), cost: (t) => ({ [bm(t).cloth]: 2, [bm(t).leather]: 1, [bm(t).gem]: 1, paper: 2 }), passives: PS.holy },
-  { id: "orb", name: "Quả Cầu Phép", slot: "offhand", mat: "gem", stats: (u, t) => ({ mag: r(u * 0.7), mp: r(u), crit: 2 + (t >> 2) }), cost: (t) => ({ [bm(t).gem]: 2, [ing(t)]: 1 }), passives: PS.arcane },
+  { id: "orb", name: "Quả Cầu Phép", slot: "offhand", mat: "gem", stats: (u, t) => ({ mag: r(u * 0.7), mp: r(u), crit: 1 + (t >> 3) }), cost: (t) => ({ [bm(t).gem]: 2, [ing(t)]: 1 }), passives: PS.arcane },
   // ---- body
   { id: "robe", name: "Pháp Bào", slot: "armor", mat: "cloth", stats: (u) => LIGHT(u), cost: clothCost(4), passives: PS.cloth },
   { id: "leather", name: "Giáp Da", slot: "armor", mat: "leather", stats: (u, t) => MEDIUM(u, t), cost: hideCost(4), passives: PS.hide },
@@ -112,7 +112,7 @@ const KINDS: Kind[] = [
   { id: "helm", name: "Mũ Giáp", slot: "head", mat: "metal", stats: (u) => part(HEAVY(u), 0.25, { res: r(u * 0.1) }), cost: metalCost(2), passives: PS.metal, vf: 0.6 },
   // ---- hands
   { id: "gloves", name: "Găng Tay Lụa", slot: "hands", mat: "cloth", stats: (u) => part(LIGHT(u), 0.2, { mag: r(u * 0.1) }), cost: clothCost(1), passives: PS.spark, vf: 0.5 },
-  { id: "bracers", name: "Hộ Uyển", slot: "hands", mat: "leather", stats: (u, t) => part(MEDIUM(u, t), 0.2, { crit: 3 }), cost: hideCost(1), passives: PS.sneak, vf: 0.5 },
+  { id: "bracers", name: "Hộ Uyển", slot: "hands", mat: "leather", stats: (u, t) => part(MEDIUM(u, t), 0.2, { crit: 1 }), cost: hideCost(1), passives: PS.sneak, vf: 0.5 },
   { id: "gauntlets", name: "Găng Giáp", slot: "hands", mat: "metal", stats: (u) => part(HEAVY(u), 0.2, { atk: r(u * 0.1) }), cost: metalCost(1), passives: PS.heavy, vf: 0.5 },
   // ---- legs
   { id: "pants", name: "Quần Lụa", slot: "legs", mat: "cloth", stats: (u) => part(LIGHT(u), 0.25, { hp: r(u) }), cost: clothCost(2), passives: PS.cloth, vf: 0.6 },
@@ -120,13 +120,13 @@ const KINDS: Kind[] = [
   { id: "greaves", name: "Giáp Chân", slot: "legs", mat: "metal", stats: (u) => part(HEAVY(u), 0.25, { hp: r(u) }), cost: metalCost(2), passives: PS.plate, vf: 0.6 },
   // ---- feet
   { id: "shoes", name: "Hài Vải", slot: "feet", mat: "cloth", stats: (u, t) => part(LIGHT(u), 0.2, { spd: 2 + (t >> 2) }), cost: clothCost(1), passives: PS.feet, vf: 0.5 },
-  { id: "boots", name: "Ủng Da", slot: "feet", mat: "leather", stats: (u, t) => ({ spd: 3 + t, eva: 3 + (t >> 1), def: r(u * 0.15) }), cost: hideCost(2), passives: PS.feet, vf: 0.6 },
+  { id: "boots", name: "Ủng Da", slot: "feet", mat: "leather", stats: (u, t) => ({ spd: 3 + t, eva: 1 + (t >> 2), def: r(u * 0.15) }), cost: hideCost(2), passives: PS.feet, vf: 0.6 },
   { id: "sabatons", name: "Giày Sắt", slot: "feet", mat: "metal", stats: (u, t) => part(HEAVY(u), 0.2, { spd: 1 + (t >> 2) }), cost: metalCost(1), passives: PS.feet, vf: 0.5 },
   // ---- jewellery
   { id: "amulet", name: "Dây Chuyền", slot: "neck", mat: "gem", stats: (u) => ({ res: r(u * 0.35), mp: r(u * 2), mag: r(u * 0.2) }), cost: (t) => ({ [ing(t)]: 1, [bm(t).gem]: 2 }), passives: PS.amulet, vf: 0.8 },
   { id: "charm", name: "Bùa Hộ Mệnh", slot: "neck", mat: "leather", stats: (u) => ({ hp: r(u * 3.5), def: r(u * 0.2) }), cost: (t) => ({ [bm(t).leather]: 1, [bm(t).gem]: 1, [bm(t).extract]: 1 }), passives: PS.charm, vf: 0.8 },
-  { id: "ring", name: "Nhẫn", slot: "ring", mat: "gem", stats: (u, t) => ({ atk: r(u * 0.2), mag: r(u * 0.2), crit: 3 + (t >> 2) }), cost: (t) => ({ [ing(t)]: 1, [bm(t).gem]: 1 }), passives: PS.ring, vf: 0.8 },
-  { id: "earring", name: "Hoa Tai", slot: "earring", mat: "gem", stats: (u, t) => ({ mag: r(u * 0.25), crit: 2 + (t >> 2), res: r(u * 0.2) }), cost: (t) => ({ [ing(t)]: 1, [bm(t).gem]: 1 }), passives: PS.ear, vf: 0.8 },
+  { id: "ring", name: "Nhẫn", slot: "ring", mat: "gem", stats: (u, t) => ({ atk: r(u * 0.2), mag: r(u * 0.2), crit: 1 + (t >> 2) }), cost: (t) => ({ [ing(t)]: 1, [bm(t).gem]: 1 }), passives: PS.ring, vf: 0.8 },
+  { id: "earring", name: "Hoa Tai", slot: "earring", mat: "gem", stats: (u, t) => ({ mag: r(u * 0.25), crit: 1 + (t >> 3), res: r(u * 0.2) }), cost: (t) => ({ [ing(t)]: 1, [bm(t).gem]: 1 }), passives: PS.ear, vf: 0.8 },
 ];
 
 export const KIND_BY_ID: Record<string, Kind> = Object.fromEntries(KINDS.map((k) => [k.id, k]));
@@ -198,13 +198,13 @@ const GEM_C = ["#3ad86a", "#f0a030", "#3a3a4a", "#8ad8ff", "#b04ae0", "#ff3a4a",
 
 /** Affixes: a name and a small bonus. Each floor inside a metal tier gets a different one. */
 const AFFIX: [string, (u: number) => StatMods][] = [
-  ["Sắc Bén", () => ({ crit: 3 })],
+  ["Sắc Bén", () => ({ crit: 2 })],
   ["Cuồng Phong", () => ({ spd: 3 })],
   ["Kiên Cố", (u) => ({ def: r(u * 0.12) + 1 })],
   ["Hộ Pháp", (u) => ({ res: r(u * 0.12) + 1 })],
   ["Sinh Mệnh", (u) => ({ hp: r(u * 1.2) + 5 })],
   ["Linh Lực", (u) => ({ mp: r(u) + 5 })],
-  ["Ảnh Tử", () => ({ eva: 3 })],
+  ["Ảnh Tử", () => ({ eva: 1 })],
   ["Bá Vương", (u) => ({ atk: r(u * 0.1) + 1 })],
   ["Huyền Bí", (u) => ({ mag: r(u * 0.1) + 1 })],
   ["Bình Minh", (u) => ({ hp: r(u * 0.5) + 2, mp: r(u * 0.4) + 2 })],

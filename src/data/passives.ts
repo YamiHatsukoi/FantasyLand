@@ -13,9 +13,9 @@ P("p_wisdom", "Thông Tuệ", "📘", "arcane", 1, "+12% phép.", [{ on: "stat",
 P("p_iron_skin", "Da Sắt", "🪖", "shield", 1, "+20% phòng thủ.", [{ on: "stat", mods: { def: 0.2 } }]);
 P("p_spirit", "Tinh Thần Thép", "🧠", "light", 1, "+20% kháng phép.", [{ on: "stat", mods: { res: 0.2 } }]);
 P("p_swift", "Nhanh Nhẹn", "👟", "wind", 1, "+10% tốc độ.", [{ on: "stat", mods: { spd: 0.1 } }]);
-P("p_keen", "Mắt Tinh", "👁️", "bow", 1, "+10% chí mạng.", [{ on: "stat", mods: { crit: 10 } }]);
-P("p_nimble", "Thân Pháp", "🍃", "dagger", 1, "+8% né tránh.", [{ on: "stat", mods: { eva: 8 } }]);
-P("p_lucky", "Kẻ May Mắn", "🍀", "song", 2, "+5% chí mạng, +5% né.", [{ on: "stat", mods: { crit: 5, eva: 5 } }]);
+P("p_keen", "Mắt Tinh", "👁️", "bow", 1, "+6 chí mạng.", [{ on: "stat", mods: { crit: 6 } }]);
+P("p_nimble", "Thân Pháp", "🍃", "dagger", 1, "+4 né tránh.", [{ on: "stat", mods: { eva: 4 } }]);
+P("p_lucky", "Kẻ May Mắn", "🍀", "song", 2, "+3 chí mạng, +2 né.", [{ on: "stat", mods: { crit: 3, eva: 2 } }]);
 P("p_colossus", "Người Khổng Lồ", "🗻", "shield", 3, "+30% máu, -10% tốc độ.", [{ on: "stat", mods: { hp: 0.3, spd: -0.1 } }]);
 
 // ---- elemental affinity

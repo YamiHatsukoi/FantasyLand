@@ -271,8 +271,9 @@ export function equipGear(ch: Character, key: GearKey, id: string): string[] {
 
 /** Stat allocation: points per level for the hero, and what one point buys. */
 export const POINTS_PER_LEVEL = 3;
-export const POINT_VALUE: Record<keyof Stats, number> = { hp: 8, mp: 4, atk: 1, mag: 1, def: 1, res: 1, spd: 1, crit: 1, eva: 1 };
-export const POINT_CAP: Partial<Record<keyof Stats, number>> = { crit: 40, eva: 30 };
+/** Crit and dodge are ratings with diminishing returns (see combat/rates.ts); two points buy one. */
+export const POINT_VALUE: Record<keyof Stats, number> = { hp: 8, mp: 4, atk: 1, mag: 1, def: 1, res: 1, spd: 1, crit: 0.5, eva: 0.5 };
+export const POINT_CAP: Partial<Record<keyof Stats, number>> = { crit: 30, eva: 20 };
 
 export function allocPoint(ch: Character, k: keyof Stats, n = 1): boolean {
   const have = ch.points ?? 0;
@@ -295,7 +296,7 @@ export const resetCost = (ch: Character) => 50 * ch.level;
 /** Full stats of a character including gear. A weapon in the off hand counts for half. */
 export function charStats(ch: Character): Stats {
   const s = classStats(ch.classId, ch.level);
-  for (const [k, n] of Object.entries(ch.alloc ?? {}) as [keyof Stats, number][]) s[k] += n * POINT_VALUE[k];
+  for (const [k, n] of Object.entries(ch.alloc ?? {}) as [keyof Stats, number][]) s[k] += Math.floor(n * POINT_VALUE[k]);
   for (const [key, id] of Object.entries(ch.gear) as [GearKey, string][]) {
     if (!id) continue;
     const eq = getItem(id).equip;
@@ -475,5 +476,10 @@ export function migrate(raw: unknown): GameState {
   for (const ch of Object.values(g.chars)) { fixGear(g, ch); syncLook(ch); }
   const hero = g.chars[g.heroId];
   if (hero && hero.points === undefined) hero.points = (hero.level - 1) * POINTS_PER_LEVEL; // points for levels gained before allocation existed
+  // crit / dodge points above the (lowered) caps are refunded
+  if (hero?.alloc) for (const [k, cap] of Object.entries(POINT_CAP) as [keyof Stats, number][]) {
+    const spent = hero.alloc[k] ?? 0;
+    if (spent > cap) { hero.alloc[k] = cap; hero.points = (hero.points ?? 0) + spent - cap; }
+  }
   return g;
 }

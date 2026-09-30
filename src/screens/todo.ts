@@ -1,8 +1,8 @@
 import { app } from "../app";
 import { charStats, type GameState } from "../core/state";
 import { getItem } from "../data/items";
-import { h, openModal, toast } from "../ui/dom";
-import { autoEquip, planBestGear } from "../ui/smart";
+import { h, openModal } from "../ui/dom";
+import { planBestGear } from "../ui/smart";
 import { activeQuest, getNpc, questGoal, questProgress } from "../world/people";
 import { isBirthday, profileOf, residents, sceneReady } from "../world/residents";
 import { allPlots, isReady } from "../world/town";
@@ -39,7 +39,7 @@ export function todoList(g: GameState, hooks: TodoHooks): Todo[] {
   const ups = g.party.map((id) => ({ id, n: planBestGear(g, g.chars[id]).length })).filter((x) => x.n);
   if (ups.length) out.push({
     kind: "party", icon: "⚡", text: `Trong túi có đồ tốt hơn cho ${ups.map((x) => g.chars[x.id].name.split(" ")[0]).join(", ")}.`,
-    act: { label: "Tối ưu cả đội", run: () => { let n = 0; for (const x of ups) n += autoEquip(g, g.chars[x.id]); app.dirty(); toast(`⚡ Đã thay ${n} món.`, "good"); hooks.refresh(); } },
+    act: { label: "Xem trang bị", run: () => openParty({ inDungeon: false, select: ups[0].id, onChange: hooks.refresh }) },
   });
   const tomes = Object.keys(g.inventory).filter((id) => getItem(id).type === "tome").length;
   if (tomes) out.push({ kind: "tome", icon: "📕", text: `${tomes} cuốn sách kỹ năng chưa học.`, act: { label: "Mở Đội Hình", run: () => openParty({ inDungeon: false, onChange: hooks.refresh }) } });
