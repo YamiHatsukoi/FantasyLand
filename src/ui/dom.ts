@@ -81,10 +81,12 @@ const AUTO_SEARCH_MIN = 8;
 function autoSearch(m: ModalHandle) {
   let query = "";
   let busy = false;
+  let list: HTMLElement | null = null;
   const apply = () => {
     const q = foldText(query.trim());
     for (const row of m.body.querySelectorAll<HTMLElement>(".item-row")) {
-      if (row.closest(".no-search")) continue;
+      // a lone detail row outside the list (e.g. the plot being tended) always stays
+      if (row.closest(".no-search") || (list && list !== m.body && row.parentElement !== list)) continue;
       row.style.display = !q || foldText(row.textContent ?? "").includes(q) ? "" : "none";
     }
   };
@@ -94,15 +96,21 @@ function autoSearch(m: ModalHandle) {
     try {
       const rows = m.body.querySelectorAll(".item-row");
       const own = m.body.querySelector(".searchbar:not(.auto-search)") || m.el.querySelector(".no-autosearch");
-      let box = m.body.querySelector<HTMLElement>(".auto-search");
-      if (own || rows.length < AUTO_SEARCH_MIN) { box?.remove(); return; }
-      const list = rows[0].parentElement!;
-      if (!box || box.nextElementSibling !== list) {
-        box?.remove();
+      const boxes = [...m.el.querySelectorAll<HTMLElement>(".auto-search")];
+      if (own || rows.length < AUTO_SEARCH_MIN) { boxes.forEach((b) => b.remove()); return; }
+      // the container holding the most rows is "the list" (a detail row may sit loose in the body)
+      const tally = new Map<HTMLElement, number>();
+      for (const r of rows) { const p = r.parentElement!; tally.set(p, (tally.get(p) ?? 0) + 1); }
+      const top = [...tally].sort((a, b) => b[1] - a[1])[0][0];
+      list = top;
+      const placed = (b: HTMLElement) => (top === m.body ? b.parentElement === m.body && m.body.firstElementChild === b : b.nextElementSibling === top);
+      let box: HTMLElement | undefined = boxes.find(placed);
+      for (const b of boxes) if (b !== box) b.remove();
+      if (!box) {
         const input = h("input", { class: "input", type: "search", placeholder: "🔍 Tìm trong danh sách…", value: query }) as HTMLInputElement;
         input.addEventListener("input", () => { query = input.value; apply(); });
         box = h("div", { class: "searchbar auto-search" }, input);
-        list.before(box);
+        if (top === m.body) m.body.prepend(box); else top.before(box);
       }
       apply();
     } finally { busy = false; }
