@@ -198,3 +198,41 @@ describe("secrets", () => {
     expect(vaults).toBeGreaterThan(35);
   }, 60000);
 });
+
+describe("great events", () => {
+  it("20 kinds rotate; almost every floor has one, and all its pieces can be reached", async () => {
+    const { SAGAS, sagaFor } = await import("../src/world/saga");
+    const { PASSABLE } = await import("../src/render/tiles");
+    expect(SAGAS.length).toBe(20);
+    for (let n = 2; n <= 100; n++) expect(sagaFor(n).id).not.toBe(sagaFor(n - 1).id);
+    expect(new Set(Array.from({ length: 100 }, (_, i) => sagaFor(i + 1).id)).size).toBeGreaterThanOrEqual(16);
+    let have = 0;
+    for (let n = 1; n <= 100; n++) {
+      const m = generateFloor(getFloor(n), 1234);
+      if (!m.saga) continue;
+      have++;
+      // flood fill from the portal over passable tiles (entities count as reachable targets)
+      const seen = new Uint8Array(m.w * m.h);
+      const q = [m.start.y * m.w + m.start.x];
+      seen[q[0]] = 1;
+      for (let k = 0; k < q.length; k++) {
+        const x = q[k] % m.w, y = Math.floor(q[k] / m.w);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx, ny = y + dy, i = ny * m.w + nx;
+          if (nx < 0 || ny < 0 || nx >= m.w || ny >= m.h || seen[i] || !PASSABLE.has(m.tiles[i])) continue;
+          seen[i] = 1; q.push(i);
+        }
+      }
+      const near = (e: { x: number; y: number }) => seen[e.y * m.w + e.x] || [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => seen[(e.y + dy) * m.w + e.x + dx]);
+      for (const e of m.entities.filter((x) => x.kind === "saga" || x.saga)) expect(near(e), `floor ${n} ${m.saga.id} ${e.kind} ${e.ref}`).toBeTruthy();
+    }
+    expect(have).toBeGreaterThanOrEqual(90);
+  }, 120000);
+});
+
+describe("great event rotation", () => {
+  it("never plays the same way two floors in a row", async () => {
+    const { sagaFor } = await import("../src/world/saga");
+    for (let n = 2; n <= 100; n++) expect(sagaFor(n).mech, `floor ${n}`).not.toBe(sagaFor(n - 1).mech);
+  });
+});

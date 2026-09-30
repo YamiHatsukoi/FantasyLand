@@ -435,6 +435,11 @@ const D: Record<string, Drawer> = {
     p.rect(7, 2, 2, 12, p.al); p.rect(2, 7, 12, 2, p.al);
     p.disc(8, 8, 2, p.e); p.px(8, 1, p.e);
   },
+  m_flag: (p) => {
+    p.rect(3, 1, 2, 14, p.c); p.px(3, 1, p.cl);
+    for (let y = 0; y < 8; y++) p.rect(5, 2 + y, 9 - Math.abs(y - 4), 1, y < 4 ? p.al : p.a);
+    p.rect(7, 4, 3, 3, p.e); p.rect(1, 14, 6, 1, p.cd);
+  },
   m_ore: (p) => {
     p.ellipse(8, 10, 6, 4, p.ad); p.ellipse(7, 9, 5, 3, p.a);
     p.rect(5, 7, 2, 2, p.e); p.rect(9, 9, 2, 2, p.e); p.px(5, 7, "#ffffff");
@@ -484,7 +489,7 @@ export function iconURL(shape: string, pal: Palette, scale = 2): string {
 export const ICON_SHAPES = Object.keys(D);
 
 // ------------------------------------------------------------ world-map pins
-export type MapPin = "hero" | "town" | "event" | "boss" | "stairs" | "portal" | "chest" | "camp" | "mystery" | "ore";
+export type MapPin = "hero" | "town" | "event" | "boss" | "stairs" | "portal" | "chest" | "camp" | "mystery" | "ore" | "saga";
 const PINS: Record<MapPin, [string, Palette]> = {
   hero: ["m_hero", ["#3a8ae0", "#ffffff", "#ffe14a"]],
   town: ["m_house", ["#c8503a", "#e8d8b0", "#ffe38a"]],
@@ -496,5 +501,6 @@ const PINS: Record<MapPin, [string, Palette]> = {
   camp: ["m_flame", ["#ff7a2a", "#7a4a2a", "#ffffff"]],
   mystery: ["m_mystery", ["#5ab8d8", "#ffffff", "#ffffff"]],
   ore: ["m_ore", ["#8a8a96", "#ffffff", "#6ae0ff"]],
+  saga: ["m_flag", ["#e04a8a", "#8a5a2a", "#ffe14a"]],
 };
 export const mapPinURL = (k: MapPin) => iconURL(PINS[k][0], PINS[k][1], 2);

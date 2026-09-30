@@ -1,6 +1,6 @@
 import { app, type Screen } from "../app";
 import { Rng, hashString } from "../core/rng";
-import { charStats, logMsg, removeItem, type FloorState, type GameState } from "../core/state";
+import { XP_RATE, charStats, giveXp, logMsg, removeItem, type FloorState, type GameState } from "../core/state";
 import { ENEMIES } from "../data/enemies";
 import { ITEM_LIST, gearForFloor, getItem } from "../data/items";
 import { PLAYER_SKILLS } from "../data/skills";
@@ -14,7 +14,7 @@ import { isPerson, personCanvas, type Dir } from "../render/people";
 import { PASSABLE, T, tileSet } from "../render/tiles";
 import { EVENTS, RANDOM_EVENTS, RANDOM_POOL } from "../story";
 import { eventLook, propCanvas, roadsidePal, type PropCtx } from "../render/eventProps";
-import { giveToGame, randomLoot } from "../story/runner";
+import { giveToGame, randomLoot, rollCheck } from "../story/runner";
 import type { BattleSpec } from "../story/types";
 import { BIOMES } from "../world/biomes";
 import { getFloor, specFor, type FloorDef } from "../world/floors";
@@ -26,6 +26,7 @@ import { decodeFog, encodeFog, findPath, generateFloor, type FloorMap, type MapE
 import { confirmBox, h, nn, openModal, toast, topModalOpen } from "../ui/dom";
 import { runBattle, type BattleOutcome } from "./combat";
 import { isElitePack } from "../combat/elite";
+import { SAGA, type SagaDef } from "../world/saga";
 import { PET, petSpec } from "../data/pets";
 import { openJournal, openMenu, partyMini, saveDot, showBanner } from "./common";
 import { openInventory, setFieldSpecial } from "./inventory";
@@ -83,6 +84,8 @@ export interface DungeonHooks {
 export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   const g = app.game;
   const ex = g.expedition!;
+  // the floor's great event (declared early: entity rules below depend on it)
+  let sagaDef: SagaDef | undefined;
   // a night-eyed cat lets the party see further
   const SIGHT = BASE_SIGHT + (g.pet && PET[g.pet]?.hook === "sight" ? 3 : 0);
   const floorN = ex.floor;
@@ -97,6 +100,8 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
 
   // runtime entity state
   const alive = (e: MapEntity) => {
+    if (e.kind === "monster" && e.saga) return !fs.done.includes(e.id);
+    if (e.kind === "saga" && e.ref !== "core" && sagaDef && ["collect", "rescue", "blight"].includes(sagaDef.mech)) return !fs.done.includes(e.id);
     if (e.kind === "monster" || e.kind === "node" || e.kind === "camp") return !ex.done.includes(e.id);
     if (e.kind === "guardian") return !fs.cleared;
     // townsfolk who joined the party live in the sanctuary now, not in their village
@@ -160,6 +165,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   // ------------------------------------------------------------ HUD
   const title = h("div", { class: "chip title" }, `Tầng ${floorN}`, h("small", null, def.name));
   const regionChip = h("div", { class: "chip" }, "");
+  const sagaChip = h("div", { class: "chip saga-chip hidden" });
   const info = h("div", { class: "chip" });
   const party = partyMini();
   const bagBadge = h("span", { class: "dock-badge" });
@@ -167,8 +173,9 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     bagBadge.textContent = String(g.newItems?.length || "");
     info.replaceChildren("💰 ", h("b", null, String(g.gold)), "  🎒 ", h("b", null, String(Object.keys(ex.bag).length)), "  ", saveDot());
     party.update();
+    updateSaga();
   };
-  el.append(h("div", { class: "hud-top" }, h("div", { class: "col", style: "gap:6px" }, title, party.el), h("div", { class: "hud-right" }, info, regionChip)));
+  el.append(h("div", { class: "hud-top" }, h("div", { class: "col", style: "gap:6px" }, title, party.el), h("div", { class: "hud-right" }, info, regionChip, sagaChip)));
   el.append(h("div", { class: "zoom" },
     h("button", { class: "icon-btn", onclick: () => view.zoom(1) }, "＋"),
     h("button", { class: "icon-btn", onclick: () => view.zoom(-1) }, "－")));
@@ -339,6 +346,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     g.stats.steps++;
     reveal();
     checkRegion();
+    sagaStep();
     moveMonsters();
     if (ex.steps % 12 === 0) savePos();
   }
@@ -415,15 +423,18 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   // ------------------------------------------------------------ interactions
   const battle = (group: string[], level: number, opts: Partial<BattleSpec> & { elite?: boolean } = {}): Promise<BattleOutcome> =>
     runBattle({ enemies: group.map((id) => ({ id, level })), floor: floorN, biome: def.biome, enemyFx: opts.enemyFx, noFlee: opts.noFlee, elite: opts.elite, seed: fs.seed });
-  const elite = (e: MapEntity) => e.kind === "monster" && isElitePack(fs.seed, e.id, floorN);
+  const elite = (e: MapEntity) => e.kind === "monster" && (e.saga === "beast" || isElitePack(fs.seed, e.id, floorN));
 
   async function fightMonster(m: (typeof ents)[number], ambush: boolean) {
     if (busy || destroyed) return;
     busy = true;
     player.path = [];
-    const out = await battle(m.group!, m.level!, { ...(ambush ? { enemyFx: [{ s: "slow" as const, t: 1 }] } : {}), elite: elite(m) });
+    const out = await battle(m.group!, m.level!, { ...(ambush ? { enemyFx: [{ s: "slow" as const, t: 1 }] } : {}), elite: elite(m) || m.saga === "beast" });
     busy = false;
-    if (out === "win") ex.done.push(m.id);
+    if (out === "win") {
+      ex.done.push(m.id);
+      if (m.saga) { fs.done.push(m.id); sagaAfterFight(m); }
+    }
     else if (out === "flee") m.stun = 5;
     else return defeat();
     updateHud();
@@ -443,6 +454,8 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         updateHud();
         return savePos();
       }
+      case "saga":
+        return void sagaInteract(e);
       case "rune": {
         const vault = ents.find((v) => v.kind === "vault");
         if (!vault || !alive(vault)) return;
@@ -664,6 +677,206 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
       voluntary ? "Mầm kéo cả đội về Thánh Địa. Một nửa chiến lợi phẩm đã rơi lại dưới Vực Sâu." : "Bạn tỉnh dậy bên cạnh Mầm, toàn thân đau nhức. Một nửa chiến lợi phẩm đã bị bỏ lại dưới Vực Sâu.");
   }
 
+  // ------------------------------------------------------------ the great event of this floor
+  const saga = map.saga;
+  sagaDef = saga ? SAGA[saga.id] : undefined;
+  const sagaState = () => (fs.saga ??= {});
+  const sagaNodes = () => ents.filter((e) => e.kind === "saga" && e.ref !== "core");
+  const sagaPacks = () => ents.filter((e) => e.kind === "monster" && (e.saga === "pack" || e.saga === "beast"));
+  const nodeDone = (e: MapEntity) => fs.done.includes(e.id);
+  const inSaga = (x: number, y: number) => !!saga && Math.hypot(x - saga.x, (y - saga.y) * 1.2) <= saga.r;
+
+  function sagaProgress(): string {
+    if (!sagaDef || !saga) return "";
+    const nodes = sagaNodes(), packs = sagaPacks();
+    const n = nodes.filter(nodeDone).length;
+    switch (sagaDef.mech) {
+      case "clear": { const left = packs.filter((p) => !fs.done.includes(p.id)).length; return left ? `Diệt bầy canh giữ: ${packs.length - left}/${packs.length}` : "Tới trung tâm để hoàn thành"; }
+      case "nodes": return n < nodes.length ? `${sagaDef.icon} ${n}/${nodes.length} — tới từng điểm đánh dấu` : "Tới trung tâm để hoàn thành";
+      case "blight": return `Cột nhơ đã phá: ${n}/${nodes.length}`;
+      case "maze": return "Tìm đường vào trung tâm mê cung";
+      case "waves": return `Lượt đấu: ${sagaState().step ?? 0}/${sagaDef.nodes ?? 3} — nói chuyện ở trung tâm`;
+      case "collect": return n < nodes.length ? `Đã nhặt ${n}/${nodes.length}` : "Mang về trung tâm";
+      case "hunt": return "Lần theo dấu vết quái thú trong khu vực";
+      case "rescue": return `Đã tìm thấy ${n}/${nodes.length}`;
+    }
+  }
+  function updateSaga() {
+    const st = fs.saga;
+    const show = !!sagaDef && !!st?.seen && !st.done;
+    sagaChip.classList.toggle("hidden", !show);
+    if (show) sagaChip.replaceChildren(h("b", null, `${sagaDef!.icon} ${saga!.name}`), h("small", null, sagaProgress()));
+  }
+
+  function sagaStep() {
+    if (!saga || !sagaDef) return;
+    const st = sagaState();
+    if (!st.seen && Math.hypot(player.x - saga.x, player.y - saga.y) <= saga.r + 3) {
+      st.seen = true;
+      showBanner(el, `${sagaDef.icon} ${saga.name}`, "Đại Sự Kiện của tầng này");
+      showLoot(`${sagaDef.icon} ${saga.name}`, [sagaDef.intro, `🎯 ${sagaDef.goal}`]);
+      updateHud();
+    }
+    // the blight saps whoever walks in it
+    if (sagaDef.mech === "blight" && !st.done && inSaga(player.x, player.y) && ex.steps % 2 === 0) {
+      for (const id of g.party) {
+        const ch = g.chars[id];
+        if (!ch || ch.hp <= 1) continue;
+        ch.hp = Math.max(1, ch.hp - Math.max(1, Math.round(charStats(ch).hp * 0.015)));
+      }
+      if (!g.flags.tip_blight) { g.flags.tip_blight = true; toast("☣️ Vùng nhơ đang rút máu cả đội. Phá các cột nhơ để thanh tẩy!", "bad", 4000); }
+      updateHud();
+    }
+  }
+
+  function sagaReward() {
+    if (!saga || !sagaDef) return;
+    const st = sagaState();
+    if (st.done) return;
+    st.done = true;
+    const loot = randomLoot({ g, floor: floorN, vars: {}, rng }, 9);
+    loot.mana_crystal = (loot.mana_crystal ?? 0) + 3;
+    loot.monster_core = (loot.monster_core ?? 0) + 1;
+    const gear = gearForFloor(floorN, (xs) => rng.pick(xs), 1).id;
+    loot[gear] = (loot[gear] ?? 0) + 1;
+    if (rng.chance(0.3)) loot.pet_egg = 1;
+    const gold = 100 * floorN + rng.int(50, 150);
+    g.gold += gold;
+    ex.bagGold += gold;
+    const xp = Math.round(XP_RATE * (60 + floorN * 40));
+    const lv: string[] = [];
+    for (const id of g.party) if (g.chars[id]) lv.push(...giveXp(g.chars[id], xp));
+    const lines = giveToGame(g, loot);
+    g.flags.sagas = Number(g.flags.sagas ?? 0) + 1;
+    logMsg(g, `Hoàn thành Đại Sự Kiện: ${saga.name}.`);
+    showBanner(el, `${sagaDef.icon} Hoàn thành!`, saga.name);
+    showLoot(`${sagaDef.icon} ${saga.name}`, [sagaDef.done, `💰 ${gold} vàng`, `✨ +${xp} kinh nghiệm cho cả đội`, ...lines, ...lv]);
+    updateHud();
+    savePos();
+  }
+
+  function sagaAfterFight(m: MapEntity) {
+    if (!sagaDef) return;
+    if (m.saga === "beast" && sagaDef.mech === "hunt") sagaReward();
+    else if (sagaDef.mech === "clear" && sagaPacks().every((p) => fs.done.includes(p.id))) toast(`${sagaDef.icon} Các bầy canh giữ đã bị quét sạch! Tới trung tâm.`, "good", 4000);
+    updateHud();
+  }
+
+  /** Small choice dialog for markers. */
+  function choose(title: string, text: string, opts: { t: string; ok?: boolean; fn: () => void }[]) {
+    const md = openModal(title);
+    md.body.append(h("p", { style: "line-height:1.6;margin-top:0" }, text),
+      h("div", { class: "col", style: "gap:6px" }, ...opts.map((o) => h("button", { class: "btn", disabled: o.ok === false, onclick: () => { md.close(); o.fn(); } }, o.t)),
+        h("button", { class: "btn", onclick: () => md.close() }, "Để sau")));
+  }
+
+  async function sagaFight(level: number, eliteFight = false): Promise<boolean> {
+    busy = true;
+    player.path = [];
+    const group = [...rng.pick(def.groups), rng.pick(def.enemies)].slice(0, 4);
+    const out = await battle(group, level, { elite: eliteFight });
+    busy = false;
+    if (out === "lose") { defeat(); return false; }
+    updateHud();
+    return out === "win";
+  }
+
+  async function sagaInteract(e: (typeof ents)[number]) {
+    if (!saga || !sagaDef || busy) return;
+    const st = sagaState();
+    const title = `${sagaDef.icon} ${saga.name}`;
+    if (!st.seen) { st.seen = true; updateHud(); }
+    if (st.done) return showLoot(title, ["Nơi này giờ đã yên bình. Bạn đã hoàn thành Đại Sự Kiện của tầng."]);
+    const lv = def.levelBase + 3;
+    const nodes = sagaNodes();
+    const n = nodes.filter(nodeDone).length;
+    const markDone = (x: MapEntity) => { if (!fs.done.includes(x.id)) fs.done.push(x.id); savePos(); updateHud(); };
+    const isCore = e.ref === "core";
+    switch (sagaDef.mech) {
+      case "clear": {
+        const left = sagaPacks().filter((p) => !fs.done.includes(p.id)).length;
+        if (left) return showLoot(title, [sagaDef.goal, `Còn ${left} bầy quái canh giữ quanh đây.`]);
+        return sagaReward();
+      }
+      case "nodes": {
+        if (isCore) {
+          if (n < nodes.length) return showLoot(title, [sagaDef.goal, `Đã xong ${n}/${nodes.length}.`]);
+          if (sagaDef.finale) {
+            showBanner(el, "Phong ấn vỡ tung!", "Kẻ canh giữ trỗi dậy");
+            if (await sagaFight(lv + 2, true)) sagaReward();
+            return;
+          }
+          return sagaReward();
+        }
+        if (nodeDone(e)) return toast("Chỗ này đã xong rồi.");
+        const k = Number(e.ref!.split(":")[1] ?? 0);
+        if (sagaDef.mode === "offer") {
+          return choose(title, "Tế đàn lạnh ngắt. Có thể dâng một viên Tinh Thể Ma Lực để thắp lên, hoặc đánh bại lũ quái bị ánh sáng đục ngầu thu hút tới.", [
+            { t: "💎 Dâng 1 Tinh Thể Ma Lực", ok: (g.inventory.mana_crystal ?? 0) > 0, fn: () => { if (removeItem(g, "mana_crystal", 1)) { markDone(e); toast("🔮 Tế đàn bừng sáng!", "good"); } } },
+            { t: "⚔️ Vượt thử thách (chiến đấu)", fn: async () => { if (await sagaFight(lv)) { markDone(e); toast("🔮 Tế đàn bừng sáng!", "good"); } } },
+          ]);
+        }
+        if (sagaDef.mode === "fire") {
+          return choose(title, "Ngọn tháp lửa đã tắt từ lâu. Cần củi để nhóm lại, hoặc đuổi lũ quái đang làm tổ quanh chân tháp.", [
+            { t: "🪵 Dùng 3 Gỗ", ok: (g.inventory.wood ?? 0) >= 3, fn: () => { if (removeItem(g, "wood", 3)) { markDone(e); toast("🔥 Tháp lửa bùng cháy!", "good"); } } },
+            { t: "⚔️ Đuổi lũ quái (chiến đấu)", fn: async () => { if (await sagaFight(lv)) { markDone(e); toast("🔥 Tháp lửa bùng cháy!", "good"); } } },
+          ]);
+        }
+        const attrs = ["int", "wil", "agi", "str"] as const;
+        const names = { int: "Trí tuệ", wil: "Ý chí", agi: "Nhanh nhẹn", str: "Sức mạnh", luck: "May mắn" } as const;
+        const attr = sagaDef.id === "festival" ? (["luck", "agi", "str"] as const)[k % 3] : attrs[k % 4];
+        return choose(title, `Thử thách ${names[attr]}. Thất bại thì mất chút máu nhưng có thể thử lại.`, [
+          { t: `🎲 Thử tài (${names[attr]})`, fn: () => {
+            const res = rollCheck(attr, 11 + Math.floor(floorN / 20), { g, floor: floorN, vars: {}, rng });
+            if (res.pass) { markDone(e); toast(`✨ Thành công! (${res.total} ≥ ${res.dc})`, "good"); }
+            else { for (const id of g.party) { const ch = g.chars[id]; if (ch) ch.hp = Math.max(1, ch.hp - Math.round(charStats(ch).hp * 0.05)); } toast(`Thất bại (${res.total} < ${res.dc}). Thử lại nhé.`, "bad"); updateHud(); }
+          } },
+        ]);
+      }
+      case "blight":
+        showBanner(el, "Cột nhơ thức giấc!", "Lũ quái lao ra bảo vệ nó");
+        if (await sagaFight(lv + 1)) {
+          markDone(e);
+          if (sagaNodes().every(nodeDone)) sagaReward();
+          else toast(`☣️ Một cột nhơ vỡ tan! (${sagaNodes().filter(nodeDone).length}/${sagaNodes().length})`, "good");
+        }
+        return;
+      case "maze":
+        return sagaReward();
+      case "waves": {
+        const total = sagaDef.nodes ?? 3;
+        const s = st.step ?? 0;
+        return choose(title, s ? `Lượt ${s}/${total} đã xong. Sẵn sàng cho lượt tiếp theo?` : sagaDef.intro, [
+          { t: `⚔️ Bắt đầu lượt ${s + 1}/${total}`, fn: async () => {
+            if (await sagaFight(lv + s, s === total - 1)) {
+              st.step = s + 1;
+              const bonus = 30 * floorN;
+              g.gold += bonus; ex.bagGold += bonus;
+              if (st.step >= total) sagaReward();
+              else { toast(`🏆 Thắng lượt ${st.step}! +${bonus} vàng`, "good"); savePos(); updateHud(); }
+            }
+          } },
+        ]);
+      }
+      case "collect":
+        if (isCore) return n < nodes.length ? showLoot(title, [sagaDef.goal, `Đã nhặt ${n}/${nodes.length}.`]) : sagaReward();
+        markDone(e);
+        return toast(`${sagaDef.icon} Nhặt được! (${nodes.filter(nodeDone).length}/${nodes.length})${nodes.every(nodeDone) ? " — mang về trung tâm." : ""}`, "good");
+      case "rescue":
+        if (isCore) return showLoot(title, [sagaDef.goal, `Đã tìm thấy ${n}/${nodes.length}.`]);
+        markDone(e);
+        if (nodes.every(nodeDone)) return sagaReward();
+        return toast(`🙌 \"Cảm ơn! Tôi về ngay đây!\" (${nodes.filter(nodeDone).length}/${nodes.length})`, "good");
+      case "hunt": {
+        const beast = sagaPacks().find((p) => p.saga === "beast" && !fs.done.includes(p.id));
+        if (!beast) return sagaReward();
+        const dx = beast.x - e.x, dy = beast.y - e.y;
+        const dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "phía đông" : "phía tây") : dy > 0 ? "phía nam" : "phía bắc";
+        return showLoot(title, [sagaDef.goal, `Dấu chân còn mới, dẫn về ${dir}, cách khoảng ${Math.round(Math.hypot(dx, dy))} bước.`]);
+      }
+    }
+  }
+
   // ------------------------------------------------------------ minimap
   function openMinimap() {
     const m = openModal(`🗺️ Tầng ${floorN}: ${def.name}`, { wide: true });
@@ -692,6 +905,10 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
       if (!p || !alive(e) || !fog[idx(e.x, e.y)]) continue;
       pin(p[0], e.x, e.y, p[1], e.kind === "guardian" ? "big" : "");
     }
+    if (map.saga && sagaDef && (fs.saga?.seen || fog[idx(map.saga.x, map.saga.y)])) {
+      pin("saga", map.saga.x, map.saga.y, `${sagaDef.icon} ${map.saga.name}${fs.saga?.done ? " (đã xong)" : ""}`, "big");
+      wrap.append(h("div", { class: "mm-label saga", style: `left:${((map.saga.x + 0.5) / map.w) * 100}%;top:${((map.saga.y + 0.5) / map.h) * 100}%` }, map.saga.name));
+    }
     for (const t of map.towns) {
       const cx = t.x + Math.floor(t.w / 2), cy = t.y + Math.floor(t.h / 2);
       if (!fog[idx(cx, cy)] && !fog[idx(t.x, t.y)] && !fog[idx(t.x + t.w - 1, t.y + t.h - 1)]) continue;
@@ -701,7 +918,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     }
     pin("hero", player.x, player.y, "Bạn đang ở đây", "hero");
     const explored = fog.reduce((a, b) => a + b, 0);
-    const legend = h("div", { class: "mm-legend" }, ([["hero", "Bạn"], ["town", "Làng"], ["event", "Sự kiện"], ["boss", "Boss"], ["stairs", "Cầu thang"], ["portal", "Cổng về"], ["chest", "Rương"], ["camp", "Lửa trại"], ["mystery", "Bí ẩn"]] as [MapPin, string][])
+    const legend = h("div", { class: "mm-legend" }, ([["hero", "Bạn"], ["town", "Làng"], ["event", "Sự kiện"], ["boss", "Boss"], ["stairs", "Cầu thang"], ["portal", "Cổng về"], ["chest", "Rương"], ["camp", "Lửa trại"], ["mystery", "Bí ẩn"], ["saga", "Đại sự kiện"]] as [MapPin, string][])
       .map(([k, l]) => h("span", null, h("img", { class: "pix", src: mapPinURL(k), alt: "" }), l)));
     m.body.append(wrap, h("p", { class: "muted small" }, `Đã khám phá ${Math.round((explored / (map.w * map.h)) * 100)}%.`), legend,
       h("div", { class: "col", style: "gap:3px" }, def.regions.map((r, i) => h("div", { class: "small" }, `${i === region ? "📍" : "·"} ${r}`))));
@@ -778,6 +995,16 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         const seen = inSight(x, y);
         drawables.push({ y: y + 0.99, fn: () => view.img(tall, x - 0.5, y - 2 - TREE_LIFT, { w: 2, h: 3, alpha: seen ? 1 : 0.55 }) });
       }
+    }
+    // a spreading taint over the blighted district
+    if (saga && sagaDef?.mech === "blight" && !fs.saga?.done && sagaDef.tint) {
+      const gx = view.sx(saga.x) + TL / 2, gy = view.sy(saga.y) + TL / 2, rr = saga.r * TL;
+      const gr = c.createRadialGradient(gx, gy, rr * 0.2, gx, gy, rr * 1.1);
+      gr.addColorStop(0, `rgba(${sagaDef.tint},${0.34 + Math.sin(t / 700) * 0.05})`);
+      gr.addColorStop(0.8, `rgba(${sagaDef.tint},0.22)`);
+      gr.addColorStop(1, `rgba(${sagaDef.tint},0)`);
+      c.fillStyle = gr;
+      c.fillRect(gx - rr * 1.2, gy - rr * 1.2, rr * 2.4, rr * 2.4);
     }
     // entities
     const bob = (seed: number) => Math.sin(t / 260 + seed) * 0.06;
@@ -914,6 +1141,27 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         c.moveTo(x0 + TL * 0.4, y0 + TL * 0.4); c.lineTo(x0 + TL * 0.15, y0 + TL * 0.5);
         c.stroke();
         if (seen) { c.fillStyle = `rgba(230,220,200,${0.25 + Math.sin(t / 400 + e.x) * 0.2})`; c.fillRect(x0 + TL * 0.55, y0 + TL * 0.6 - ((t / 40) % (TL * 0.4)), 2, 2); }
+        return;
+      }
+      if (e.kind === "saga") {
+        const spr = e.sprite;
+        const lit = e.ref !== "core" && fs.done.includes(e.id);
+        if (lit) {
+          c.fillStyle = `rgba(255,220,120,${0.3 + Math.sin(t / 250) * 0.12})`;
+          c.beginPath(); c.arc(view.sx(e.x) + TL / 2, view.sy(e.y) + TL * 0.2, TL * 0.9, 0, Math.PI * 2); c.fill();
+        }
+        if (spr.startsWith("person:")) {
+          c.fillStyle = "rgba(20,10,40,0.28)";
+          c.beginPath(); c.ellipse(view.sx(e.x) + TL / 2, view.sy(e.y) + TL * 0.92, TL * 0.28, TL * 0.09, 0, 0, Math.PI * 2); c.fill();
+          view.img(personCanvas("villager", roadsidePal(`${floorN}:${e.id}:${spr}`), 0, 0), e.x, e.y - 1, { h: 2, scale: spr === "person:child" ? 0.8 : 1 });
+        } else view.img(propCanvas(spr, propCtx), e.x - 0.5, e.y - 1, { w: 2, h: 2, alpha: seen ? 1 : 0.75 });
+        // the heart of an unfinished event calls out
+        if (e.ref === "core" && sagaDef && !fs.saga?.done) {
+          c.font = `${Math.round(TL * 0.45)}px sans-serif`;
+          c.textAlign = "center";
+          c.fillText(sagaDef.icon, view.sx(e.x) + TL / 2, view.sy(e.y) - TL * 1.1 + Math.sin(t / 300) * 3);
+          c.textAlign = "start";
+        }
         return;
       }
       if (e.kind === "vault" || e.kind === "rune") {
