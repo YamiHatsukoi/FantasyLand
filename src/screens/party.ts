@@ -9,7 +9,7 @@ import { spriteImg } from "../render/pixel";
 import { bar, confirmBox, h, nn, openModal, toast, type ModalHandle } from "../ui/dom";
 import { itemImg } from "../ui/icon";
 import { GEAR_ICONS, GEAR_NAMES, gearTags, rarityClass, scaleStats, statDiff } from "../ui/gear";
-import { autoEquip, planBestGear } from "../ui/smart";
+import { planBestGear } from "../ui/smart";
 import { critChance, dodgeChance, pctLabel } from "../combat/rates";
 import { openAppearance } from "./appearance";
 
@@ -96,13 +96,7 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
   // gear (⬆ marks slots where the bag holds something better)
   const plan = planBestGear(g, ch);
   const better = new Set(plan.map((p) => p.key));
-  const gearTitle = h("div", { class: "row between", style: "margin:12px 0 6px" },
-    h("div", { class: "section-title", style: "margin:0" }, "Trang bị"),
-    h("div", { class: "row" },
-      h("button", {
-        class: `btn small ${plan.length ? "primary" : ""}`, disabled: !plan.length, title: "Tự chọn đồ mạnh nhất trong túi cho nhân vật này",
-        onclick: () => { const n = autoEquip(g, ch); toast(`⚡ Đã thay ${n} món cho ${ch.name.split(" ")[0]}.`, "good"); rerender(); },
-      }, plan.length ? `⚡ Tối ưu (${plan.length})` : "✓ Đồ tốt nhất")));
+  const gearTitle = h("div", { class: "section-title" }, "Trang bị");
   const gear = h("div", { class: "gear-grid" }, GEAR_KEYS.map((key) => {
     const id = ch.gear[key];
     const it = id ? getItem(id) : null;
