@@ -1,6 +1,6 @@
 import { app, type Screen } from "../app";
 import { hashString } from "../core/rng";
-import { buildingCost, canAfford, logMsg, pay, type PlacedBuilding } from "../core/state";
+import { buildingCost, canAfford, count, logMsg, pay, type PlacedBuilding } from "../core/state";
 import { BUILDINGS, BUILDING_LIST, RANK_NAMES, type BuildingCategory } from "../data/buildings";
 import { SEASON_ICONS, SEASON_NAMES, seasonOf } from "../data/items";
 import { CROP_LIFT, buildingCanvas, cropCanvas } from "../render/buildings";
@@ -129,7 +129,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   view.camX = hero.x;
   view.camY = hero.y;
   const petPos = { x: hero.x - 1, y: hero.y };
-  let placing: { type: string; moving?: PlacedBuilding; x: number; y: number } | null = null;
+  let placing: { type: string; moving?: PlacedBuilding; x: number; y: number; built?: number } | null = null;
   const sim = new ResidentSim(g);
   let ground: HTMLCanvasElement | null = null;
   let edge: [number, number, HTMLCanvasElement][] = [];
@@ -286,10 +286,20 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     const p = placing;
     const reason = canPlace(g, p.type, p.x, p.y, p.moving);
     placeBar.classList.remove("hidden");
+    const built = p.built ?? 0;
+    const label = reason ? `❌ ${reason}` : `✅ ${BUILDINGS[p.type].name} — chạm để chọn chỗ`;
     placeBar.replaceChildren(
-      h("div", { class: "chip" }, reason ? `❌ ${reason}` : `✅ ${BUILDINGS[p.type].name} — chạm để chọn chỗ`),
+      h("div", { class: "chip" }, label, built ? h("span", { class: "muted small" }, ` · đã đặt ${built}`) : null,
+        p.moving ? null : h("span", { class: "muted small" }, ` · đủ cho ${affordable(p.type)} cái`)),
       h("button", { class: "btn primary", disabled: !!reason, onclick: confirmPlace }, "✓ Đặt"),
-      h("button", { class: "btn", onclick: stopPlacing }, "✕ Huỷ"));
+      h("button", { class: "btn", onclick: stopPlacing }, built ? "✔ Xong" : "✕ Huỷ"));
+  }
+
+  /** How many more of a building the bag can pay for (capped for display). */
+  function affordable(type: string) {
+    const cost = buildingCost(type, 0);
+    const n = Math.min(99, ...Object.entries(cost).map(([id, need]) => (need > 0 ? Math.floor(count(g, id) / need) : 99)));
+    return n >= 99 ? "99+" : String(n);
   }
 
   function confirmPlace() {
@@ -308,11 +318,23 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
       if (p.type === "greenhouse") ensureSlots(nb);
       g.buildings.push(nb);
       logMsg(g, `Xây ${BUILDINGS[p.type].name}.`);
-      toast(`Đã xây ${BUILDINGS[p.type].name}!`, "good");
+      if (!p.built) toast(`Đã xây ${BUILDINGS[p.type].name}!`, "good");
     }
     app.dirty();
-    const again = !p.moving && p.type === "farm" && !buildLimitReason(g, "farm") && canAfford(g, buildingCost("farm", 0));
-    if (again) { placing = { type: "farm", x: p.x + 1, y: p.y }; renderPlaceBar(); updateHud(); return; }
+    // keep building the same thing: stay in placing mode, next to the one just placed,
+    // until the player is done (or it can't be built again)
+    const again = !p.moving && !buildLimitReason(g, p.type) && canAfford(g, buildingCost(p.type, 0));
+    if (again) {
+      const [w, hh] = BUILDINGS[p.type].size;
+      const next = [[p.x + w, p.y], [p.x, p.y + hh], [p.x - w, p.y], [p.x, p.y - hh]].find(([x, y]) => !canPlace(g, p.type, x, y)) ?? [p.x, p.y];
+      placing = { type: p.type, x: next[0], y: next[1], built: (p.built ?? 0) + 1 };
+      renderPlaceBar(); updateHud(); return;
+    }
+    if (!p.moving) {
+      const why = buildLimitReason(g, p.type);
+      if (why && !BUILDINGS[p.type].unique) toast(why, "info");
+      else if (!why) toast("Hết nguyên liệu để xây thêm.", "info");
+    }
     stopPlacing();
   }
 
