@@ -169,6 +169,22 @@ export function confirmBox(title: string, text: string, ok = "Đồng ý", cance
 
 export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/**
+ * A pause that only exists for the eyes. While the tab is hidden, browsers stretch every timer
+ * to a second or more (a minute after a while), which froze background auto-battles; there is
+ * nothing to watch then, so we just yield (a message-channel tick is not throttled) and go on.
+ */
+const chan = typeof MessageChannel !== "undefined" ? new MessageChannel() : null;
+const waiting: (() => void)[] = [];
+if (chan) chan.port1.onmessage = () => waiting.shift()?.();
+export const pace = (ms: number): Promise<void> => {
+  if (typeof document !== "undefined" && document.hidden) {
+    if (!chan) return Promise.resolve();
+    return new Promise<void>((r) => { waiting.push(r); chan.port2.postMessage(0); });
+  }
+  return sleep(ms);
+};
+
 export function bar(value: number, max: number, cls: string, label?: string) {
   const pct = Math.max(0, Math.min(100, (value / Math.max(1, max)) * 100));
   return h("div", { class: `bar ${cls}` },

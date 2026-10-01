@@ -801,11 +801,13 @@ img.iicon.lg { width: 48px; height: 48px; }
 .codex .dex-drop-name small { font-size: 11px; }
 
 /* ---------------------------------------------------------------- floor transition */
-.ft {
-  position: fixed; inset: 0; z-index: 400; pointer-events: auto; --iris: 150%;
-  background: radial-gradient(circle at 50% 50%, transparent var(--iris), color-mix(in srgb, var(--gnd) 22%, #05070a) calc(var(--iris) + 0.6%));
+.ft { position: fixed; inset: 0; z-index: 400; pointer-events: auto; overflow: hidden; }
+.ft-disc {
+  position: absolute; left: 50%; top: 50%; width: 170vmax; height: 170vmax; margin: -85vmax 0 0 -85vmax; border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--gnd) 26%, #05070a) 0%, color-mix(in srgb, var(--gnd) 18%, #05070a) 62%, color-mix(in srgb, var(--acc) 30%, #05070a) 69%, #05070a 71%);
+  transform: scale(0); will-change: transform;
 }
-.ft-motes { position: absolute; inset: 0; width: 100%; height: 100%; mix-blend-mode: screen; }
+.ft-motes { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; }
 .ft-card {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -40%) scale(.96); opacity: 0;
   display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; width: min(560px, 90vw);
@@ -826,21 +828,22 @@ img.iicon.lg { width: 48px; height: 48px; }
   background: radial-gradient(ellipse at center, color-mix(in srgb, var(--acc) 26%, transparent), transparent 65%);
 }
 .ft-rule {
-  width: 0; height: 2px; margin: 6px 0 4px; border-radius: 2px;
+  width: min(420px, 76vw); height: 2px; margin: 6px 0 4px; border-radius: 2px; transform: scaleX(0);
   background: linear-gradient(90deg, transparent, var(--acc), #fff, var(--acc), transparent);
-  transition: width .9s cubic-bezier(.2,.9,.3,1) .15s;
+  transition: transform .9s cubic-bezier(.2,.9,.3,1) .15s;
 }
-.ft.covered .ft-rule { width: min(420px, 76vw); }
+.ft.covered .ft-rule { transform: scaleX(1); }
 .ft-name { font-size: clamp(20px, 4.6vw, 30px); font-weight: 700; color: #fff; letter-spacing: .02em; }
 .ft-sub { font-size: 14px; color: color-mix(in srgb, var(--acc) 45%, #cfd6d0); letter-spacing: .08em; }
 .ft-card.milestone .ft-kicker::before, .ft-card.milestone .ft-kicker::after { content: "✦"; margin: 0 .6em; color: #f2c542; }
 .ft-gauge {
+  container-type: size;
   position: absolute; left: max(18px, 4vw); top: 22%; bottom: 22%; width: 3px; border-radius: 2px;
   background: linear-gradient(180deg, rgba(255,255,255,.25), rgba(255,255,255,.05)); opacity: 0; transition: opacity .5s;
 }
 .ft.covered .ft-gauge { opacity: 1; }
 .ft.opening .ft-gauge { opacity: 0; }
-.ft-gauge > div { position: absolute; left: 50%; width: 11px; height: 11px; margin: -5px 0 0 -5.5px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 12px var(--acc); transition: top 1s cubic-bezier(.2,.9,.3,1); }
+.ft-gauge > div { position: absolute; left: 50%; top: 0; width: 11px; height: 11px; margin: -5px 0 0 -5.5px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 12px var(--acc); }
 
 /* ---------------------------------------------------------------- cinematic dialogue */
 .dlg {

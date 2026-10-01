@@ -22,7 +22,7 @@ import { isPerson, personCanvas } from "../render/people";
 import { giveToGame } from "../story/runner";
 import { BIOMES } from "../world/biomes";
 import { getFloor } from "../world/floors";
-import { h, nn, openModal, sleep, toast } from "../ui/dom";
+import { h, nn, openModal, pace, toast } from "../ui/dom";
 
 const ENEMY_EL: Record<string, string> = {
   forest: "earth", desert: "fire", swamp: "water", tundra: "ice", fungal: "poison", volcano: "fire", reef: "water", bamboo: "wind",
@@ -158,7 +158,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   const biome = BIOMES[setup.biome] ?? BIOMES.forest;
   let auto = pref.auto;
   let fast = pref.fast;
-  const delay = (ms: number) => sleep(fast ? ms * 0.45 : ms);
+  const delay = (ms: number) => pace(fast ? ms * 0.45 : ms);
 
   // ------------------------------------------------------------ DOM
   // leftover map hints must not cover the battle
@@ -377,7 +377,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     const from = fx.pos(v.img, 0.45);
     const at = (t: Unit) => { const s = spriteOf(t); return s ? fx.pos(s, 0.45) : from; };
     const volley = async (kind: Parameters<typeof fx.shoot>[2], el: Element) => {
-      await Promise.all(foes.map((t, i) => sleep((i * 70) / (fast ? 2.2 : 1)).then(() => fx.shoot(from, at(t), kind, el))));
+      await Promise.all(foes.map((t, i) => pace((i * 70) / (fast ? 2.2 : 1)).then(() => fx.shoot(from, at(t), kind, el))));
     };
     if (skillId.startsWith("item:")) {
       const it = getItem(skillId.slice(5));
