@@ -1,4 +1,5 @@
 import { app } from "../app";
+import { sfx } from "../audio/sfx";
 import { describeSkill, passiveText } from "../combat/describe";
 import { Rng } from "../core/rng";
 import { addItem, canAfford, count, giveXp, logMsg, pay, removeItem, type PlacedBuilding, type PlotState } from "../core/state";
@@ -116,6 +117,7 @@ function genericFooter(m: ModalHandle, b: PlacedBuilding, render: () => void, wi
         if (!(await confirmBox("Phá dỡ", `Phá dỡ ${def.name}? Bạn nhận lại một nửa nguyên liệu xây dựng.${hasCrop ? " Cây trồng bên trong sẽ mất." : ""}`))) return;
         const g = app.game;
         g.buildings = g.buildings.filter((x) => x !== b);
+        sfx("demolish");
         for (const [id, n] of Object.entries(costFor(b.type, 0))) addItem(g, id, Math.floor(n / 2));
         app.dirty();
         m.close();
@@ -258,6 +260,7 @@ export function harvestMany(plots: PlotState[]) {
   const r = rng();
   for (const p of plots) for (const [id, n] of Object.entries(harvest(g, p, r))) got[id] = (got[id] ?? 0) + n;
   const total = Object.values(got).reduce((a, b) => a + b, 0);
+  if (total) sfx("harvest");
   if (total) toast(`🧺 Thu hoạch: ${Object.entries(got).map(([id, n]) => `${getItem(id).icon}${getItem(id).name}×${n}`).join(", ")}`, "good", 4000);
   app.dirty();
 }
@@ -294,7 +297,7 @@ function plotBody(m: ModalHandle, p: PlotState, greenhouse: boolean, render: () 
       h("div", { class: "meta" }, h("div", { class: "name" }, it.name), plotSummary(p, greenhouse)),
       ...nn(
         info.ready ? h("button", { class: "btn small good", onclick: () => { harvestMany([p]); render(); } }, "Thu hoạch") : null,
-        !greenhouse && !p.watered ? h("button", { class: "btn small blue", onclick: () => { waterPlot(p); app.dirty(); render(); } }, "💧 Tưới") : null,
+        !greenhouse && !p.watered ? h("button", { class: "btn small blue", onclick: () => { waterPlot(p); sfx("water"); app.dirty(); render(); } }, "💧 Tưới") : null,
         h("button", {
           class: "btn small",
           onclick: async () => { if (await confirmBox("Nhổ bỏ", `Nhổ bỏ ${it.name}? Cây sẽ mất.`)) { p.crop = undefined; app.dirty(); render(); } },
@@ -303,7 +306,7 @@ function plotBody(m: ModalHandle, p: PlotState, greenhouse: boolean, render: () 
     m.body.append(h("div", { class: "item-row" },
       h("span", { class: "ico" }, "🟫"),
       h("div", { class: "meta" }, h("div", { class: "name" }, "Ô đất trống"), plotSummary(p, greenhouse)),
-      !greenhouse && !p.watered ? h("button", { class: "btn small blue", onclick: () => { waterPlot(p); app.dirty(); render(); } }, "💧 Tưới") : null));
+      !greenhouse && !p.watered ? h("button", { class: "btn small blue", onclick: () => { waterPlot(p); sfx("water"); app.dirty(); render(); } }, "💧 Tưới") : null));
     const seeds = Object.keys(g.inventory).map(getItem).filter((it) => (it.type === "seed" || it.type === "sapling") && it.crop && CROPS[it.crop]);
     m.body.append(h("div", { class: "section-title" }, `Gieo trồng · mùa ${SEASON_ICONS[season]} ${SEASON_NAMES[season]}`));
     if (!seeds.length) m.body.append(h("p", { class: "muted" }, "Bạn không có hạt giống nào. Mua ở chợ các làng dưới Vực Sâu, nhặt khi khám phá, hoặc có được khi thu hoạch."));
@@ -320,7 +323,7 @@ function plotBody(m: ModalHandle, p: PlotState, greenhouse: boolean, render: () 
             `⏱️ ${fmtDuration(cropSeconds(c.days) * 1000)}${c.regrow ? `, ra lứa mới mỗi ${fmtDuration(cropSeconds(c.regrow) * 1000)}` : ""} → ${c.yield[0]}–${c.yield[1]} ${getItem(c.id).name} · `,
             `mùa ${c.seasons.map((x) => SEASON_ICONS[x]).join("")} · ${["chịu hạn", "cần nước", "rất khát"][c.water]}`,
             c.hybrid ? ` · giống lai` : "")),
-        h("button", { class: "btn small primary", onclick: () => { if (removeItem(g, s.id, 1)) { plant(p, c.id); toast(`Đã gieo ${getItem(c.id).name}.`, "good"); app.dirty(); render(); } } }, "Gieo")));
+        h("button", { class: "btn small primary", onclick: () => { if (removeItem(g, s.id, 1)) { plant(p, c.id); sfx("plant"); toast(`Đã gieo ${getItem(c.id).name}.`, "good"); app.dirty(); render(); } } }, "Gieo")));
     }
     m.body.append(list);
   }
@@ -351,7 +354,7 @@ function bulkFarmActions(m: ModalHandle, render: () => void) {
       ready.length ? h("button", { class: "btn good", onclick: () => { harvestMany(ready); render(); } }, `🧺 Thu hoạch tất cả (${ready.length})`) : null,
       dry.length ? h("button", {
         class: "btn blue", disabled: !hasWell, title: hasWell ? "" : "Cần xây Giếng Nước",
-        onclick: () => { for (const p of dry) waterPlot(p); app.dirty(); toast(`Đã tưới ${dry.length} ô (ẩm trong ${WATER_SEC / 60} phút).`, "good"); render(); },
+        onclick: () => { for (const p of dry) waterPlot(p); sfx("water"); app.dirty(); toast(`Đã tưới ${dry.length} ô (ẩm trong ${WATER_SEC / 60} phút).`, "good"); render(); },
       }, hasWell ? `💧 Tưới tất cả (${dry.length})` : "💧 Tưới tất cả (cần Giếng)") : null,
     )));
   if (empty.length > 1) {
@@ -363,6 +366,7 @@ function bulkFarmActions(m: ModalHandle, render: () => void) {
         onclick: () => {
           let n = 0;
           for (const p of empty) { if (!removeItem(g, s.id, 1)) break; plant(p, s.crop!); n++; }
+          if (n) sfx("plant");
           toast(`Đã gieo ${n} ô ${getItem(s.crop!).name}.`, "good");
           app.dirty();
           render();
@@ -449,6 +453,7 @@ function recipeRow(r: (typeof RECIPES)[number], b: PlacedBuilding, render: () =>
   const craft = (times: number) => {
     let made = 0;
     for (let i = 0; i < times && pay(g, r.cost); i++) { addItem(g, r.out, r.n); made++; }
+    if (made) sfx("craft");
     if (made) toast(`Đã chế tạo ${out.name} ×${made * r.n}`, "good");
     app.dirty();
     render();

@@ -1,4 +1,5 @@
 import { h } from "./dom";
+import { sfx } from "../audio/sfx";
 
 /**
  * Cinematic floor change: the view closes into a shrinking circle while motes rush upward
@@ -38,6 +39,7 @@ export function playTransition(card: TransitionCard, swap: () => void): Promise<
   veil.append(disc, cv, title, ...(gauge ? [gauge] : []));
   document.body.append(veil);
   running++;
+  sfx("transition");
 
   const fast = reduced();
   const T_CLOSE = fast ? 120 : 480, T_HOLD = fast ? 450 : 1300, T_OPEN = fast ? 180 : 600;
@@ -101,6 +103,7 @@ export function playEncounter(kind: { boss?: boolean; elite?: boolean; ambush?: 
   const root = h("div", { class: `enc ${tone}` }, h("div", { class: "enc-bars" }, ...bars), flash, call);
   document.body.append(root);
   running++;
+  sfx("encounter", kind.boss ? "boss" : "");
   const sideOf = (i: number) => (i % 2 ? 1 : -1);
   const IN = 300, STAG = 28, OUT = 320;
   flash.animate([{ opacity: 0 }, { opacity: 0.85, offset: 0.25 }, { opacity: 0 }], { duration: 260, easing: "ease-out" });

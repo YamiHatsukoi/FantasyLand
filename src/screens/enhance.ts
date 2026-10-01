@@ -1,4 +1,5 @@
 import { app } from "../app";
+import { sfx } from "../audio/sfx";
 import { ENH_MAX, GEAR_KEYS, chanceWith, enhanceChance, enhanceCost, tryEnhance, type Character } from "../core/state";
 import { CATALYSTS } from "../data/uses";
 import { enhLevel, enhancedId, getItem } from "../data/items";
@@ -52,6 +53,7 @@ export function openEnhance(onChange: () => void) {
           class: "btn small primary", disabled: max || g.gold < cost,
           onclick: () => {
             const r = tryEnhance(g, ch, key, Math.random(), cat || undefined);
+            sfx(r === "ok" ? "enhance" : "fail");
             if (r === "ok") toast(`✨ ${getItem(ch.gear[key]!).name}!`, "good");
             else if (r === "fail") toast(cat === "soul_gem" ? "💥 Thất bại… Ngọc Hồn Đen đã hoàn lại vàng." : `💥 Thất bại… mất ${cost} vàng. Thử lại nhé.`, "bad");
             if (catalyst && !(g.inventory[catalyst] ?? 0)) catalyst = "";

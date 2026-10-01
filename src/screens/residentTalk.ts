@@ -1,4 +1,5 @@
 import { app } from "../app";
+import { sfx } from "../audio/sfx";
 import type { Character } from "../core/state";
 import { getItem } from "../data/items";
 import { JOBS, PERSONAS } from "../data/npcText";
@@ -144,6 +145,7 @@ export function openResident(ch: Character, onClose?: () => void): ModalHandle {
         class: "item-row",
         onclick: () => {
           gm.close();
+          sfx("gift");
           push([{ who: "you", text: `(Tặng ${it.name})` }]);
           push(giveResGift(g, ch, it.id));
           sub = "";

@@ -1,8 +1,10 @@
 import type { Screen } from "../app";
+import { playMusic } from "../audio/music";
 import { ONLINE, cacheSession, errorText, login, type Session } from "../net/api";
 import { h } from "../ui/dom";
 
 export function mountLogin(root: HTMLElement, onLogin: (s: Session, remember: boolean) => Promise<void>, initialError = ""): Screen {
+  playMusic("title");
   const user = h("input", { type: "text", autocomplete: "username", autocapitalize: "off", spellcheck: "false", maxlength: "32", required: true });
   const pass = h("input", { type: "password", autocomplete: "current-password", maxlength: "128", required: !ONLINE ? false : true });
   const remember = h("input", { type: "checkbox", checked: true });

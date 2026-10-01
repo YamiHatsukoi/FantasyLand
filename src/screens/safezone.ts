@@ -1,4 +1,6 @@
 import { app, type Screen } from "../app";
+import { playMusic } from "../audio/music";
+import { sfx } from "../audio/sfx";
 import { hashString } from "../core/rng";
 import { addItem, buildingCost, canAfford, count, logMsg, pay, takeLevelUps, type PlacedBuilding } from "../core/state";
 import { BUILDINGS, BUILDING_LIST, RANK_NAMES, type BuildingCategory } from "../data/buildings";
@@ -121,6 +123,7 @@ export function sanctuaryGround(terr: ReturnType<typeof territory>): HTMLCanvasE
 }
 
 export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: number) => void; visit: (p: PlayerVisit) => void }): Screen {
+  playMusic("sanctuary");
   const g = app.game;
   const el = h("div", { class: "screen" });
   root.append(el);
@@ -257,6 +260,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   const openB = (b: PlacedBuilding) => openBuilding(b, {
     refresh: updateHud,
     sleep: () => {
+      sfx("sleep");
       const rep = advanceDay(app.game);
       app.dirty(true);
       showBanner(el, `Ngày ${app.game.day}`, "Cả đội đã hồi phục hoàn toàn");
@@ -365,6 +369,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
       if (p.type === "greenhouse") ensureSlots(nb);
       g.buildings.push(nb);
       logMsg(g, `Xây ${BUILDINGS[p.type].name}.`);
+      sfx("build");
       if (!p.built) toast(`Đã xây ${BUILDINGS[p.type].name}!`, "good");
     }
     app.dirty();
@@ -464,6 +469,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     const back: Record<string, number> = {};
     for (const b of list) for (const [id, n] of Object.entries(buildingCost(b.type, 0))) back[id] = (back[id] ?? 0) + Math.floor(n / 2);
     g.buildings = g.buildings.filter((b) => !sel!.set.has(b));
+    sfx("demolish");
     for (const [id, n] of Object.entries(back)) if (n > 0) addItem(g, id, n);
     logMsg(g, `Dỡ ${list.length} công trình.`);
     app.dirty();

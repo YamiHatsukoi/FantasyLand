@@ -11,6 +11,7 @@ import { h, openModal } from "../ui/dom";
 import { itemImg } from "../ui/icon";
 import { itemTip, setDexSource, skillTip } from "../ui/tooltip";
 import { getFloor } from "../world/floors";
+import { backfillBosses } from "../world/dex";
 
 /**
  * Monster codex. Every kind the party has fought gets a page; the more of them you defeat,
@@ -56,6 +57,7 @@ function lootTable(def: EnemyDef, mats: { hide: string; fiber: string; herb: str
 export function openCodex() {
   const g = app.game;
   const dex = (g.dex ??= {});
+  backfillBosses(g);
   const m = openModal("📖 Sổ Tay Quái Vật", { wide: true, cls: "codex" });
 
   const list = () => {

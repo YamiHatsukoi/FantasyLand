@@ -1,4 +1,5 @@
 import { app, type Screen } from "../app";
+import { playMusic } from "../audio/music";
 import type { CropState, GameState, PlacedBuilding } from "../core/state";
 import { BUILDINGS, RANK_NAMES } from "../data/buildings";
 import type { PlayerVisit, PublicChar } from "../net/api";
@@ -20,6 +21,7 @@ const KEYS: Record<string, [number, number]> = { ArrowUp: [0, -1], KeyW: [0, -1]
  * save: nothing can be used, harvested or changed, and none of it touches our own game.
  */
 export function mountVisit(root: HTMLElement, v: PlayerVisit, hooks: { leave: () => void }): Screen {
+  playMusic("sanctuary");
   const me = app.game;
   const el = h("div", { class: "screen" });
   root.append(el);

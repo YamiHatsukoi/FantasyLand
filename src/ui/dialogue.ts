@@ -1,4 +1,5 @@
 import { h, isTopModal, nextLayer, trackModal, type ModalHandle } from "./dom";
+import { sfx } from "../audio/sfx";
 
 /**
  * Cinematic conversation window: a large portrait sliding in from the side, an ornate name
@@ -45,8 +46,12 @@ export class Dialogue {
   private handle: ModalHandle;
   readonly log: Entry[] = [];
   private closed = false;
+  /** Pitch of this speaker's typewriter blips, from their name. */
+  private voice = 260;
 
   constructor(private opts: DialogueOpts) {
+    let hsh = 0; for (const c of opts.name) hsh = (hsh * 31 + c.charCodeAt(0)) >>> 0;
+    this.voice = 220 + (hsh % 260);
     this.textEl = h("div", { class: "dlg-text" });
     this.youEl = h("div", { class: "dlg-you" });
     this.nextMark = h("div", { class: "dlg-next" }, "▼");
@@ -146,6 +151,7 @@ export class Dialogue {
       if (!cur) { this.finishTyping(); return; }
       i += step;
       cur.p.textContent = cur.l.slice(0, i);
+      if (/\S/.test(cur.l[i - 1] ?? "")) sfx("blip", String(this.voice));
       if (i >= cur.l.length) { k++; i = 0; }
     }, 18);
   }

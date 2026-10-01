@@ -1,3 +1,5 @@
+import { initAudio } from "./audio/engine";
+import { sfx } from "./audio/sfx";
 import { playTransition } from "./ui/transition";
 import { BIOMES } from "./world/biomes";
 import { MAX_FLOOR, getFloor } from "./world/floors";
@@ -94,6 +96,13 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") void app.saver?.flush();
 });
 window.addEventListener("pagehide", () => void app.saver?.flush());
+
+// sound: the audio context starts on the first tap; every button gets a soft click
+initAudio();
+document.addEventListener("pointerdown", (e) => {
+  const t = (e.target as Element | null)?.closest?.("button, .item-row, .choice, .dex-card");
+  if (t && !(t as HTMLButtonElement).disabled && !t.classList.contains("dlg-choice")) sfx("click");
+}, true);
 
 const cached = cachedSession();
 if (cached) void startSession(cached);

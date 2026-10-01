@@ -1,4 +1,5 @@
 import { app } from "../app";
+import { sfx } from "../audio/sfx";
 import { getItem } from "../data/items";
 import { JOBS, PERSONAS, REPLY_TOPICS } from "../data/npcText";
 import { spriteImg } from "../render/pixel";
@@ -119,6 +120,7 @@ export function openNpc(npc: NpcDef, onClose?: () => void) {
         class: "item-row",
         onclick: () => {
           gm.close();
+          sfx("gift");
           you(`(Tặng ${it.name})`);
           const r = giveGift({ g, npc }, it.id);
           say(r.text);

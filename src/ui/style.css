@@ -1073,3 +1073,10 @@ img.iicon.lg { width: 48px; height: 48px; }
 .lvl-pop { position: absolute; left: 50%; top: -18px; z-index: 5; white-space: nowrap; pointer-events: none; font-family: var(--pixel); font-size: 28px; color: #ffe58a;
   text-shadow: 0 2px 0 #4a2a06, 0 0 12px rgba(255,200,60,.8); animation: lv-float 1.9s cubic-bezier(.2,.9,.3,1) forwards; }
 @keyframes lv-float { 0% { transform: translate(-50%, 10px) scale(.6); opacity: 0; } 20% { transform: translate(-50%, 0) scale(1.15); opacity: 1; } 70% { opacity: 1; } 100% { transform: translate(-50%, -26px) scale(1); opacity: 0; } }
+
+/* sound settings */
+.snd { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; }
+.snd-row { display: flex; align-items: center; gap: 12px; }
+.snd-row .check { min-width: 120px; }
+.snd-vol { flex: 1; accent-color: var(--gold); }
+.snd input[type="checkbox"] { accent-color: var(--gold); }
