@@ -26,6 +26,7 @@ import { BIOMES } from "../world/biomes";
 import { getFloor } from "../world/floors";
 import { h, nn, openModal, pace, toast } from "../ui/dom";
 import { showLevelUps } from "../ui/levelup";
+import { cover } from "../ui/cover";
 import { openBattleReport } from "../ui/battleReport";
 
 const ENEMY_EL: Record<string, string> = {
@@ -195,6 +196,8 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   const el = h("div", { class: "combat", style: `--cb1:${biome.bg[0]};--cb2:${biome.bg[1]}` },
     h("div", { class: "cb-top" }, h("span", { class: "tl-label" }, "Lượt"), timeline, helpBtn, autoBtn, fastBtn), stage, panel);
   document.body.append(el);
+  // the battle covers the whole screen: the map under it can rest
+  const uncover = cover();
   const fx = new CombatFx(stage, () => (fast ? 2.2 : 1));
   /** The blow being played: who threw it and how, so the hits that follow can react to it. */
   let blow: { side: "ally" | "enemy"; melee: boolean } | null = null;
@@ -858,6 +861,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     if (outcome === "flee") {
       fx.destroy();
       el.remove();
+      uncover();
       return outcome;
     }
     // the summary scrolls when the loot is long; the button below it always stays in reach
@@ -970,6 +974,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
       h("button", { class: "btn primary result-go", onclick: () => r() }, "Tiếp tục"))));
     fx.destroy();
     el.remove();
+    uncover();
     if (prevMusic) playMusic(prevMusic);
     return outcome;
   });
