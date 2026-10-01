@@ -744,3 +744,18 @@ img.iicon.lg { width: 48px; height: 48px; }
 .cb-panel > .result { display: flex; flex-direction: column; align-items: center; flex: 1 1 auto; min-height: 0; }
 .result-body { flex: 1 1 auto; min-height: 0; width: 100%; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .result-go { flex: none; margin-top: 8px; min-width: 160px; }
+
+/* dock groups: a small menu pops up above the button */
+.dock button.has-menu span:nth-child(2)::after { content: " ▴"; opacity: .6; font-size: .85em; }
+.dock-menu { position: absolute; z-index: 8; transform: translateX(-50%); display: flex; flex-direction: column; gap: 2px; padding: 6px; min-width: 168px;
+  border-radius: 14px; background: rgba(8, 12, 10, 0.95); border: 1px solid var(--line); backdrop-filter: blur(6px); box-shadow: 0 10px 30px rgba(0,0,0,.45); animation: pop .12s ease; }
+.dock-menu button { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 0; border-radius: 10px; background: transparent; color: var(--text); font-size: 14px; text-align: left; cursor: pointer; }
+.dock-menu button:hover { background: rgba(255,255,255,.08); }
+.dock-menu .dm-ico { font-size: 20px; width: 24px; text-align: center; }
+.dock-menu .dm-badge { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 11px; line-height: 18px; font-weight: 700; text-align: center; }
+/* select-many bar: the hint gets its own line, buttons share the next */
+.place-bar.sel { flex-wrap: wrap; }
+.place-bar.sel .chip { flex: 1 1 100%; }
+.place-bar.sel .btn { flex: 1 1 0; min-width: 0; padding-left: 6px; padding-right: 6px; }
+.build-tools { display: flex; gap: 6px; margin-bottom: 8px; }
+.build-tools .btn { flex: 1; }

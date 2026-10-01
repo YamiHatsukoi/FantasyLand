@@ -33,14 +33,15 @@ export function buildingAt(g: GameState, x: number, y: number): PlacedBuilding |
   });
 }
 
-export function canPlace(g: GameState, type: string, x: number, y: number, ignore?: PlacedBuilding): string | null {
+/** `ignore`: the building (or group of buildings) being moved, which may overlap its own old spot. */
+export function canPlace(g: GameState, type: string, x: number, y: number, ignore?: PlacedBuilding | Set<PlacedBuilding>): string | null {
   const [w, h] = BUILDINGS[type].size;
   for (let yy = y; yy < y + h; yy++) {
     for (let xx = x; xx < x + w; xx++) {
       if (!inTerritory(g, xx, yy)) return "Ngoài lãnh địa";
       if (xx === SPROUT.x && yy === SPROUT.y) return "Mầm đang đứng ở đây";
       const b = buildingAt(g, xx, yy);
-      if (b && b !== ignore) return "Đã có công trình";
+      if (b && !(ignore instanceof Set ? ignore.has(b) : b === ignore)) return "Đã có công trình";
     }
   }
   return null;
