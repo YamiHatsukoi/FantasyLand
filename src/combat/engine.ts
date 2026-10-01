@@ -149,6 +149,20 @@ export class Battle {
     return Math.max(1, u.base[k] * (1 + pct));
   }
 
+  /**
+   * Passives such as "+15% max HP" only apply in battle, so a unit built from a character's
+   * map stats would start a fight below full. Keep the same share of health and mana instead.
+   */
+  enterAtSameShare(u: Unit) {
+    if (u.hp > 0) u.hp = Math.max(1, Math.round((u.hp / Math.max(1, u.base.hp)) * this.maxHp(u)));
+    u.mp = Math.round((u.mp / Math.max(1, u.base.mp)) * this.maxMp(u));
+  }
+
+  /** Share (0..1) of health and mana a unit leaves the battle with. */
+  shareOf(u: Unit) {
+    return { hp: Math.max(0, Math.min(1, u.hp / Math.max(1, this.maxHp(u)))), mp: Math.max(0, Math.min(1, u.mp / Math.max(1, this.maxMp(u)))) };
+  }
+
   maxHp(u: Unit) { return Math.round(this.stat(u, "hp")); }
   maxMp(u: Unit) { return Math.round(this.stat(u, "mp")); }
   avFor(u: Unit) { return MAX_AV / this.stat(u, "spd"); }

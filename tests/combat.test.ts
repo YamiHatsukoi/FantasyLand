@@ -334,3 +334,23 @@ describe("difficulty curve", () => {
     expect(chooseAction(b, a).skill).toBe("defend");
   });
 });
+
+describe("health going into and out of battle", () => {
+  it("a full-health character with max-HP passives starts the fight full, and keeps its share afterwards", async () => {
+    const { charStats } = await import("../src/core/state");
+    const ch = makeCharacter("x", "X", "warrior", "hero", 30);
+    ch.passives.push("p_vigor", "p_colossus");
+    ch.equippedPassives = [...ch.passives];
+    const st = charStats(ch);
+    ch.hp = st.hp; ch.mp = st.mp;
+    const u = unitFromCharacter(ch);
+    const b = new Battle([u], [dummy("enemy", "e")], 5);
+    expect(b.maxHp(u)).toBeGreaterThan(st.hp); // the passives only count in battle
+    b.enterAtSameShare(u);
+    expect(u.hp).toBe(b.maxHp(u));
+    expect(u.mp).toBe(b.maxMp(u));
+    // half health in battle is half health on the map
+    u.hp = Math.round(b.maxHp(u) / 2);
+    expect(Math.round(b.shareOf(u).hp * st.hp)).toBeCloseTo(st.hp / 2, -1);
+  });
+});

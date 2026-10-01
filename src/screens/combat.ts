@@ -132,6 +132,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   const allies = g.party.map((id) => g.chars[id]).filter(Boolean).map((ch) => unitFromCharacter(ch, buffs));
   const enemies = setup.enemies.map((e, i) => unitFromEnemy(e.id, e.level, i));
   const battle = new Battle(allies, enemies, rng.int(1, 1e9));
+  for (const u of allies) battle.enterAtSameShare(u);
   const prevMusic = currentMusic();
   playMusic(enemies.some((u) => u.boss) ? "boss" : "battle");
   for (const e of setup.enemyFx ?? []) for (const u of enemies) battle.addStatus(u, e.s, e.t ?? 2, e.st ?? 1, 0);
@@ -855,8 +856,10 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     for (const u of allies) {
       const ch = g.chars[u.charId!];
       if (!ch) continue;
-      ch.hp = u.hp <= 0 ? (outcome === "win" ? 1 : 0) : Math.min(u.hp, charStats(ch).hp);
-      ch.mp = Math.max(0, Math.min(u.mp, charStats(ch).mp));
+      // back to map stats at the same share (in-battle max HP/MP can be higher, see enterAtSameShare)
+      const share = battle.shareOf(u), st = charStats(ch);
+      ch.hp = u.hp <= 0 ? (outcome === "win" ? 1 : 0) : Math.max(1, Math.round(share.hp * st.hp));
+      ch.mp = Math.round(share.mp * st.mp);
     }
     if (outcome === "flee") {
       fx.destroy();
