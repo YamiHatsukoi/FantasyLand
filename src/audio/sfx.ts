@@ -1,13 +1,135 @@
-import { audioCtx, noise, settings, tone } from "./engine";
+import { audioCtx, noise, onAudioReady, settings, tone } from "./engine";
+import { jingleReady, playJingle, preloadJingles } from "./music";
+import { hasBank, hit, loadBanks, note } from "./sampler";
 
 /**
- * The game's sound effects, each a few synthesised voices. `sfx(name)` is safe to call from
- * anywhere: it does nothing before the first tap, while muted, or in a hidden tab.
+ * The game's sound effects. Most are recorded orchestral instruments (harp, glockenspiel,
+ * bells, marimba, timpani, cymbals, an anvil...) layered with a little synthesis for the
+ * punch of blows and the colour of each element, all through the concert-hall reverb.
+ * `sfx(name)` is safe to call from anywhere: it does nothing before the first tap, while
+ * muted, or in a hidden tab; until the instruments have loaded it falls back to synthesis.
  */
 type El = "physical" | "fire" | "ice" | "lightning" | "water" | "earth" | "wind" | "light" | "dark" | "poison" | "arcane" | string;
 const r = (a: number, b: number) => a + Math.random() * (b - a);
 
-const LIB: Record<string, (arg?: string) => void> = {
+/** Instruments the effects use; fetched in the background right after the first tap. */
+const SFX_BANKS = ["perc", "harp", "glock", "bells", "marimba", "pizz", "timp", "spic"];
+// effects first, then what the fanfares need
+onAudioReady(() => void loadBanks(SFX_BANKS).then(() => preloadJingles()));
+
+const now = () => audioCtx()?.currentTime ?? 0;
+/** A recorded note on the effects bus, `at` seconds from now. */
+const S = (inst: string, midi: number, at = 0, vel = 0.6, dur = 0.6, verb?: number) => note(inst, midi, dur, { when: now() + at, vel, bus: "sfx", verb });
+/** A percussion one-shot on the effects bus. */
+const H = (name: string, at = 0, vel = 0.6, rate = 1, verb?: number) => hit(name, { when: now() + at, vel, bus: "sfx", rate, verb });
+/** A quick harp glissando across a chord (MIDI notes), up or down. */
+const gliss = (notes: number[], at = 0, step = 0.035, vel = 0.5, inst = "harp") => notes.forEach((m, i) => S(inst, m, at + i * step, vel * (0.85 + (i / notes.length) * 0.3), 1.2));
+const MAJ = (root: number, n = 8) => Array.from({ length: n }, (_, i) => root + [0, 4, 7][i % 3] + 12 * Math.floor(i / 3));
+const MIN = (root: number, n = 8) => Array.from({ length: n }, (_, i) => root + [0, 3, 7][i % 3] + 12 * Math.floor(i / 3));
+
+const RICH: Record<string, (arg?: string) => void> = {
+  // ---------------------------------------------------------------- interface
+  click: () => S("marimba", 84 + Math.floor(r(0, 3)), 0, 0.32, 0.12, 0.08),
+  open: () => { S("harp", 79, 0, 0.42); S("harp", 86, 0.05, 0.38); },
+  close: () => { S("harp", 86, 0, 0.32); S("harp", 79, 0.05, 0.3); },
+  notify: () => { S("glock", 88, 0, 0.3, 1); S("harp", 76, 0, 0.35); },
+  good: () => { gliss([72, 76, 79], 0, 0.05, 0.45); S("glock", 91, 0.1, 0.25, 1); },
+  error: () => { S("marimba", 52, 0, 0.55, 0.3, 0.1); S("marimba", 51, 0.1, 0.5, 0.3, 0.1); H("log_lo", 0, 0.35); },
+  blip: (base) => S("marimba", 57 + Math.round(12 * Math.log2((Number(base) || 330) / 220)) + Math.floor(r(0, 2)), 0, 0.16, 0.05, 0.05),
+  // ---------------------------------------------------------------- world
+  step: () => SYNTH.step(),
+  coin: () => { S("glock", 96, 0, 0.3, 0.6); S("glock", 103, 0.06, 0.3, 1); },
+  pickup: () => { S("harp", 79, 0, 0.45); S("harp", 86, 0.06, 0.45); S("glock", 98, 0.06, 0.15, 0.5); },
+  chest: () => {
+    H("log_lo", 0, 0.6); H("kick_soft", 0, 0.45, 1.3);
+    gliss(MAJ(60, 9), 0.12, 0.04, 0.5);
+    S("glock", 96, 0.45, 0.3, 1.5); S("glock", 103, 0.52, 0.25, 1.5); H("tri", 0.45, 0.35);
+  },
+  stairs: () => { H("timp_roll", 0, 0.35); gliss(MIN(57, 8).reverse(), 0.1, 0.05, 0.4); },
+  transition: () => { H("swell", 0, 0.32, 1.3); gliss(MAJ(60, 10), 0.35, 0.045, 0.42); S("bells", 72, 0.75, 0.35, 2.5); },
+  encounter: (kind) => {
+    if (kind === "boss") {
+      H("gong", 0, 0.75); S("timp", 41.5, 0, 0.9, 2); H("crash", 0.02, 0.5);
+      for (const m of [50, 53, 57]) S("spic", m + 12, 0.02, 0.85, 0.4);
+      S("bells", 62, 0.05, 0.45, 2.5);
+    } else {
+      S("timp", 45, 0, 0.75, 1.5); H("snare", 0, 0.5); H("cymbal", 0, 0.35);
+      for (const m of [57, 60, 64]) S("spic", m + 12, 0.01, 0.8, 0.3);
+      S("spic", 81, 0.16, 0.7, 0.3);
+    }
+  },
+  // ---------------------------------------------------------------- combat
+  whoosh: () => SYNTH.whoosh(),
+  slash: () => { SYNTH.slash(); H("snare_soft", 0, 0.25, 1.6, 0.15); },
+  hit: () => { SYNTH.hit(); H("kick_soft", 0, 0.5, r(1.1, 1.3), 0.15); },
+  crit: () => { SYNTH.crit(); H("kick", 0, 0.7, 1.15, 0.2); H("crash_soft", 0, 0.4, 1.4, 0.25); },
+  miss: () => SYNTH.miss(),
+  bow: () => { SYNTH.bow(); S("pizz", 76, 0, 0.35, 0.2, 0.1); },
+  cast: (el) => castRich(el),
+  impact: (el) => impactRich(el),
+  heal: () => { gliss(MAJ(67, 7), 0, 0.06, 0.45); S("glock", 98, 0.3, 0.22, 1.5); },
+  mana: () => { S("glock", 91, 0, 0.28, 1); S("glock", 96, 0.07, 0.28, 1); S("glock", 103, 0.14, 0.25, 1.2); },
+  buff: () => { gliss(MAJ(62, 6), 0, 0.03, 0.4); H("tri", 0.12, 0.3); },
+  debuff: () => { [69, 66, 63, 60].forEach((m, i) => S("pizz", m, i * 0.06, 0.45, 0.3)); H("log_lo", 0.18, 0.3); },
+  shield: () => { S("bells", 67, 0, 0.35, 1.5); H("tri", 0, 0.25); SYNTH.shield(); },
+  break: () => { SYNTH.break(); H("crash", 0, 0.55, 1.2); H("anvil", 0, 0.5, 1.3); },
+  charge: () => { H("timp_roll", 0, 0.45); H("swell", 0, 0.3, 1.6); SYNTH.charge(); },
+  death: () => { SYNTH.death(); S("pizz", 57, 0.05, 0.4, 0.4); S("pizz", 56, 0.2, 0.35, 0.4); },
+  spawn: () => { S("timp", 41.5, 0, 0.7, 2); H("gong", 0, 0.25, 1.4); SYNTH.spawn(); },
+  revive: () => { gliss(MAJ(60, 10), 0, 0.05, 0.45); S("bells", 72, 0.35, 0.4, 2.5); S("glock", 96, 0.45, 0.25, 1.5); },
+  victory: () => (jingleReady("victory") ? playJingle("victory") : SYNTH.victory()),
+  defeat: () => (jingleReady("defeat") ? playJingle("defeat") : SYNTH.defeat()),
+  levelup: () => (jingleReady("levelup") ? playJingle("levelup") : SYNTH.levelup()),
+  // ---------------------------------------------------------------- sanctuary
+  build: () => { for (const at of [0, 0.18, 0.34]) { H("log_lo", at, 0.55); H("anvil", at, 0.18, 1.6, 0.2); } },
+  demolish: () => { SYNTH.demolish(); H("kick", 0, 0.6, 0.85); H("crash_soft", 0.02, 0.35, 0.8); },
+  harvest: () => { S("pizz", 72, 0, 0.5, 0.3); S("pizz", 79, 0.07, 0.5, 0.3); H("shaker", 0, 0.3); },
+  plant: () => { H("shaker", 0, 0.3, 0.8); S("marimba", 55, 0.04, 0.35, 0.3); },
+  water: () => { SYNTH.water(); S("harp", 84, 0.05, 0.25); S("harp", 88, 0.12, 0.22); },
+  craft: () => { H("anvil", 0, 0.5); H("anvil", 0.2, 0.45, 1.06); S("glock", 96, 0.32, 0.2, 1); },
+  enhance: () => { H("anvil", 0, 0.55); gliss(MAJ(67, 8), 0.12, 0.035, 0.45); S("bells", 79 - 7, 0.4, 0.4, 2.5); S("glock", 103, 0.45, 0.25, 1.5); },
+  fail: () => { H("anvil", 0, 0.45, 0.8); [64, 63, 60].forEach((m, i) => S("pizz", m, 0.12 + i * 0.09, 0.45, 0.3)); H("log_lo", 0.4, 0.4); },
+  gift: () => { S("bells", 72, 0, 0.4, 2); gliss(MAJ(72, 6), 0.05, 0.05, 0.38); S("glock", 96, 0.3, 0.22, 1); },
+  // a music-box lullaby
+  sleep: () => [91, 88, 84, 79, 84].forEach((m, i) => S("glock", m, i * 0.32, 0.26, 1.2)),
+};
+
+const EL_ROOT: Record<string, number> = { fire: 57, ice: 79, lightning: 74, water: 67, earth: 45, wind: 72, light: 76, dark: 50, poison: 63, arcane: 69 };
+
+function castRich(el: El = "arcane") {
+  castSound(el); // the synthesised colour of the element stays underneath
+  const m = EL_ROOT[el] ?? 69;
+  switch (el) {
+    case "fire": H("timp_roll", 0, 0.3, 1.2); S("spic", 69, 0.18, 0.45, 0.3); break;
+    case "ice": [m, m + 7, m + 12, m + 16].forEach((x, i) => S("glock", x + 12, i * 0.05, 0.25, 1.2)); H("tri", 0, 0.3); break;
+    case "lightning": H("crash_soft", 0.1, 0.35, 1.6); break;
+    case "water": gliss([m, m + 2, m + 4, m + 7, m + 9, m + 12], 0, 0.04, 0.4); break;
+    case "earth": S("timp", 41.5, 0, 0.7, 2); H("log_lo", 0.05, 0.5); break;
+    case "wind": gliss([m, m + 5, m + 7, m + 12, m + 17], 0, 0.05, 0.3); break;
+    case "light": S("bells", 72, 0, 0.4, 2); gliss(MAJ(72, 6), 0.05, 0.04, 0.35); S("glock", 96, 0.2, 0.22, 1.5); break;
+    case "dark": H("gong", 0, 0.3, 0.75); S("pizz", 55, 0.05, 0.4, 0.4); break;
+    case "poison": [m, m - 1, m - 4, m - 5].forEach((x, i) => S("pizz", x, i * 0.07, 0.4, 0.3)); break;
+    default: H("vibra", 0, 0.3); gliss(MAJ(m - 12, 6), 0, 0.04, 0.35);
+  }
+}
+
+function impactRich(el: El = "physical") {
+  if (el === "physical" || !EL_ROOT[el]) return RICH.hit();
+  impactSound(el);
+  const m = EL_ROOT[el];
+  switch (el) {
+    case "fire": H("kick_soft", 0, 0.45, 1.2); break;
+    case "ice": S("glock", m + 17, 0, 0.3, 0.8); H("tri", 0, 0.25, 1.2); break;
+    case "lightning": H("snare", 0, 0.4, 1.4); break;
+    case "earth": H("kick", 0, 0.6, 0.9); break;
+    case "light": S("bells", 74, 0, 0.3, 1.5); break;
+    case "dark": H("kick_soft", 0, 0.5, 0.8); S("pizz", 55, 0, 0.35, 0.3); break;
+    default: H("kick_soft", 0, 0.35, 1.2);
+  }
+}
+
+/** Synthesised versions: used until the recorded instruments have loaded. */
+const SYNTH: Record<string, (arg?: string) => void> = {
   // ---------------------------------------------------------------- interface
   click: () => tone(r(1500, 1650), 0.035, { type: "triangle", gain: 0.06, slide: 1100 }),
   open: () => { tone(520, 0.07, { type: "sine", gain: 0.07 }); tone(780, 0.1, { type: "sine", gain: 0.06, at: 0.05 }); },
@@ -112,7 +234,7 @@ function castSound(el: El = "arcane") {
 }
 
 function impactSound(el: El = "physical") {
-  if (el === "physical" || !ELC[el]) return LIB.hit();
+  if (el === "physical" || !ELC[el]) return SYNTH.hit();
   const f = ELC[el];
   noise(0.14, { filter: el === "earth" || el === "dark" ? "lowpass" : "bandpass", freq: f * 2, gain: 0.14 });
   tone(f, 0.16, { type: el === "ice" || el === "light" ? "triangle" : "sine", gain: 0.12, slide: f * 0.5 });
@@ -132,5 +254,8 @@ export function sfx(name: string, arg?: string) {
   if (gap && now - (last.get(name) ?? 0) < gap) return;
   last.set(name, now);
   if (name !== "click" && name !== "blip" && name !== "step") lastAny = now;
-  try { LIB[name]?.(arg); } catch { /* audio is never worth a crash */ }
+  try {
+    const rich = hasBank("perc") && hasBank("harp") ? RICH[name] : undefined;
+    (rich ?? SYNTH[name])?.(arg);
+  } catch { /* audio is never worth a crash */ }
 }

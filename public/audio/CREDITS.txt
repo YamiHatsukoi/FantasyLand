@@ -1,0 +1,6 @@
+Instrument samples: VS Chamber Orchestra: Community Edition (VSCO 2 CE)
+by Versilian Studios - recorded by Sam Gossner & Simon Dalzell, sample cutting by Elan Hickler/Soundemote.
+Upright piano sampled by Simon Dalzell of Ivy Audio.
+License: CC0 1.0 Universal - https://github.com/sgossner/VSCO-2-CE
+
+The files here are excerpts (trimmed, mono, re-encoded) made by tools/audio/build_samples.py.
