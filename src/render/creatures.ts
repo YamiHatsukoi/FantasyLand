@@ -1,10 +1,13 @@
 import { Rng, hashString } from "../core/rng";
-import { hs, outline } from "./palette";
+import { outline } from "./palette";
+import { Sprite } from "./parts";
+import { PLAN_ART } from "./plans";
 
 /**
  * Procedural 32x32 creature sprites. A creature is a body plan (quadruped, bird, serpent,
- * golem...) plus colours and a seed that decides horns, spikes, wings, patterns and eyes.
- * Sprites are shaded from the upper left and get an automatic dark outline.
+ * golem...; drawn in plans.ts) plus colours and a seed that decides horns, spikes, markings
+ * and eyes. The floor's material family and element then leave their mark, and the sprite
+ * gets an automatic dark outline.
  */
 
 export const PLANS = [
@@ -26,7 +29,6 @@ function sh(c: string, f: number): string {
   const t = (v: number) => Math.max(0, Math.min(255, Math.round(f >= 0 ? v + (255 - v) * f : v * (1 + f))));
   return "#" + [t(r), t(g), t(b)].map((v) => v.toString(16).padStart(2, "0")).join("");
 }
-const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16);
 
 class Grid {
   g: Col[][] = Array.from({ length: S }, () => Array<Col>(S).fill(null));
@@ -37,16 +39,6 @@ class Grid {
   }
   get(x: number, y: number) { return x >= 0 && y >= 0 && x < S && y < S ? this.g[y][x] : null; }
   rect(x: number, y: number, w: number, h: number, c: Col) { for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) this.px(xx, yy, c); }
-  /** Shaded ellipse lit from the upper left. */
-  ball(cx: number, cy: number, rx: number, ry: number, base: string, lightF = 0.35, darkF = -0.35) {
-    for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++) for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
-      const dx = (x + 0.5 - cx) / Math.max(0.5, rx), dy = (y + 0.5 - cy) / Math.max(0.5, ry);
-      const d = dx * dx + dy * dy;
-      if (d > 1) continue;
-      const lit = -dx * 0.55 - dy * 0.75 + (1 - d) * 0.5 + (BAYER[(y & 3) * 4 + (x & 3)] - 0.5) * 0.35;
-      this.px(x, y, lit > 1.05 && d > 0.25 ? hs(base, lightF + 0.15) : lit > 0.8 ? hs(base, lightF * 0.75) : lit > 0.1 ? base : lit > -0.45 ? hs(base, darkF * 0.85) : hs(base, darkF * 1.35));
-    }
-  }
   line(x0: number, y0: number, x1: number, y1: number, c: string, t = 1) {
     const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
     for (let i = 0; i <= n; i++) {
@@ -54,20 +46,6 @@ class Grid {
       for (let a = 0; a < t; a++) for (let b = 0; b < t; b++) this.px(x + a - Math.floor(t / 2), y + b - Math.floor(t / 2), c);
     }
   }
-  /** Tapered limb from (x0,y0) to (x1,y1). */
-  limb(x0: number, y0: number, x1: number, y1: number, w0: number, w1: number, c: string) {
-    const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1) * 2;
-    for (let i = 0; i <= n; i++) {
-      const t = i / n;
-      this.ball(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, w0 + (w1 - w0) * t, w0 + (w1 - w0) * t, c, 0.2, -0.3);
-    }
-  }
-  eye(x: number, y: number, col: string, big = false) {
-    if (big) { this.rect(x - 1, y - 1, 3, 3, "#ffffff"); this.rect(x, y, 2, 2, col); this.px(x, y, "#1b1b2a"); this.px(x - 1, y - 1, "#ffffff"); }
-    else { this.px(x, y, col); this.px(x, y - 1, sh(col, 0.6)); }
-  }
-  mirror() { for (let y = 0; y < S; y++) for (let x = 0; x < S / 2; x++) this.g[y][S - 1 - x] = this.g[y][x]; }
-  flipCopyOnto() { /* keep asymmetric */ }
 }
 
 export interface CreatureSpec {
@@ -167,72 +145,6 @@ const FAM_FX: Record<string, (g: Grid, r: Rng) => void> = {
   forest: (g, r) => { for (let i = 0; i < 3; i++) { const x = r.int(2, S - 3), y = r.int(2, 12); if (!g.get(x, y)) { g.px(x, y, "#4a9a3a"); g.px(x + 1, y + 1, "#2c6b33"); } } },
 };
 
-type Drawer = (g: Grid, c: string, a: string, e: string, r: Rng) => void;
-
-const horns = (g: Grid, x: number, y: number, a: string, r: Rng, kind = r.int(0, 3)) => {
-  if (kind === 0) return;
-  if (kind === 1) { g.line(x - 3, y, x - 5, y - 5, a, 2); g.line(x + 3, y, x + 5, y - 5, a, 2); }
-  if (kind === 2) { g.line(x - 2, y, x - 6, y - 2, a, 2); g.line(x - 6, y - 2, x - 6, y - 6, a); g.line(x + 2, y, x + 6, y - 2, a, 2); g.line(x + 6, y - 2, x + 6, y - 6, a); }
-  if (kind === 3) { g.line(x, y - 1, x, y - 6, a, 2); }
-};
-const spikes = (g: Grid, x0: number, x1: number, y: number, a: string, r: Rng) => { for (let x = x0; x <= x1; x += 3) g.line(x, y, x + r.int(-1, 1), y - r.int(2, 4), a); };
-const pattern = (g: Grid, x0: number, y0: number, x1: number, y1: number, a: string, r: Rng) => {
-  const kind = r.int(0, 2);
-  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-    if (!g.get(x, y)) continue;
-    if (kind === 1 && (x + y) % 6 === 0 && r.chance(0.7)) g.px(x, y, a);
-    if (kind === 2 && x % 5 === 0 && y % 4 === 0) { g.px(x, y, a); g.px(x + 1, y, a); }
-  }
-};
-const wings = (g: Grid, cx: number, cy: number, w: number, h: number, c: string) => {
-  for (let k = 0; k < 2; k++) {
-    const s = k ? 1 : -1;
-    for (let i = 0; i < w; i++) {
-      const top = cy - h + Math.round((i / w) * h * 0.5);
-      g.line(cx + s * (3 + i), top, cx + s * (3 + i), cy + Math.round((1 - i / w) * 3), i % 3 === 0 ? sh(c, -0.3) : c);
-    }
-  }
-};
-
-const D: Record<string, Drawer> = {
-  blob: (g, c, a, e, r) => { g.ball(16, 22, 12, 9, c); g.ball(12, 18, 4, 3, sh(c, 0.35), 0.3); g.eye(12, 21, e, true); g.eye(20, 21, e, true); g.rect(14, 25, 4, 1, sh(c, -0.5)); if (r.chance(0.5)) horns(g, 16, 14, a, r); },
-  quad: (g, c, a, e, r) => { for (const x of [7, 11, 20, 24]) g.limb(x, 20, x - 1, 29, 1.8, 1.4, sh(c, -0.1)); g.ball(16, 18, 11, 6, c); g.ball(26, 13, 5, 4, c); g.rect(29, 14, 2, 2, sh(c, -0.4)); g.eye(27, 12, e); horns(g, 26, 9, a, r); g.line(5, 16, 1, 12 + r.int(0, 6), c, 2); spikes(g, 9, 21, 12, a, r); pattern(g, 6, 13, 26, 23, a, r); },
-  wolf: (g, c, a, e, r) => { for (const x of [7, 11, 20, 24]) g.limb(x, 19, x, 29, 1.6, 1.2, sh(c, -0.12)); g.ball(15, 18, 10, 5, c); g.ball(25, 13, 5, 4, c); g.limb(27, 14, 31, 15, 2, 1, c); g.px(31, 15, "#1b1b2a"); g.line(22, 9, 23, 5, c, 2); g.line(26, 9, 27, 5, c, 2); g.eye(26, 12, e); g.limb(5, 16, 1, 10, 2, 1, sh(c, 0.2)); g.ball(15, 20, 7, 2, sh(c, 0.3)); if (r.chance(0.4)) spikes(g, 10, 20, 13, a, r); },
-  cat: (g, c, a, e, r) => { for (const x of [8, 12, 20, 24]) g.limb(x, 20, x, 29, 1.4, 1.1, c); g.ball(16, 18, 10, 5, c); g.ball(25, 12, 5, 5, c); g.line(22, 7, 22, 4, c, 2); g.line(28, 7, 28, 4, c, 2); g.eye(24, 12, e, true); g.eye(28, 12, e); g.limb(6, 17, 2, 6, 1.5, 1, c); pattern(g, 6, 13, 30, 23, a, r); },
-  bear: (g, c, a, e, r) => { for (const x of [7, 12, 20, 25]) g.limb(x, 20, x, 29, 2.4, 2, sh(c, -0.12)); g.ball(16, 17, 12, 8, c); g.ball(24, 11, 6, 5, c); g.ball(21, 6, 2, 2, c); g.ball(27, 6, 2, 2, c); g.ball(27, 13, 3, 2, sh(c, 0.3)); g.px(29, 12, "#1b1b2a"); g.eye(24, 10, e); horns(g, 24, 7, a, r, r.int(0, 1)); },
-  deer: (g, c, a, e, r) => { for (const x of [9, 12, 20, 23]) g.limb(x, 19, x, 30, 1.2, 1, sh(c, -0.1)); g.ball(16, 17, 9, 5, c); g.limb(23, 15, 26, 8, 2, 1.6, c); g.ball(27, 8, 3, 3, c); g.eye(27, 7, e); g.line(26, 5, 22, 0, a); g.line(24, 3, 21, 3, a); g.line(28, 5, 30, 0, a); g.line(29, 2, 31, 3, a); for (let i = 0; i < 5; i++) g.px(r.int(10, 21), r.int(14, 18), "#ffffff"); },
-  lizard: (g, c, a, e, r) => { for (const x of [9, 20]) { g.limb(x, 21, x - 3, 27, 1.3, 1, c); g.limb(x + 2, 21, x + 5, 27, 1.3, 1, c); } g.ball(16, 20, 9, 4, c); g.ball(26, 17, 5, 3, c); g.eye(27, 16, e); g.limb(7, 21, 1, 25, 2.5, 0.6, c); spikes(g, 9, 22, 16, a, r); pattern(g, 7, 17, 30, 24, a, r); },
-  biped: (g, c, a, e, r) => { g.limb(12, 22, 11, 30, 2, 1.6, sh(c, -0.1)); g.limb(20, 22, 21, 30, 2, 1.6, sh(c, -0.1)); g.ball(16, 17, 7, 7, c); g.limb(9, 13, 5, 23, 1.8, 1.4, c); g.limb(23, 13, 27, 23, 1.8, 1.4, c); g.ball(16, 7, 5, 5, c); g.eye(14, 7, e); g.eye(18, 7, e); horns(g, 16, 3, a, r); g.rect(12, 20, 9, 2, a); },
-  bird: (g, c, a, e, r) => { g.limb(13, 23, 12, 30, 0.8, 0.6, a); g.limb(18, 23, 19, 30, 0.8, 0.6, a); wings(g, 16, 16, 12, 9, sh(c, -0.1)); g.ball(16, 17, 6, 7, c); g.ball(16, 8, 4, 4, c); g.rect(19, 8, 4, 2, a); g.px(22, 9, sh(a, -0.4)); g.eye(17, 7, e); g.line(16, 4, 14, 1, a); g.line(12, 24, 16, 28, sh(c, -0.2), 2); },
-  bat: (g, c, a, e, r) => { wings(g, 16, 14, 13, 10, sh(c, -0.2)); g.ball(16, 15, 5, 6, c); g.line(13, 9, 12, 5, c, 2); g.line(19, 9, 20, 5, c, 2); g.eye(14, 13, e, true); g.eye(18, 13, e, true); g.px(15, 18, "#ffffff"); g.px(17, 18, "#ffffff"); },
-  moth: (g, c, a, e, r) => { for (const s of [-1, 1]) { g.ball(16 + s * 8, 12, 7, 6, a); g.ball(16 + s * 7, 21, 5, 4, sh(a, -0.15)); g.ball(16 + s * 9, 12, 2, 2, c); } g.ball(16, 17, 3, 8, c); g.line(15, 9, 12, 3, c); g.line(17, 9, 20, 3, c); g.eye(15, 11, e); g.eye(17, 11, e); },
-  insect: (g, c, a, e, r) => { for (const y of [18, 21, 24]) { g.line(12, y, 6, y + 4, sh(c, -0.3)); g.line(20, y, 26, y + 4, sh(c, -0.3)); } g.ball(16, 24, 6, 6, c); g.ball(16, 16, 4, 4, c); g.ball(16, 10, 4, 3, c); g.eye(14, 10, e, true); g.eye(18, 10, e, true); g.line(14, 7, 11, 2, a); g.line(18, 7, 21, 2, a); if (r.chance(0.5)) wings(g, 16, 17, 8, 6, sh("#c8e8ff", -0.1)); pattern(g, 10, 19, 22, 30, a, r); },
-  beetle: (g, c, a, e, r) => { for (const y of [19, 23, 27]) { g.line(10, y, 4, y + 3, sh(c, -0.4)); g.line(22, y, 28, y + 3, sh(c, -0.4)); } g.ball(16, 22, 9, 9, c, 0.5); g.line(16, 14, 16, 30, sh(c, -0.4)); g.ball(16, 11, 5, 3, sh(c, -0.2)); g.line(16, 9, 16, 2, a, 2); g.line(16, 3, 13, 5, a); g.eye(13, 11, e); g.eye(19, 11, e); },
-  spider: (g, c, a, e, r) => { for (let k = 0; k < 4; k++) { g.line(12, 18 + k, 3 - k, 12 + k * 5, sh(c, -0.3)); g.line(20, 18 + k, 29 + k, 12 + k * 5, sh(c, -0.3)); } g.ball(16, 24, 8, 6, c); g.ball(16, 16, 5, 4, c); for (const [x, y] of [[14, 15], [18, 15], [13, 17], [19, 17]]) g.px(x, y, e); pattern(g, 9, 19, 23, 30, a, r); },
-  scorpion: (g, c, a, e, r) => { for (let k = 0; k < 3; k++) { g.line(11, 22 + k * 2, 5, 27 + k, sh(c, -0.3)); g.line(21, 22 + k * 2, 27, 27 + k, sh(c, -0.3)); } g.ball(16, 23, 7, 5, c); for (let i = 0; i < 5; i++) g.ball(16 + Math.sin(i) * 2, 17 - i * 3, 2.5, 2, c); g.line(18, 3, 22, 6, a, 2); g.ball(7, 17, 3, 2, c); g.ball(25, 17, 3, 2, c); g.eye(14, 21, e); g.eye(18, 21, e); },
-  serpent: (g, c, a, e, r) => { for (let i = 0; i < 26; i++) { const t = i / 26; g.ball(4 + i, 24 + Math.sin(i / 3) * 3 - t * 10, 3.5 - t, 3.5 - t, i % 4 ? c : sh(c, -0.1)); } g.ball(27, 10, 5, 4, c); g.eye(28, 9, e, true); g.line(31, 12, 32, 14, "#e04a4a"); if (r.chance(0.5)) { g.line(24, 6, 22, 2, a, 2); g.line(28, 6, 30, 2, a, 2); } pattern(g, 3, 12, 30, 30, a, r); },
-  worm: (g, c, a, e, r) => { for (let i = 0; i < 7; i++) g.ball(16, 30 - i * 3.5, 6 - i * 0.2, 3, i % 2 ? c : sh(c, 0.1)); g.ball(16, 6, 6, 5, sh(c, -0.1)); g.ball(16, 6, 4, 3, "#3a0a14", 0, 0); for (let i = 0; i < 8; i++) g.px(12 + i, 4 + (i % 2) * 3, "#ffffff"); },
-  fish: (g, c, a, e, r) => { g.ball(15, 17, 11, 7, c); g.line(4, 17, 0, 11, a, 3); g.line(4, 17, 0, 23, a, 3); g.line(14, 10, 18, 5, a, 2); g.ball(15, 20, 8, 3, sh(c, 0.3)); g.eye(22, 15, e, true); g.line(25, 19, 27, 19, "#1b1b2a"); pattern(g, 5, 11, 25, 23, a, r); },
-  crab: (g, c, a, e, r) => { for (let k = 0; k < 3; k++) { g.line(10, 22 + k, 3, 27 + k * 2, sh(c, -0.3)); g.line(22, 22 + k, 29, 27 + k * 2, sh(c, -0.3)); } g.ball(16, 21, 10, 6, c); g.limb(8, 18, 4, 11, 1.6, 1.4, c); g.ball(4, 9, 3, 3, a); g.limb(24, 18, 28, 11, 1.6, 1.4, c); g.ball(28, 9, 3, 3, a); g.line(13, 16, 13, 12, c); g.line(19, 16, 19, 12, c); g.eye(13, 11, e, true); g.eye(19, 11, e, true); },
-  frog: (g, c, a, e, r) => { g.limb(7, 26, 3, 30, 2, 1.4, c); g.limb(25, 26, 29, 30, 2, 1.4, c); g.ball(16, 21, 11, 8, c); g.ball(10, 12, 4, 4, c); g.ball(22, 12, 4, 4, c); g.eye(10, 12, e, true); g.eye(22, 12, e, true); g.line(9, 22, 23, 22, sh(c, -0.5)); g.ball(16, 25, 7, 3, sh(c, 0.35)); pattern(g, 6, 14, 26, 28, a, r); },
-  turtle: (g, c, a, e, r) => { for (const x of [8, 22]) { g.limb(x, 24, x - 2, 29, 2, 1.6, a); g.limb(x + 2, 24, x + 4, 29, 2, 1.6, a); } g.ball(26, 21, 4, 3, a); g.eye(27, 20, e); g.ball(15, 19, 12, 9, c, 0.4); for (const [x, y] of [[10, 16], [16, 13], [20, 18], [13, 21]]) g.ball(x, y, 3, 2, sh(c, -0.25), 0.2, -0.2); spikes(g, 7, 23, 11, sh(c, 0.3), r); },
-  plant: (g, c, a, e, r) => { g.line(16, 31, 16, 16, sh(c, -0.3), 3); for (const s of [-1, 1]) g.ball(16 + s * 7, 24, 6, 3, sh(c, -0.1)); g.ball(16, 11, 9, 8, a); g.ball(16, 13, 6, 4, "#3a0a14", 0, 0); for (let i = 0; i < 6; i++) g.px(11 + i * 2, 11, "#ffffff"); g.eye(12, 7, e); g.eye(20, 7, e); },
-  fungus: (g, c, a, e, r) => { g.ball(16, 25, 6, 6, "#e8dcc0", 0.2); g.ball(16, 13, 13, 8, c); for (let i = 0; i < 6; i++) g.ball(r.int(7, 25), r.int(8, 15), 1.5, 1.2, a, 0, 0); g.eye(13, 24, e); g.eye(19, 24, e); g.line(10, 30, 8, 31, "#e8dcc0", 2); g.line(22, 30, 24, 31, "#e8dcc0", 2); },
-  treant: (g, c, a, e, r) => { g.limb(11, 22, 8, 31, 3, 2.5, sh(c, -0.2)); g.limb(21, 22, 24, 31, 3, 2.5, sh(c, -0.2)); g.ball(16, 18, 8, 9, c); g.limb(9, 14, 3, 6, 2, 1, c); g.limb(23, 14, 29, 6, 2, 1, c); g.ball(16, 6, 12, 6, a); g.ball(9, 5, 5, 4, a); g.ball(23, 5, 5, 4, a); g.eye(13, 15, e, true); g.eye(19, 15, e, true); g.line(13, 21, 19, 21, sh(c, -0.5)); },
-  golem: (g, c, a, e, r) => { g.rect(9, 23, 5, 8, sh(c, -0.1)); g.rect(18, 23, 5, 8, sh(c, -0.1)); g.ball(16, 17, 10, 8, c, 0.3); g.ball(5, 18, 4, 6, c); g.ball(27, 18, 4, 6, c); g.ball(16, 7, 5, 4, c); g.eye(14, 7, e, true); g.eye(18, 7, e, true); for (let i = 0; i < 4; i++) g.line(r.int(9, 22), r.int(11, 22), r.int(9, 22), r.int(11, 22), sh(c, -0.4)); g.ball(16, 16, 2, 2, a, 0.6); },
-  mech: (g, c, a, e, r) => { g.rect(10, 23, 4, 8, sh(c, -0.2)); g.rect(18, 23, 4, 8, sh(c, -0.2)); g.rect(8, 11, 16, 13, c); g.rect(8, 11, 16, 2, sh(c, 0.3)); g.rect(4, 13, 4, 10, sh(c, -0.1)); g.rect(24, 13, 4, 10, sh(c, -0.1)); g.rect(11, 4, 10, 7, c); g.rect(12, 6, 8, 2, e); g.rect(14, 15, 4, 4, a); g.line(16, 4, 16, 0, a); for (const [x, y] of [[9, 12], [22, 12], [9, 22], [22, 22]]) g.px(x, y, "#1b1b2a"); },
-  knight: (g, c, a, e, r) => { g.limb(12, 22, 11, 30, 2.2, 2, sh(c, -0.1)); g.limb(20, 22, 21, 30, 2.2, 2, sh(c, -0.1)); g.ball(16, 16, 7, 8, c, 0.45); g.ball(16, 6, 5, 5, c, 0.5); g.rect(12, 6, 9, 2, "#1b1b2a"); g.px(14, 6, e); g.px(18, 6, e); g.line(16, 1, 16, -1, a, 2); g.limb(9, 13, 6, 22, 2, 1.6, c); g.line(24, 8, 28, 28, "#c8ccd8", 2); g.rect(22, 18, 5, 2, a); g.ball(6, 18, 4, 6, a, 0.3); },
-  skeleton: (g, c, a, e, r) => { const b = "#e8e0cc"; g.line(12, 22, 11, 30, b, 2); g.line(20, 22, 21, 30, b, 2); g.line(16, 12, 16, 22, b, 2); for (let y = 13; y < 21; y += 2) g.line(12, y, 20, y, b); g.line(12, 13, 7, 22, b, 2); g.line(20, 13, 25, 22, b, 2); g.ball(16, 7, 5, 5, b, 0.3); g.rect(13, 7, 2, 2, e); g.rect(17, 7, 2, 2, e); g.rect(14, 11, 4, 1, "#1b1b2a"); g.ball(16, 22, 5, 2, c); g.line(25, 22, 28, 6, a, 2); },
-  ghost: (g, c, a, e, r) => { g.ball(16, 13, 10, 10, c, 0.5); g.rect(6, 13, 21, 10, c); for (let x = 6; x < 27; x += 4) g.ball(x + 2, 24, 2, 3, c); g.eye(12, 12, e, true); g.eye(20, 12, e, true); g.ball(16, 18, 2, 2, "#1b1b2a", 0, 0); g.limb(6, 15, 2, 20, 2, 1, c); g.limb(26, 15, 30, 20, 2, 1, c); },
-  wraith: (g, c, a, e, r) => { for (let y = 10; y < 31; y++) { const w = 3 + (y - 10) * 0.45; g.rect(16 - w + Math.sin(y / 3) * 2, y, w * 2, 1, y % 3 ? c : sh(c, -0.2)); } g.ball(16, 9, 6, 6, sh(c, -0.4), 0, 0); g.eye(14, 9, e); g.eye(18, 9, e); g.line(8, 16, 3, 22, sh(c, 0.2), 2); g.line(24, 16, 30, 10, sh(c, 0.2), 2); g.line(30, 10, 30, 30, a); },
-  eye: (g, c, a, e, r) => { for (let k = 0; k < 6; k++) { const ang = (k / 6) * Math.PI * 2; g.line(16, 16, 16 + Math.cos(ang) * 14, 16 + Math.sin(ang) * 14, sh(c, -0.3), 2); } g.ball(16, 16, 10, 10, "#f0ece0", 0.3); g.ball(17, 15, 6, 6, e, 0.4); g.ball(17, 15, 3, 3, "#1b1b2a", 0, 0); g.px(15, 13, "#ffffff"); g.px(16, 13, "#ffffff"); },
-  jelly: (g, c, a, e, r) => { g.ball(16, 11, 11, 8, c, 0.5); g.rect(5, 11, 23, 4, c); for (let x = 7; x < 26; x += 3) for (let y = 15; y < 31; y++) g.px(x + Math.round(Math.sin((y + x) / 3)), y, y % 3 ? sh(c, -0.1) : a); g.eye(12, 11, e); g.eye(20, 11, e); },
-  elemental: (g, c, a, e, r) => { for (let y = 2; y < 31; y++) { const w = Math.sin((y / 30) * Math.PI) * 11 + r.int(-1, 1); for (let x = -w; x <= w; x++) { const d = Math.abs(x) / Math.max(1, w); g.px(16 + x, y, d < 0.35 ? sh(c, 0.6) : d < 0.7 ? c : sh(c, -0.25)); } } g.eye(13, 13, "#ffffff", true); g.eye(19, 13, "#ffffff", true); g.rect(14, 19, 5, 1, sh(c, -0.5)); },
-  dragon: (g, c, a, e, r) => { wings(g, 13, 14, 12, 11, sh(c, -0.25)); for (const x of [9, 20]) g.limb(x, 22, x, 30, 2.4, 2, sh(c, -0.1)); g.ball(15, 20, 9, 6, c); g.limb(6, 22, 0, 28, 3, 1, c); g.limb(21, 16, 25, 9, 3, 2.4, c); g.ball(27, 8, 5, 4, c); g.rect(30, 9, 2, 2, sh(c, -0.3)); g.eye(28, 7, e, true); horns(g, 27, 5, a, r, 2); spikes(g, 9, 21, 15, a, r); g.ball(15, 22, 6, 2, sh(a, 0.3)); },
-  hydra: (g, c, a, e, r) => { g.ball(16, 24, 11, 7, c); for (const [x, t] of [[6, 4], [16, 0], [26, 4]] as const) { g.limb(16 + (x - 16) * 0.3, 20, x, t + 6, 2.2, 1.8, c); g.ball(x, t + 5, 3.5, 3, c); g.eye(x + 1, t + 4, e); } spikes(g, 8, 24, 18, a, r); },
-  mimic: (g, c, a, e, r) => { g.rect(5, 16, 22, 14, c); g.rect(5, 16, 22, 2, sh(c, 0.3)); g.rect(5, 8, 22, 6, c); g.rect(5, 8, 22, 1, sh(c, 0.3)); g.rect(5, 14, 22, 2, "#3a0a14"); for (let x = 6; x < 26; x += 3) { g.px(x, 14, "#ffffff"); g.px(x + 1, 15, "#ffffff"); } g.rect(14, 18, 4, 4, a); g.eye(10, 11, e, true); g.eye(22, 11, e, true); g.line(27, 15, 31, 20, "#e04a6a", 2); },
-};
-
 // ------------------------------------------------------------ public API
 const cache = new Map<string, HTMLCanvasElement>();
 const smallCache = new Map<string, HTMLCanvasElement>();
@@ -297,7 +209,9 @@ export function creatureCanvas(s: CreatureSpec): HTMLCanvasElement {
   const g = new Grid(rng);
   const a = s.c2 ?? sh(s.c, 0.45);
   const e = s.eye ?? (rng.chance(0.5) ? "#ffe14a" : "#ff4a4a");
-  (D[s.plan] ?? D.blob)(g, s.c, a, e, rng);
+  const art = new Sprite((c) => c);
+  (PLAN_ART[s.plan] ?? PLAN_ART.blob)(art, s.c, a, e, rng);
+  for (let i = 0; i < S * S; i++) g.g[Math.floor(i / S)][i % S] = art.g[i];
   // the region leaves its mark: family first (body), then the element (aura)
   if (s.fam) FAM_FX[s.fam]?.(g, new Rng(s.seed ^ 0x5eed));
   if (s.el) EL_FX[s.el]?.(g, new Rng(s.seed ^ 0xe1e));
