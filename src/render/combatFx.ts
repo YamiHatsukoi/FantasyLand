@@ -1,4 +1,6 @@
 import type { Element } from "../combat/types";
+// visual pauses vanish while the tab is hidden, so background auto-battles keep going
+import { pace as sleep } from "../ui/dom";
 
 /**
  * Battle choreography and effects. Melee fighters wind up, dash across to their target, strike
@@ -39,7 +41,6 @@ export function shotFor(el: Element): ShotKind {
   return ({ fire: "orb", ice: "shard", lightning: "bolt", water: "orb", earth: "rock", wind: "wave", light: "beam", dark: "orb", poison: "glob", arcane: "orb", physical: "orb" } as Record<Element, ShotKind>)[el] ?? "orb";
 }
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export class CombatFx {
   private cv: HTMLCanvasElement;
