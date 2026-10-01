@@ -1,6 +1,6 @@
 import { app, type Screen } from "../app";
 import { hashString } from "../core/rng";
-import { buildingCost, canAfford, count, logMsg, pay, type PlacedBuilding } from "../core/state";
+import { addItem, buildingCost, canAfford, count, logMsg, pay, type PlacedBuilding } from "../core/state";
 import { BUILDINGS, BUILDING_LIST, RANK_NAMES, type BuildingCategory } from "../data/buildings";
 import { SEASON_ICONS, SEASON_NAMES, seasonOf } from "../data/items";
 import { CROP_LIFT, buildingCanvas, cropCanvas } from "../render/buildings";
@@ -11,7 +11,7 @@ import { T, tileSet } from "../render/tiles";
 import { BIOMES } from "../world/biomes";
 import { findPath } from "../world/mapgen";
 import { SPROUT, SZ_H, SZ_W, blockerAt, buildLimitReason, buildingAt, canPlace, inTerritory, territory } from "../world/sanctuary";
-import { h, openModal, toast, topModalOpen } from "../ui/dom";
+import { confirmBox, h, openModal, toast, topModalOpen } from "../ui/dom";
 import { costView, openBuilding, setMoveHook, showReport } from "./buildingPanels";
 import { WEATHER, advanceDay, cropStage, ensureSlots, housing, isReady, population, rankName, rankOf, tickFarm } from "../world/town";
 import { openHelp, openJournal, openMenu, partyMini, saveDot, showBanner } from "./common";
@@ -130,6 +130,8 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   view.camY = hero.y;
   const petPos = { x: hero.x - 1, y: hero.y };
   let placing: { type: string; moving?: PlacedBuilding; x: number; y: number; built?: number } | null = null;
+  /** Several buildings picked at once, to clear them or move them together. */
+  let sel: { set: Set<PlacedBuilding>; corner: { x: number; y: number } | null; move: { ax: number; ay: number; dx: number; dy: number } | null } | null = null;
   const sim = new ResidentSim(g);
   let ground: HTMLCanvasElement | null = null;
   let edge: [number, number, HTMLCanvasElement][] = [];
@@ -161,18 +163,19 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     updateBadges();
   };
   // dock badges: things that want attention, refreshed with the HUD and every few seconds
-  const badges: Record<string, HTMLElement> = {};
   const todoHooks = () => ({ talkTo: walkToResident, refresh: updateHud });
+  // what each dock entry wants attention for; a group shows the sum of its entries
+  const counts: Record<string, number> = {};
+  const groupBadges: { el: HTMLElement; keys: string[] }[] = [];
   function updateBadges() {
-    if (!badges.todo) return;
     const gg = app.game;
     const list = todoList(gg, todoHooks());
-    badges.todo.textContent = String(todoBadge(list) || "");
-    const partyN = list.filter((t) => t.kind === "party" || t.kind === "tome").length;
-    badges.party.textContent = String(partyN || "");
-    badges.res.textContent = String(list.filter((t) => t.kind === "resident").length || "");
-    badges.bag.textContent = String(gg.newItems?.length || "");
-    badges.gift.textContent = String(giftsWaiting() || "");
+    counts.todo = todoBadge(list);
+    counts.party = list.filter((t) => t.kind === "party" || t.kind === "tome").length;
+    counts.res = list.filter((t) => t.kind === "resident").length;
+    counts.bag = gg.newItems?.length ?? 0;
+    counts.gift = giftsWaiting();
+    for (const gb of groupBadges) gb.el.textContent = String(gb.keys.reduce((n, k) => n + (counts[k] ?? 0), 0) || "");
   }
   function walkToResident(id: string) {
     const a = sim.get(id);
@@ -185,30 +188,67 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     h("button", { class: "icon-btn", onclick: () => view.zoom(1) }, "＋"),
     h("button", { class: "icon-btn", onclick: () => view.zoom(-1) }, "－"),
     h("button", { class: "icon-btn", title: "Về chỗ nhân vật", onclick: () => { view.camX = hero.px; view.camY = hero.py; } }, "◎")));
+  // the dock keeps to a few buttons; related screens are grouped behind one button
   const dock = h("div", { class: "dock" },
     dockBtn("📌", "Việc", () => openTodo(todoHooks()), "todo"),
-    dockBtn("💰", "Bán", () => openSanctuaryMarket(updateHud)),
     dockBtn("🔨", "Xây", () => openBuildMenu()),
-    dockBtn("👥", "Đội", () => openParty({ inDungeon: false, onChange: updateHud }), "party"),
-    dockBtn("🎒", "Túi", () => openInventory({ canSell: true, onChange: updateHud }), "bag"),
-    dockBtn("💞", "Cư dân", () => openResidentList({ find: walkToResident, onClose: updateHud }), "res"),
+    dockGroup("👥", "Đội", [
+      { icon: "👥", label: "Đội hình", fn: () => openParty({ inDungeon: false, onChange: updateHud }), badge: "party" },
+      { icon: "💞", label: "Cư dân", fn: () => openResidentList({ find: walkToResident, onClose: updateHud }), badge: "res" },
+    ]),
+    dockGroup("🎒", "Đồ đạc", [
+      { icon: "🎒", label: "Túi đồ", fn: () => openInventory({ canSell: true, onChange: updateHud }), badge: "bag" },
+      { icon: "💰", label: "Bán hàng loạt", fn: () => openSanctuaryMarket(updateHud) },
+    ]),
     dockBtn("🌀", "Vực Sâu", () => { const gate = app.game.buildings.find((b) => b.type === "gate"); if (gate) openB(gate); }),
-    dockBtn("📜", "Nhật ký", () => openJournal()),
-    dockBtn("🎁", "Quà", () => openGifts({ onChange: updateHud }), "gift"),
-    dockBtn("🌐", "Người chơi", () => openPlayers(hooks.visit)),
-    dockBtn("⚙️", "Menu", () => openMenu()),
+    dockGroup("🌐", "Kết nối", [
+      { icon: "🎁", label: "Hòm quà", fn: () => openGifts({ onChange: updateHud }), badge: "gift" },
+      { icon: "🌐", label: "Người chơi", fn: () => openPlayers(hooks.visit) },
+    ]),
+    dockGroup("⚙️", "Menu", [
+      { icon: "📜", label: "Nhật ký", fn: () => openJournal() },
+      { icon: "⚙️", label: "Cài đặt & lưu", fn: () => openMenu() },
+    ]),
   );
   el.append(dock);
   // one cheap, throttled look at the gift box when arriving home
-  void checkGifts().then((n) => { if (badges.gift.isConnected) badges.gift.textContent = String(n || ""); });
+  void checkGifts().then(() => { if (dock.isConnected) updateBadges(); });
   const placeBar = h("div", { class: "place-bar hidden" });
   el.append(placeBar);
   updateHud();
 
   function dockBtn(icon: string, label: string, fn: () => void, badge?: string) {
-    const b = h("button", { onclick: fn }, h("span", null, icon), h("span", null, label));
-    if (badge) b.append(badges[badge] = h("span", { class: "dock-badge" }));
+    const b = h("button", { onclick: () => { closeDockMenu(); fn(); } }, h("span", null, icon), h("span", null, label));
+    if (badge) { const e = h("span", { class: "dock-badge" }); groupBadges.push({ el: e, keys: [badge] }); b.append(e); }
     return b;
+  }
+  type DockItem = { icon: string; label: string; fn: () => void; badge?: string };
+  let dockMenu: HTMLElement | null = null;
+  let dockMenuFor = "";
+  const outside = (e: PointerEvent) => { if (dockMenu && !dockMenu.contains(e.target as Node) && !(e.target as HTMLElement).closest?.(".dock")) closeDockMenu(); };
+  function closeDockMenu() {
+    dockMenu?.remove(); dockMenu = null; dockMenuFor = "";
+    document.removeEventListener("pointerdown", outside, true);
+  }
+  function dockGroup(icon: string, label: string, items: DockItem[]) {
+    const b = h("button", { class: "has-menu", onclick: () => openDockMenu(b, label, items) }, h("span", null, icon), h("span", null, label));
+    const keys = items.map((i) => i.badge).filter((k): k is string => !!k);
+    if (keys.length) { const e = h("span", { class: "dock-badge" }); groupBadges.push({ el: e, keys }); b.append(e); }
+    return b;
+  }
+  function openDockMenu(anchor: HTMLElement, label: string, items: DockItem[]) {
+    if (dockMenuFor === label) return closeDockMenu();
+    closeDockMenu();
+    const r = anchor.getBoundingClientRect(), er = el.getBoundingClientRect();
+    dockMenu = h("div", { class: "dock-menu" }, items.map((it) => h("button", { onclick: () => { closeDockMenu(); it.fn(); } },
+      h("span", { class: "dm-ico" }, it.icon), h("span", null, it.label),
+      it.badge && counts[it.badge] ? h("span", { class: "dm-badge" }, String(counts[it.badge])) : null)));
+    const cx = Math.max(84, Math.min(er.width - 84, r.left + r.width / 2 - er.left));
+    dockMenu.style.left = `${cx}px`;
+    dockMenu.style.bottom = `${er.bottom - r.top + 8}px`;
+    el.append(dockMenu);
+    dockMenuFor = label;
+    setTimeout(() => document.addEventListener("pointerdown", outside, true));
   }
 
   const openB = (b: PlacedBuilding) => openBuilding(b, {
@@ -231,6 +271,8 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   let buildOnlyOk = false;
   function openBuildMenu() {
     const m = openModal("🔨 Xây Dựng", { wide: true });
+    const tools = h("div", { class: "build-tools" },
+      h("button", { class: "btn small", onclick: () => { m.close(); startSelect(); } }, "🧰 Chọn nhiều — dỡ hoặc dời hàng loạt"));
     let focusSearch = false;
     const render = () => {
       const rank = rankOf(g);
@@ -260,6 +302,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
       }) as HTMLInputElement;
       const okCount = BUILDING_LIST.filter((d) => !d.fixed && !buildLimitReason(g, d.id) && canAfford(g, buildingCost(d.id, 0))).length;
       m.body.replaceChildren(
+        tools,
         h("p", { class: "muted small", style: "margin-top:0" }, `Hạng hiện tại: ${RANK_NAMES[rank]}. Chọn công trình rồi chạm vào vị trí muốn đặt trên bản đồ. Có ${okCount} công trình đủ nguyên liệu để xây ngay.`),
         h("div", { class: "searchbar" }, search,
           h("label", { class: "check" }, h("input", { type: "checkbox", checked: buildOnlyOk, onchange: (e: Event) => { buildOnlyOk = (e.target as HTMLInputElement).checked; render(); } }), "Chỉ hiện cái xây được")),
@@ -346,10 +389,111 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     updateHud();
   }
 
+  // ------------------------------------------------------------ pick several buildings: clear or move them together
+  const movable = (b: PlacedBuilding) => !BUILDINGS[b.type].fixed;
+  function startSelect() {
+    closeDockMenu();
+    sel = { set: new Set(), corner: null, move: null };
+    view.pannable = true;
+    dock.classList.add("hidden");
+    renderSelBar();
+  }
+  function stopSelect() {
+    sel = null;
+    view.pannable = false;
+    dock.classList.remove("hidden");
+    placeBar.classList.remove("sel");
+    renderPlaceBar();
+    updateHud();
+  }
+  function selBounds() {
+    let x0 = Infinity, y0 = Infinity;
+    for (const b of sel!.set) { x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y); }
+    return { x0, y0 };
+  }
+  /** Why the group can't go where it is being moved (null when it can). */
+  function moveProblem(): string | null {
+    if (!sel?.move) return null;
+    for (const b of sel.set) {
+      const why = canPlace(g, b.type, b.x + sel.move.dx, b.y + sel.move.dy, sel.set);
+      if (why) return `${BUILDINGS[b.type].name}: ${why}`;
+    }
+    return null;
+  }
+  function renderSelBar() {
+    if (!sel) return;
+    const s = sel;
+    const n = s.set.size;
+    placeBar.classList.remove("hidden");
+    placeBar.classList.add("sel");
+    const btn = (label: string, fn: () => void, cls = "btn", disabled = false) => h("button", { class: cls, disabled, onclick: fn }, label);
+    if (s.move) {
+      const bad = moveProblem();
+      const still = !s.move.dx && !s.move.dy;
+      placeBar.replaceChildren(
+        h("div", { class: "chip" }, bad ? `❌ ${bad}` : still ? `↔️ Chạm vào chỗ mới cho góc trên-trái của nhóm ${n} công trình` : `✅ Dời ${n} công trình tới đây?`),
+        btn("✓ Đặt", applyMove, "btn primary", !!bad || still),
+        btn("↩ Quay lại", () => { s.move = null; renderSelBar(); }));
+      return;
+    }
+    placeBar.replaceChildren(
+      h("div", { class: "chip" }, n ? `Đã chọn ${n} công trình` : "Chạm công trình để chọn / bỏ chọn", s.corner ? " · chạm góc còn lại của vùng" : n ? "" : " · hoặc chạm 2 ô trống làm 2 góc để chọn cả vùng"),
+      btn("↔️ Dời", () => { const { x0, y0 } = selBounds(); s.move = { ax: x0, ay: y0, dx: 0, dy: 0 }; renderSelBar(); }, "btn primary", !n),
+      btn("🗑️ Dỡ", () => void clearSelected(), "btn", !n),
+      btn("Bỏ chọn", () => { s.set.clear(); s.corner = null; renderSelBar(); }, "btn", !n && !s.corner),
+      btn("✔ Xong", stopSelect));
+  }
+  function applyMove() {
+    if (!sel?.move || moveProblem()) return;
+    const { dx, dy } = sel.move;
+    for (const b of sel.set) { b.x += dx; b.y += dy; }
+    app.dirty();
+    toast(`Đã dời ${sel.set.size} công trình.`, "good");
+    sel.move = null;
+    renderSelBar();
+  }
+  async function clearSelected() {
+    if (!sel?.set.size) return;
+    const list = [...sel.set];
+    const crops = list.some((b) => b.plot?.crop || b.slots?.some((x) => x.crop));
+    if (!(await confirmBox("Dỡ hàng loạt", `Dỡ ${list.length} công trình? Bạn nhận lại một nửa nguyên liệu xây dựng của mỗi cái.${crops ? " Cây trồng bên trong sẽ mất." : ""}`, "Dỡ"))) return;
+    const back: Record<string, number> = {};
+    for (const b of list) for (const [id, n] of Object.entries(buildingCost(b.type, 0))) back[id] = (back[id] ?? 0) + Math.floor(n / 2);
+    g.buildings = g.buildings.filter((b) => !sel!.set.has(b));
+    for (const [id, n] of Object.entries(back)) if (n > 0) addItem(g, id, n);
+    logMsg(g, `Dỡ ${list.length} công trình.`);
+    app.dirty();
+    toast(`Đã dỡ ${list.length} công trình, nhận lại một nửa nguyên liệu.`, "good");
+    sel.set.clear();
+    renderSelBar();
+    updateHud();
+  }
+  function selectTap(tx: number, ty: number) {
+    const s = sel!;
+    if (s.move) { s.move.dx = tx - s.move.ax; s.move.dy = ty - s.move.ay; return renderSelBar(); }
+    const b = buildingAt(g, tx, ty);
+    if (b) {
+      if (!movable(b)) toast(`${BUILDINGS[b.type].name} không dỡ hay dời được.`, "info");
+      else if (s.set.has(b)) s.set.delete(b);
+      else s.set.add(b);
+      s.corner = null;
+    } else if (!s.corner) s.corner = { x: tx, y: ty };
+    else {
+      const x0 = Math.min(s.corner.x, tx), x1 = Math.max(s.corner.x, tx), y0 = Math.min(s.corner.y, ty), y1 = Math.max(s.corner.y, ty);
+      for (const o of g.buildings) {
+        const [w, hh] = BUILDINGS[o.type].size;
+        if (movable(o) && o.x <= x1 && o.x + w - 1 >= x0 && o.y <= y1 && o.y + hh - 1 >= y0) s.set.add(o);
+      }
+      s.corner = null;
+    }
+    renderSelBar();
+  }
+
   // ------------------------------------------------------------ input
   const walkable = (x: number, y: number) => inTerritory(g, x, y) && !blockerAt(g, x, y) && !(x === SPROUT.x && y === SPROUT.y);
 
   view.onTap = (tx, ty) => {
+    if (sel) return selectTap(tx, ty);
     if (placing) {
       placing.x = tx;
       placing.y = ty;
@@ -449,7 +593,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     }
     for (const b of g.buildings) {
       const [bw, bh] = BUILDINGS[b.type].size;
-      if (placing?.moving === b) continue;
+      if (placing?.moving === b || (sel?.move && sel.set.has(b))) continue;
       draw.push({ y: BUILDINGS[b.type].walkable ? b.y : b.y + bh, fn: () => {
         view.img(buildingCanvas(b.type, b.level), b.x, b.y - 1, { w: bw, h: bh + 1 });
         if (b.type === "farm" && b.plot?.watered) {
@@ -516,6 +660,27 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     for (const d of draw) d.fn();
     for (const b of bubbles) b();
 
+    // picked buildings: outlined; while moving, ghosts at the new spot
+    if (sel) {
+      const T = view.tile;
+      for (const b of sel.set) {
+        const [bw, bh] = BUILDINGS[b.type].size;
+        if (sel.move) {
+          const nx = b.x + sel.move.dx, ny = b.y + sel.move.dy;
+          const ok = !canPlace(g, b.type, nx, ny, sel.set);
+          c.fillStyle = ok ? "rgba(90,220,110,0.32)" : "rgba(230,70,70,0.4)";
+          c.fillRect(view.sx(nx), view.sy(ny), bw * T, bh * T);
+          view.img(buildingCanvas(b.type, b.level), nx, ny - 1, { w: bw, h: bh + 1, alpha: 0.75 });
+        } else {
+          c.fillStyle = "rgba(255,214,90,0.22)"; c.fillRect(view.sx(b.x), view.sy(b.y), bw * T, bh * T);
+          c.strokeStyle = "#ffd65a"; c.lineWidth = 2; c.strokeRect(view.sx(b.x) + 1, view.sy(b.y) + 1, bw * T - 2, bh * T - 2);
+        }
+      }
+      if (sel.corner) {
+        c.strokeStyle = "#ffd65a"; c.setLineDash([T / 5, T / 5]); c.lineWidth = 2;
+        c.strokeRect(view.sx(sel.corner.x), view.sy(sel.corner.y), T, T); c.setLineDash([]);
+      }
+    }
     // placement ghost
     if (placing) {
       const [bw, bh] = BUILDINGS[placing.type].size;
@@ -561,6 +726,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
 
   return {
     destroy: () => {
+      closeDockMenu();
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keyup", onKey);
       window.removeEventListener("blur", releaseKeys);
