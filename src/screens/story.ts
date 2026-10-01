@@ -1,4 +1,6 @@
 import { app } from "../app";
+import { takeLevelUps } from "../core/state";
+import { showLevelUps } from "../ui/levelup";
 import { Rng } from "../core/rng";
 import { spriteImg } from "../render/pixel";
 import { EVENTS } from "../story";
@@ -51,6 +53,7 @@ export function playStory(eventId: string, opts: StoryOptions): Promise<StoryRes
       window.removeEventListener("keydown", onKey);
       el.remove();
       app.dirty();
+      void showLevelUps(takeLevelUps());
       resolve(res);
     };
 

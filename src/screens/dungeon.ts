@@ -1,7 +1,8 @@
 import { inTransition, playEncounter } from "../ui/transition";
+import { showLevelUps } from "../ui/levelup";
 import { app, type Screen } from "../app";
 import { Rng, hashString } from "../core/rng";
-import { XP_RATE, charStats, giveXp, logMsg, removeItem, ensureFloorState, type GameState } from "../core/state";
+import { XP_RATE, charStats, giveXp, logMsg, takeLevelUps, removeItem, ensureFloorState, type GameState } from "../core/state";
 import { ENEMIES } from "../data/enemies";
 import { ITEM_LIST, gearForFloor, getItem } from "../data/items";
 import { PLAYER_SKILLS } from "../data/skills";
@@ -760,6 +761,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     logMsg(g, `Hoàn thành Đại Sự Kiện: ${saga.name}.`);
     showBanner(el, `${sagaDef.icon} Hoàn thành!`, saga.name);
     showLoot(`${sagaDef.icon} ${saga.name}`, [sagaDef.done, `💰 ${gold} vàng`, `✨ +${xp} kinh nghiệm cho cả đội`, ...lines, ...lv]);
+    void showLevelUps(takeLevelUps());
     updateHud();
     savePos();
   }

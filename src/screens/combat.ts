@@ -11,7 +11,7 @@ import { unitFromCharacter, unitFromEnemy } from "../combat/factory";
 import { ELEMENTS, STATUSES } from "../combat/statuses";
 import type { BattleEvent, Eff, Element, Skill, Unit } from "../combat/types";
 import { Rng } from "../core/rng";
-import { XP_RATE, isMilestone, charStats, giveXp, logMsg, partyBuffs } from "../core/state";
+import { XP_RATE, isMilestone, charStats, giveXp, takeLevelUps, logMsg, partyBuffs } from "../core/state";
 import { ENEMIES } from "../data/enemies";
 import { BIOME_MATS, ESSENCES, LEGENDARY_BY_BIOME, gearForFloor, getItem, type ItemDef } from "../data/items";
 import { iconURL } from "../render/icons";
@@ -23,6 +23,7 @@ import { giveToGame } from "../story/runner";
 import { BIOMES } from "../world/biomes";
 import { getFloor } from "../world/floors";
 import { h, nn, openModal, pace, toast } from "../ui/dom";
+import { showLevelUps } from "../ui/levelup";
 
 const ENEMY_EL: Record<string, string> = {
   forest: "earth", desert: "fire", swamp: "water", tundra: "ice", fungal: "poison", volcano: "fire", reef: "water", bamboo: "wind",
@@ -911,14 +912,27 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         if (ch) lvl.push(...giveXp(ch, u.hp > 0 ? xp : Math.round(xp / 2)));
       }
       if (enemies.some((u) => u.boss)) logMsg(g, `Hạ gục ${enemies.find((u) => u.boss)!.name}.`);
+      const ups = takeLevelUps();
       body.append(...nn(
         h("h3", null, "Chiến Thắng!"),
         h("div", null, `+${xp} kinh nghiệm · +${gold} vàng`),
         setup.elite ? h("div", { class: "gold small" }, "⭐ Hạ gục Tinh Anh: vàng và kinh nghiệm ×2, chiến lợi phẩm hiếm!") : null,
         battle.breaks ? h("div", { class: "gold small" }, `💥 Phá khiên ×${battle.breaks}: thưởng +${Math.round(Math.min(0.5, battle.breaks * 0.1) * 100)}%`) : null,
         h("div", { class: "loot" }, lootLines.map((l) => h("span", null, l))),
-        lvl.length ? h("div", { class: "gold" }, lvl.join(" ")) : null,
+        ups.length ? h("div", { class: "gold" }, ups.map((l) => `⬆ ${l.name} Lv ${l.to}`).join(" · ")) : lvl.length ? h("div", { class: "gold" }, lvl.join(" ")) : null,
       ));
+      // level-ups: a beam of light on the fighter, then the celebration card
+      if (ups.length) {
+        for (const l of ups) {
+          const u = allies.find((x) => x.charId === l.charId);
+          const v = u && views.get(u.uid);
+          if (!v) continue;
+          v.root.classList.add("lvl-up");
+          v.root.append(h("div", { class: "lvl-pop" }, "LEVEL UP!"));
+        }
+        await pace(1500);
+        await showLevelUps(ups);
+      }
     } else {
       g.stats.deaths++;
       body.append(h("h3", null, "Thất Bại..."), h("p", { class: "muted" }, "Bóng tối nuốt chửng cả đội..."));
