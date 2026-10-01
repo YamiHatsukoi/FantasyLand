@@ -84,3 +84,40 @@ export function playTransition(card: TransitionCard, swap: () => void): Promise<
     running--;
   })();
 }
+
+/**
+ * Short JRPG-style encounter wipe: a flash, then slanted bars sweep in from alternating
+ * sides with a call-out, the battle is built underneath, and the bars sweep away.
+ * Transforms and opacity only. Skipped while the tab is hidden.
+ */
+export function playEncounter(kind: { boss?: boolean; elite?: boolean; ambush?: boolean }, swap: () => void): Promise<void> {
+  if (document.hidden || reduced()) { swap(); return Promise.resolve(); }
+  const tone = kind.boss ? "boss" : kind.elite ? "elite" : kind.ambush ? "ambush" : "";
+  const label = kind.boss ? "👑 BOSS" : kind.ambush ? "⚠ BỊ TẬP KÍCH!" : kind.elite ? "★ TINH ANH" : "⚔ CHẠM TRÁN!";
+  const N = 7;
+  const bars = Array.from({ length: N }, (_, i) => h("div", { class: "enc-bar", style: `top:${(i / N) * 100}%;height:${100 / N + 0.6}%` }));
+  const flash = h("div", { class: "enc-flash" });
+  const call = h("div", { class: "enc-call" }, label);
+  const root = h("div", { class: `enc ${tone}` }, h("div", { class: "enc-bars" }, ...bars), flash, call);
+  document.body.append(root);
+  running++;
+  const sideOf = (i: number) => (i % 2 ? 1 : -1);
+  const IN = 300, STAG = 28, OUT = 320;
+  flash.animate([{ opacity: 0 }, { opacity: 0.85, offset: 0.25 }, { opacity: 0 }], { duration: 260, easing: "ease-out" });
+  const ins = bars.map((b, i) => b.animate([{ transform: `translateX(${sideOf(i) * 115}%)` }, { transform: "translateX(0)" }],
+    { duration: IN, delay: 90 + i * STAG, easing: "cubic-bezier(.2,.8,.3,1)", fill: "both" }).finished);
+  call.animate([{ opacity: 0, transform: "translate(-50%,-50%) scale(1.8)" }, { opacity: 1, transform: "translate(-50%,-50%) scale(1)" }],
+    { duration: 260, delay: 220, easing: "cubic-bezier(.2,.9,.3,1.3)", fill: "both" });
+  return (async () => {
+    await Promise.all(ins).catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 40));
+    try { swap(); } catch (e) { console.error(e); }
+    await new Promise((r) => setTimeout(r, 260));
+    call.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: "forwards" });
+    const outs = bars.map((b, i) => b.animate([{ transform: "translateX(0)" }, { transform: `translateX(${-sideOf(i) * 115}%)` }],
+      { duration: OUT, delay: i * STAG, easing: "cubic-bezier(.6,0,.8,.4)", fill: "forwards" }).finished);
+    await Promise.all(outs).catch(() => undefined);
+    root.remove();
+    running--;
+  })();
+}

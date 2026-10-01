@@ -1,4 +1,4 @@
-import { inTransition } from "../ui/transition";
+import { inTransition, playEncounter } from "../ui/transition";
 import { app, type Screen } from "../app";
 import { Rng, hashString } from "../core/rng";
 import { XP_RATE, charStats, giveXp, logMsg, removeItem, ensureFloorState, type GameState } from "../core/state";
@@ -424,15 +424,23 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   window.addEventListener("blur", releaseKeys);
 
   // ------------------------------------------------------------ interactions
-  const battle = (group: string[], level: number, opts: Partial<BattleSpec> & { elite?: boolean } = {}): Promise<BattleOutcome> =>
-    runBattle({ enemies: group.map((id) => ({ id, level })), floor: floorN, biome: def.biome, enemyFx: opts.enemyFx, noFlee: opts.noFlee, elite: opts.elite, seed: fs.seed });
+  const battle = (group: string[], level: number, opts: Partial<BattleSpec> & { elite?: boolean; /** the monster caught the party */ ambush?: boolean } = {}): Promise<BattleOutcome> =>
+    new Promise((resolve) => {
+      // a short wipe into the fight; the battle is built while the screen is covered
+      const boss = group.some((id) => ENEMIES[id]?.boss);
+      let cleared!: () => void;
+      const ready = new Promise<void>((r) => { cleared = r; });
+      void playEncounter({ boss, elite: opts.elite, ambush: opts.ambush }, () => {
+        void runBattle({ enemies: group.map((id) => ({ id, level })), floor: floorN, biome: def.biome, enemyFx: opts.enemyFx, noFlee: opts.noFlee, elite: opts.elite, seed: fs.seed, ready }).then(resolve);
+      }).then(() => cleared());
+    });
   const elite = (e: MapEntity) => e.kind === "monster" && (e.saga === "beast" || isElitePack(fs.seed, e.id, floorN));
 
   async function fightMonster(m: (typeof ents)[number], ambush: boolean) {
     if (busy || destroyed) return;
     busy = true;
     player.path = [];
-    const out = await battle(m.group!, m.level!, { ...(ambush ? { enemyFx: [{ s: "slow" as const, t: 1 }] } : {}), elite: elite(m) || m.saga === "beast" });
+    const out = await battle(m.group!, m.level!, { ...(ambush ? { enemyFx: [{ s: "slow" as const, t: 1 }] } : {}), elite: elite(m) || m.saga === "beast", ambush: !ambush });
     busy = false;
     if (out === "win") {
       ex.done.push(m.id);
