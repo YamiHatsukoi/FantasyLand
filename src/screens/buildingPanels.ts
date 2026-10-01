@@ -444,6 +444,8 @@ function recipeRow(r: (typeof RECIPES)[number], b: PlacedBuilding, render: () =>
   const out = getItem(r.out);
   const locked = r.level > b.level;
   const ok = !locked && canAfford(g, r.cost);
+  // how many times the recipe can be made with what is in the bag right now
+  const maxTimes = locked ? 0 : Math.min(999, ...Object.entries(r.cost).map(([k, n]) => Math.floor((k === "gold" ? g.gold : count(g, k)) / Math.max(1, n))));
   const craft = (times: number) => {
     let made = 0;
     for (let i = 0; i < times && pay(g, r.cost); i++) { addItem(g, r.out, r.n); made++; }
@@ -460,9 +462,11 @@ function recipeRow(r: (typeof RECIPES)[number], b: PlacedBuilding, render: () =>
       h("div", { class: "name" }, out.name, r.n > 1 ? ` ×${r.n}` : "", out.tier ? h("span", { class: "tag" }, `Bậc ${out.tier}`) : null, count(g, r.out) ? h("span", { class: "tag" }, `có ${count(g, r.out)}`) : null),
       h("div", { class: "desc" }, locked ? `Cần ${BUILDINGS[b.type].name} cấp ${r.level}` : desc),
       costView(r.cost)),
-    locked ? null : h("div", { class: "col", style: "gap:4px" },
+    locked ? null : h("div", { class: "col craft-btns", style: "gap:4px" },
       h("button", { class: "btn small primary", disabled: !ok, onclick: () => craft(1) }, "Chế tạo"),
-      h("button", { class: "btn small", disabled: !ok, onclick: () => craft(5) }, "×5")));
+      h("div", { class: "craft-multi" },
+        [5, 10, 20].map((n) => h("button", { class: "btn small", disabled: maxTimes < 2, onclick: () => craft(n) }, `×${n}`)),
+        h("button", { class: "btn small", disabled: maxTimes < 2, title: "Làm hết số nguyên liệu đang có", onclick: () => craft(maxTimes) }, `Tối đa${maxTimes > 1 ? ` (${maxTimes})` : ""}`))));
 }
 
 // ------------------------------------------------------------ library
