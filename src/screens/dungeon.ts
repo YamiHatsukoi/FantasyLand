@@ -257,7 +257,8 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     const r2 = SIGHT * SIGHT + 2;
     for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) {
       const i = idx(x, y);
-      d[i * 4 + 3] = !fog[i] ? 255 : (x - player.x) ** 2 + (y - player.y) ** 2 <= r2 ? 0 : 115;
+      // remembered ground out of sight is dimmed, much less on a floor charted with a map scroll
+      d[i * 4 + 3] = !fog[i] ? 255 : (x - player.x) ** 2 + (y - player.y) ** 2 <= r2 ? 0 : fs.charted ? 45 : 115;
     }
     fogCtx.putImageData(fogImg, 0, 0);
   }
@@ -1289,9 +1290,10 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     const sp = it.use?.special;
     if (busy) return false;
     if (sp === "revealMap") {
-      for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) if (Math.hypot(x - player.x, y - player.y) < 22) fog[idx(x, y)] = 1;
+      fog.fill(1);
+      fs.charted = true;
       updateFog();
-      toast("🗺️ Bản đồ vùng xung quanh hiện ra rõ ràng.", "good");
+      toast("🗺️ Toàn bộ bản đồ tầng này hiện ra rõ ràng! (Nhấn M hoặc nút Bản đồ để xem.)", "good");
       savePos();
       return true;
     }

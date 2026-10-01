@@ -99,6 +99,8 @@ export interface FloorState {
   cleared: boolean; // guardian defeated
   /** Rune stones touched so far, in order (sealed vault puzzle). */
   puzzle?: string;
+  /** A map scroll was read here: the whole floor is known and drawn bright. */
+  charted?: boolean;
   /** The floor's great event: discovered, finished, and the wave reached (arena-type events). */
   saga?: { seen?: boolean; done?: boolean; step?: number };
 }
