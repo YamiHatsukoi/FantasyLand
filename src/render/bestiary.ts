@@ -1,6 +1,7 @@
 import { K, Sprite } from "./parts";
 import { tint } from "../data/enemies";
 import { shrink32 } from "./creatures";
+import { BOSS_ART } from "./bosses";
 
 /**
  * Hand-drawn 32x32 sprites for the named monsters of the first floors (slime, wolf, wasp...).
@@ -517,7 +518,9 @@ const BEASTS: Record<string, Draw> = {
   },
 };
 
-export const isBeast = (id: string) => id in BEASTS;
+const ART: Record<string, Draw> = { ...BEASTS, ...BOSS_ART };
+
+export const isBeast = (id: string) => id in ART;
 
 const cache = new Map<string, HTMLCanvasElement>();
 
@@ -528,7 +531,7 @@ export function beastCanvas(id: string, pal?: Record<string, string>): HTMLCanva
   const hit = cache.get(k);
   if (hit) return hit;
   const s = new Sprite(t ? (c) => tint(c, t, 0.45) : (c) => c);
-  BEASTS[id](s);
+  ART[id](s);
   const c = s.toCanvas();
   cache.set(k, c);
   return c;
