@@ -29,7 +29,7 @@ export const AFFIXES: Affix[] = [
 export const AFFIX = Object.fromEntries(AFFIXES.map((a) => [a.id, a]));
 
 /** Chance (0..1) that a monster pack on floor n is led by an elite. None on the first floors. */
-export const eliteChance = (floor: number) => (floor < 3 ? 0 : Math.min(0.2, 0.05 + floor * 0.0016));
+export const eliteChance = (floor: number) => (floor < 3 ? 0 : Math.min(0.28, 0.05 + floor * 0.0023));
 
 /** Deterministic per map entity, so an elite stays elite across visits. */
 export function isElitePack(seed: number, entityId: string, floor: number): boolean {
@@ -38,7 +38,7 @@ export function isElitePack(seed: number, entityId: string, floor: number): bool
 
 /** Turns a unit into an elite in place: tougher, a gold star, and its affixes. */
 export function makeElite(b: Battle, u: Unit, floor: number, seed: number) {
-  const n = floor >= 25 ? 2 : 1;
+  const n = floor >= 60 ? 3 : floor >= 25 ? 2 : 1;
   const picks: Affix[] = [];
   let h = hashString(`${seed}:${u.uid}:affix`);
   while (picks.length < n) {

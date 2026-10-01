@@ -3,7 +3,7 @@ import { sfx } from "../audio/sfx";
 import { currentMusic, playMusic } from "../audio/music";
 import { chooseAction } from "../combat/ai";
 import { AFFIX, makeElite } from "../combat/elite";
-import { MECH, mechForFloor } from "../combat/bossMech";
+import { MECH, mechsForFloor } from "../combat/bossMech";
 import { PET, PET_EGG, PET_EVERY, petSpec } from "../data/pets";
 import { creatureCanvas } from "../render/creatures";
 import { CombatFx, shotFor } from "../render/combatFx";
@@ -219,9 +219,10 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   const eOrder = [...enemies].sort((a, b) => Number(!!b.boss) - Number(!!a.boss));
   // the floor boss's signature trick (it starts once the screen is ready, see below)
   const bossUnit = enemies.find((u) => u.boss);
-  const mech = bossUnit && setup.floor > 0 ? mechForFloor(setup.floor) : undefined;
-  if (bossUnit && mech) {
-    bossUnit.mech = mech.id;
+  const mechs = bossUnit && setup.floor > 0 ? mechsForFloor(setup.floor) : [];
+  if (bossUnit && mechs.length) {
+    bossUnit.mech = mechs[0].id;
+    bossUnit.mechs = mechs.map((m) => m.id);
     battle.spawner = (id, lvl, idx) => unitFromEnemy(id, lvl, idx);
   }
   const addEnemyView = (u: Unit) => {
@@ -231,7 +232,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     const intent = h("div", { class: "intent" });
     const shield = h("div", { class: "shieldrow" });
     const affixes = u.elite?.length ? h("div", { class: "affixes" }, u.elite.map((id) => h("span", { class: "affix", title: `${AFFIX[id].name}: ${AFFIX[id].desc}` }, AFFIX[id].icon, " ", AFFIX[id].name)))
-      : u.mech && MECH[u.mech] ? h("div", { class: "affixes" }, h("span", { class: "affix mech", title: MECH[u.mech].desc }, MECH[u.mech].icon, " ", MECH[u.mech].name, h("b", { class: "mech-count" })))
+      : u.mechs?.length ? h("div", { class: "affixes" }, u.mechs.filter((id) => MECH[id]).map((id) => h("span", { class: "affix mech", title: MECH[id].desc }, MECH[id].icon, " ", MECH[id].name, h("b", { class: `mech-count m-${id}` }))))
       : null;
     const body = h("div", { class: "body" }, h("div", { class: "plat" }), img);
     const root = h("div", { class: `unit fighter enemy ${u.boss ? "boss" : ""} ${u.elite ? "elite" : ""}` },
@@ -320,8 +321,9 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         ...weak.map((e) => h("span", { class: `weak ${isKnown(u, e) ? "known" : ""}`, title: isKnown(u, e) ? `Yếu ${ELEMENTS[e].name}` : "Điểm yếu chưa rõ — thử các hệ khác nhau" }, isKnown(u, e) ? ELEMENTS[e].icon : "❔")));
     }
     if (v.intent) renderIntent(u, v.intent);
-    const mc = v.root.querySelector(".mech-count");
-    if (mc) mc.textContent = u.mech === "countdown" ? ` ${u.mechCount ?? ""}` : u.mech === "rebirth" && u.mechUsed ? " (đã dùng)" : "";
+    const cd = v.root.querySelector(".m-countdown"), rb = v.root.querySelector(".m-rebirth");
+    if (cd) cd.textContent = ` ${u.mechCount ?? ""}`;
+    if (rb) rb.textContent = u.mechUsed ? " (đã dùng)" : "";
     v.root.classList.toggle("broken", !!u.broken);
     v.root.classList.toggle("charged", !!u.charged);
     v.root.classList.toggle("dead", u.hp <= 0);
@@ -792,11 +794,11 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     refreshAll();
     if (setup.ready) await setup.ready;
     if (!g.flags.cb_help2) { g.flags.cb_help2 = true; combatHelp(); }
-    if (bossUnit && mech) {
+    if (bossUnit && mechs.length) {
       const minion = setup.enemies.find((e) => !ENEMIES[e.id]?.boss)?.id ?? getFloor(Math.max(1, setup.floor)).enemies[0];
-      announce(`${mech.icon} ${mech.name}`, "warn", 1600);
-      log(`${bossUnit.name}: ${mech.desc}`);
-      battle.initBoss(bossUnit, mech.id, minion);
+      announce(mechs.map((m) => `${m.icon} ${m.name}`).join(" · "), "warn", 1400 + 500 * mechs.length);
+      for (const m of mechs) log(`${bossUnit.name} — ${m.icon} ${m.name}: ${m.desc}`);
+      battle.initBoss(bossUnit, mechs.map((m) => m.id), minion);
       await playEvents();
     }
     await delay(300);

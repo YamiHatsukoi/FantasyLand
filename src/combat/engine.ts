@@ -57,6 +57,18 @@ export const BREAK_BONUS = 1.5;
 /** A charged boss attack hits this much harder. */
 export const CHARGE_MULT = 2.2;
 
+/**
+ * Share of a blow that gets through armour. The armour constant grows with the attacker's level,
+ * so defence keeps mattering at every depth without making either side untouchable: at level 1
+ * 50 defence halves a hit, at level 100 it takes about 650.
+ */
+export const ARMOR_K = (level: number) => 50 * (1 + 0.12 * (Math.max(1, level) - 1));
+export const armorFactor = (def: number, attackerLevel: number) => { const k = ARMOR_K(attackerLevel); return k / (k + Math.max(0, def)); };
+
+/** Every trick a boss has (deeper bosses stack several). */
+export const mechsOf = (u: Unit): string[] => u.mechs ?? (u.mech ? [u.mech] : []);
+export const hasMech = (u: Unit, id: string) => mechsOf(u).includes(id);
+
 export class Battle {
   units: Unit[];
   rng: Rng;
@@ -252,7 +264,10 @@ export class Battle {
     // cooldowns
     for (const k of Object.keys(u.cooldowns)) if (u.cooldowns[k] > 0) u.cooldowns[k]--;
     // boss signature: timed tricks
-    if (u.mech && u.hp > 0) MECH[u.mech]?.turn?.(this, u, (u.mechT = (u.mechT ?? 0) + 1));
+    if (u.mech && u.hp > 0) {
+      const n = (u.mechT = (u.mechT ?? 0) + 1);
+      for (const m of mechsOf(u)) if (u.hp > 0) MECH[m]?.turn?.(this, u, n);
+    }
     // courage: +1 each turn, except right after spending some
     if (u.bp !== undefined) {
       if (!u.boosted) u.bp = Math.min(MAX_BP, u.bp + 1);
@@ -549,7 +564,7 @@ export class Battle {
     dmg = dmg * reaction.mult + reaction.extra;
 
     const defKey: StatKey = sk.kind === "physical" ? "def" : "res";
-    dmg *= 50 / (50 + this.stat(target, defKey));
+    dmg *= armorFactor(this.stat(target, defKey), actor.level);
     dmg *= target.resist[el] ?? 1;
     for (const h of this.hooks(actor, "elemDmg")) if (h.el === el) dmg *= h.mult;
 
@@ -569,7 +584,9 @@ export class Battle {
     if (el === "dark" && this.has(target, "curse")) dmg *= 1.3;
     if (this.has(target, "guard")) dmg *= 0.5;
     // a rallying boss is shielded by its minions
-    if (target.mech === "rally" && this.alive(target.side).some((o) => o.minionOf === target.uid)) dmg *= 0.5;
+    if (hasMech(target, "rally") && this.alive(target.side).some((o) => o.minionOf === target.uid)) dmg *= 0.5;
+    // "diamond" hide: almost nothing gets through except its weaknesses
+    if (hasMech(target, "diamond")) dmg *= (target.resist[el] ?? 1) > 1 ? 1.4 : 0.55;
     if (sk.kind === "magical" && this.has(target, "barrier")) dmg *= 0.6;
     if (this.has(target, "petrify")) dmg *= 0.5;
     if (this.has(target, "sleep")) {
@@ -725,7 +742,7 @@ export class Battle {
 
   breakUnit(u: Unit) {
     u.broken = true;
-    if (u.mech === "countdown") u.mechCount = (u.mechCount ?? 5) + 2;
+    if (hasMech(u, "countdown")) u.mechCount = (u.mechCount ?? 5) + 2;
     this.breaks++;
     if (this.credit) this.statsOf(this.credit).breaks++;
     this.emit({ t: "break", uid: u.uid });
@@ -742,11 +759,13 @@ export class Battle {
   }
 
   /** Starts a boss's signature mechanic (after the screen set `spawner`). */
-  initBoss(u: Unit, mechId: string, minion?: string) {
-    u.mech = mechId;
+  initBoss(u: Unit, mechIds: string | string[], minion?: string) {
+    const ids = typeof mechIds === "string" ? [mechIds] : mechIds;
+    u.mech = ids[0];
+    u.mechs = ids;
     u.minion = minion;
     u.mechT = 0;
-    MECH[mechId]?.start?.(this, u);
+    for (const id of ids) MECH[id]?.start?.(this, u);
   }
 
   private addUnit(u: Unit) {
@@ -860,7 +879,7 @@ export class Battle {
       if (u.hp <= 0) by.kills++;
     }
     if (u.mech) {
-      if (u.hp <= 0 && u.mech === "rebirth" && !u.mechUsed) {
+      if (u.hp <= 0 && hasMech(u, "rebirth") && !u.mechUsed) {
         u.mechUsed = true;
         u.hp = Math.round(this.maxHp(u) * 0.4);
         u.statuses = [];
@@ -870,11 +889,14 @@ export class Battle {
       }
       if (u.hp > 0) {
         const ratio = u.hp / this.maxHp(u);
-        const low = MECH[u.mech]?.low ?? {};
-        for (const k of ["60", "50", "30"] as const) {
-          if (!low[k] || ratio >= Number(k) / 100 || u.mechLow?.includes(k)) continue;
-          (u.mechLow ??= []).push(k);
-          low[k]!(this, u);
+        for (const m of mechsOf(u)) {
+          const low = MECH[m]?.low ?? {};
+          for (const k of ["60", "50", "30"] as const) {
+            const key = `${m}:${k}`;
+            if (!low[k] || ratio >= Number(k) / 100 || u.mechLow?.includes(key)) continue;
+            (u.mechLow ??= []).push(key);
+            low[k]!(this, u);
+          }
         }
       }
     }
