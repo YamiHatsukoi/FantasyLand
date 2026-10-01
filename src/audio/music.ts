@@ -13,7 +13,7 @@ interface Playing { name: string; piece: Piece; events: Ev[]; length: number; sp
 let current = "";
 let playing: Playing | null = null;
 let timer = 0;
-const AHEAD = 0.5; // seconds scheduled in advance
+const AHEAD = 1.0; // seconds scheduled in advance: enough to ride out a busy main thread on phones
 
 function startPiece(name: string, piece: Piece, bus: Bus, delay = 0.12): Playing | null {
   const ctx = audioCtx();
@@ -69,7 +69,7 @@ async function begin(name: string) {
   playing = startPiece(name, piece, "music");
   applySettings();
   window.clearInterval(timer);
-  timer = window.setInterval(tick, 100);
+  timer = window.setInterval(tick, 150);
   tick();
 }
 

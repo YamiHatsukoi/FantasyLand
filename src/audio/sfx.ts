@@ -5,7 +5,7 @@ import { hasBank, hit, loadBanks, note } from "./sampler";
 /**
  * The game's sound effects. Most are recorded orchestral instruments (harp, glockenspiel,
  * bells, marimba, timpani, cymbals, an anvil...) layered with a little synthesis for the
- * punch of blows and the colour of each element, all through the concert-hall reverb.
+ * punch of blows and the colour of each element.
  * `sfx(name)` is safe to call from anywhere: it does nothing before the first tap, while
  * muted, or in a hidden tab; until the instruments have loaded it falls back to synthesis.
  */
@@ -19,9 +19,9 @@ onAudioReady(() => void loadBanks(SFX_BANKS).then(() => preloadJingles()));
 
 const now = () => audioCtx()?.currentTime ?? 0;
 /** A recorded note on the effects bus, `at` seconds from now. */
-const S = (inst: string, midi: number, at = 0, vel = 0.6, dur = 0.6, verb?: number) => note(inst, midi, dur, { when: now() + at, vel, bus: "sfx", verb });
+const S = (inst: string, midi: number, at = 0, vel = 0.6, dur = 0.6) => note(inst, midi, dur, { when: now() + at, vel, bus: "sfx" });
 /** A percussion one-shot on the effects bus. */
-const H = (name: string, at = 0, vel = 0.6, rate = 1, verb?: number) => hit(name, { when: now() + at, vel, bus: "sfx", rate, verb });
+const H = (name: string, at = 0, vel = 0.6, rate = 1) => hit(name, { when: now() + at, vel, bus: "sfx", rate });
 /** A quick harp glissando across a chord (MIDI notes), up or down. */
 const gliss = (notes: number[], at = 0, step = 0.035, vel = 0.5, inst = "harp") => notes.forEach((m, i) => S(inst, m, at + i * step, vel * (0.85 + (i / notes.length) * 0.3), 1.2));
 const MAJ = (root: number, n = 8) => Array.from({ length: n }, (_, i) => root + [0, 4, 7][i % 3] + 12 * Math.floor(i / 3));
@@ -29,13 +29,13 @@ const MIN = (root: number, n = 8) => Array.from({ length: n }, (_, i) => root + 
 
 const RICH: Record<string, (arg?: string) => void> = {
   // ---------------------------------------------------------------- interface
-  click: () => S("marimba", 84 + Math.floor(r(0, 3)), 0, 0.32, 0.12, 0.08),
+  click: () => S("marimba", 84 + Math.floor(r(0, 3)), 0, 0.32, 0.12),
   open: () => { S("harp", 79, 0, 0.42); S("harp", 86, 0.05, 0.38); },
   close: () => { S("harp", 86, 0, 0.32); S("harp", 79, 0.05, 0.3); },
   notify: () => { S("glock", 88, 0, 0.3, 1); S("harp", 76, 0, 0.35); },
   good: () => { gliss([72, 76, 79], 0, 0.05, 0.45); S("glock", 91, 0.1, 0.25, 1); },
-  error: () => { S("marimba", 52, 0, 0.55, 0.3, 0.1); S("marimba", 51, 0.1, 0.5, 0.3, 0.1); H("log_lo", 0, 0.35); },
-  blip: (base) => S("marimba", 57 + Math.round(12 * Math.log2((Number(base) || 330) / 220)) + Math.floor(r(0, 2)), 0, 0.16, 0.05, 0.05),
+  error: () => { S("marimba", 52, 0, 0.55, 0.3); S("marimba", 51, 0.1, 0.5, 0.3); H("log_lo", 0, 0.35); },
+  blip: (base) => S("marimba", 57 + Math.round(12 * Math.log2((Number(base) || 330) / 220)) + Math.floor(r(0, 2)), 0, 0.16, 0.05),
   // ---------------------------------------------------------------- world
   step: () => SYNTH.step(),
   coin: () => { S("glock", 96, 0, 0.3, 0.6); S("glock", 103, 0.06, 0.3, 1); },
@@ -60,11 +60,11 @@ const RICH: Record<string, (arg?: string) => void> = {
   },
   // ---------------------------------------------------------------- combat
   whoosh: () => SYNTH.whoosh(),
-  slash: () => { SYNTH.slash(); H("snare_soft", 0, 0.25, 1.6, 0.15); },
-  hit: () => { SYNTH.hit(); H("kick_soft", 0, 0.5, r(1.1, 1.3), 0.15); },
-  crit: () => { SYNTH.crit(); H("kick", 0, 0.7, 1.15, 0.2); H("crash_soft", 0, 0.4, 1.4, 0.25); },
+  slash: () => { SYNTH.slash(); H("snare_soft", 0, 0.25, 1.6); },
+  hit: () => { SYNTH.hit(); H("kick_soft", 0, 0.5, r(1.1, 1.3)); },
+  crit: () => { SYNTH.crit(); H("kick", 0, 0.7, 1.15); H("crash_soft", 0, 0.4, 1.4); },
   miss: () => SYNTH.miss(),
-  bow: () => { SYNTH.bow(); S("pizz", 76, 0, 0.35, 0.2, 0.1); },
+  bow: () => { SYNTH.bow(); S("pizz", 76, 0, 0.35, 0.2); },
   cast: (el) => castRich(el),
   impact: (el) => impactRich(el),
   heal: () => { gliss(MAJ(67, 7), 0, 0.06, 0.45); S("glock", 98, 0.3, 0.22, 1.5); },
@@ -81,7 +81,7 @@ const RICH: Record<string, (arg?: string) => void> = {
   defeat: () => (jingleReady("defeat") ? playJingle("defeat") : SYNTH.defeat()),
   levelup: () => (jingleReady("levelup") ? playJingle("levelup") : SYNTH.levelup()),
   // ---------------------------------------------------------------- sanctuary
-  build: () => { for (const at of [0, 0.18, 0.34]) { H("log_lo", at, 0.55); H("anvil", at, 0.18, 1.6, 0.2); } },
+  build: () => { for (const at of [0, 0.18, 0.34]) { H("log_lo", at, 0.55); H("anvil", at, 0.18, 1.6); } },
   demolish: () => { SYNTH.demolish(); H("kick", 0, 0.6, 0.85); H("crash_soft", 0.02, 0.35, 0.8); },
   harvest: () => { S("pizz", 72, 0, 0.5, 0.3); S("pizz", 79, 0.07, 0.5, 0.3); H("shaker", 0, 0.3); },
   plant: () => { H("shaker", 0, 0.3, 0.8); S("marimba", 55, 0.04, 0.35, 0.3); },

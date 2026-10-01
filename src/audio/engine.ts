@@ -1,8 +1,8 @@
 /**
  * Web Audio engine: two buses (music and sound effects, each with its own switch and volume,
- * remembered on the device), a concert-hall reverb both can send to, and small synthesis
- * helpers (oscillators and noise through filters and envelopes). Recorded instruments are
- * played by sampler.ts on top of this.
+ * remembered on the device) and small synthesis helpers (oscillators and noise through
+ * filters and envelopes). Recorded instruments are played by sampler.ts on top of this.
+ * Kept light for phones: no reverb, and the context runs at the samples' own rate.
  */
 export interface AudioSettings { music: boolean; sfx: boolean; musicVol: number; sfxVol: number }
 
@@ -14,15 +14,13 @@ export const settings: AudioSettings = load();
 
 let ctx: AudioContext | null = null;
 let master: GainNode, sfxBus: GainNode, musicBus: GainNode;
-/** Inputs of the hall reverb, one per bus so muting a bus also mutes its echo. */
-let musicVerb: GainNode, sfxVerb: GainNode;
 let noiseBuf: AudioBuffer | null = null;
 const readyHooks: (() => void)[] = [];
 
 export const audioCtx = () => ctx;
 export const buses = () => ({ sfx: sfxBus, music: musicBus });
-/** Where a voice goes: the dry bus and the bus's reverb send. */
-export const routes = (bus: "sfx" | "music") => (bus === "music" ? { dry: musicBus, verb: musicVerb } : { dry: sfxBus, verb: sfxVerb });
+/** The bus a voice plays into. */
+export const busNode = (bus: "sfx" | "music") => (bus === "music" ? musicBus : sfxBus);
 /** Runs once the audio context exists (it can only start after a user gesture). */
 export const onAudioReady = (fn: () => void) => { if (ctx) fn(); else readyHooks.push(fn); };
 
@@ -30,7 +28,9 @@ function create() {
   if (ctx) { if (ctx.state === "suspended" && !document.hidden) void ctx.resume(); return; }
   const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
   if (!AC) return;
-  ctx = new AC();
+  // 32 kHz is the rate the instruments were recorded at: a third less work than 48 kHz, same sound.
+  // "balanced" gives the audio thread a little more headroom on busy phones.
+  try { ctx = new AC({ sampleRate: 32000, latencyHint: "balanced" }); } catch { ctx = new AC(); }
   master = ctx.createGain(); master.gain.value = 0.9;
   // a gentle limiter so stacked effects never clip
   const comp = ctx.createDynamicsCompressor();
@@ -38,13 +38,6 @@ function create() {
   master.connect(comp).connect(ctx.destination);
   sfxBus = ctx.createGain(); sfxBus.connect(master);
   musicBus = ctx.createGain(); musicBus.connect(master);
-  // one shared hall: each bus's send passes through that bus's volume first
-  const hall = ctx.createConvolver();
-  hall.buffer = hallImpulse(ctx, 2.6);
-  const ret = ctx.createGain(); ret.gain.value = 0.55;
-  hall.connect(ret).connect(master);
-  musicVerb = ctx.createGain(); musicVerb.connect(hall);
-  sfxVerb = ctx.createGain(); sfxVerb.connect(hall);
   applySettings();
   for (const fn of readyHooks.splice(0)) fn();
 }
@@ -67,8 +60,6 @@ export function applySettings() {
   const sv = settings.sfx ? settings.sfxVol : 0, mv = settings.music ? settings.musicVol * 0.6 : 0;
   sfxBus.gain.setTargetAtTime(sv, t, 0.05);
   musicBus.gain.setTargetAtTime(mv, t, 0.25);
-  sfxVerb.gain.setTargetAtTime(sv, t, 0.05);
-  musicVerb.gain.setTargetAtTime(mv, t, 0.25);
 }
 
 // ------------------------------------------------------------ building blocks
@@ -149,35 +140,3 @@ export function noise(dur: number, o: NoiseOpts = {}) {
 
 /** Note number to frequency (A4 = 69). */
 export const mtof = (m: number) => 440 * 2 ** ((m - 69) / 12);
-
-/**
- * Impulse response of a warm concert hall: a short pre-delay, a few early reflections, then
- * a dense tail that decays to -60 dB over `rt60` seconds and darkens as it fades (high
- * frequencies die first, as in a real room). Left and right are decorrelated for width.
- */
-function hallImpulse(c: BaseAudioContext, rt60: number): AudioBuffer {
-  const sr = c.sampleRate, len = Math.floor(sr * (rt60 + 0.3));
-  const buf = c.createBuffer(2, len, sr);
-  const pre = Math.floor(0.018 * sr);
-  const tau = rt60 / Math.log(1000);
-  for (let ch = 0; ch < 2; ch++) {
-    const d = buf.getChannelData(ch);
-    let lp = 0, seed = ch ? 0x9e3779b9 : 0x7f4a7c15;
-    const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2147483648 - 1; };
-    for (let i = pre; i < len; i++) {
-      const t = (i - pre) / sr;
-      // one-pole low-pass whose cutoff falls from ~9 kHz to ~1.5 kHz along the tail
-      const fc = 1500 + 7500 * Math.exp(-t / 0.35);
-      const a = Math.exp((-2 * Math.PI * fc) / sr);
-      lp = a * lp + (1 - a) * rnd();
-      const swell = Math.min(1, t / 0.03); // diffuse build-up
-      d[i] = lp * Math.exp(-t / tau) * swell * 1.6;
-    }
-    // early reflections
-    for (const [ms, g] of [[11, 0.5], [19, 0.36], [27, 0.3], [38, 0.24], [53, 0.2], [71, 0.15]] as const) {
-      const k = pre + Math.floor(((ms + (ch ? 3 : 0)) / 1000) * sr);
-      if (k < len) d[k] += g * (ch ? -1 : 1);
-    }
-  }
-  return buf;
-}
