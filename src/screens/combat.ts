@@ -4,6 +4,7 @@ import { AFFIX, makeElite } from "../combat/elite";
 import { MECH, mechForFloor } from "../combat/bossMech";
 import { PET, PET_EGG, PET_EVERY, petSpec } from "../data/pets";
 import { creatureCanvas } from "../render/creatures";
+import { CombatFx, shotFor } from "../render/combatFx";
 import { describeSkill, skillCostText } from "../combat/describe";
 import { Battle, CHARGE_MULT, MAX_BOOST, MAX_BP } from "../combat/engine";
 import { unitFromCharacter, unitFromEnemy } from "../combat/factory";
@@ -43,6 +44,7 @@ export type BattleOutcome = "win" | "lose" | "flee";
 
 interface UnitView {
   root: HTMLElement;
+  body?: HTMLElement;
   img: HTMLImageElement;
   hp: HTMLElement;
   mp?: HTMLElement;
@@ -182,6 +184,17 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   const el = h("div", { class: "combat", style: `--cb1:${biome.bg[0]};--cb2:${biome.bg[1]}` },
     h("div", { class: "cb-top" }, h("span", { class: "tl-label" }, "Lượt"), timeline, helpBtn, autoBtn, fastBtn), stage, panel);
   document.body.append(el);
+  const fx = new CombatFx(stage, () => (fast ? 2.2 : 1));
+  /** The blow being played: who threw it and how, so the hits that follow can react to it. */
+  let blow: { side: "ally" | "enemy"; melee: boolean } | null = null;
+  const weaponKind = (u: Unit) => {
+    const id = u.charId ? g.chars[u.charId]?.gear.weapon : undefined;
+    try { return id ? String(getItem(id).equip?.kind ?? "") : ""; } catch { return ""; }
+  };
+  const isBow = (u: Unit, sk: Skill) => sk.school === "bow" || (sk.id === "attack" && /bow/.test(weaponKind(u)));
+  // a plain attack by a caster (a magic weapon, or simply more magic than might) is a small bolt, not a punch
+  const isWandAttack = (u: Unit, sk: Skill) => sk.id === "attack" && (/staff|wand|orb|tome|rod/.test(weaponKind(u)) || (u.base.mag > u.base.atk * 1.15));
+  const spriteOf = (u: Unit) => views.get(u.uid)?.img;
 
   const views = new Map<string, UnitView>();
   const place = (root: HTMLElement, i: number, n: number, side: "left" | "right") => {
@@ -209,13 +222,14 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     const affixes = u.elite?.length ? h("div", { class: "affixes" }, u.elite.map((id) => h("span", { class: "affix", title: `${AFFIX[id].name}: ${AFFIX[id].desc}` }, AFFIX[id].icon, " ", AFFIX[id].name)))
       : u.mech && MECH[u.mech] ? h("div", { class: "affixes" }, h("span", { class: "affix mech", title: MECH[u.mech].desc }, MECH[u.mech].icon, " ", MECH[u.mech].name, h("b", { class: "mech-count" })))
       : null;
+    const body = h("div", { class: "body" }, h("div", { class: "plat" }), img);
     const root = h("div", { class: `unit fighter enemy ${u.boss ? "boss" : ""} ${u.elite ? "elite" : ""}` },
       intent,
       h("div", { class: "plate" }, h("div", { class: "pl-name" }, h("span", null, u.name), h("small", null, `Lv${u.level}`)), affixes, hp, shield, st),
-      h("div", { class: "body" }, h("div", { class: "plat" }), img));
+      body);
     root.addEventListener("click", () => onUnitClick(u));
     sideE.append(root);
-    views.set(u.uid, { root, img, hp, st, intent, shield });
+    views.set(u.uid, { root, body, img, hp, st, intent, shield });
   };
   /** Standing enemies share the formation; fallen ones step aside for newcomers. */
   const layoutEnemies = () => {
@@ -243,25 +257,15 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     const mp = cbar("mp");
     const st = h("div", { class: "statuses" });
     const bp = h("div", { class: "bp-pips", title: "Dũng Khí: +1 mỗi lượt, tiêu để tăng sức đòn đánh" });
+    const body = h("div", { class: "body" }, h("div", { class: "plat" }), img);
     const root = h("div", { class: "unit fighter ally" },
       h("div", { class: "plate" }, h("div", { class: "pl-name" }, h("span", null, u.name.split(" ")[0]), h("small", null, `Lv${u.level}`)), hp, mp, h("div", { class: "pl-row" }, bp, st)),
-      h("div", { class: "body" }, h("div", { class: "plat" }), img));
+      body);
     root.addEventListener("click", () => onUnitClick(u));
     place(root, i, allies.length, "left");
     sideA.append(root);
-    views.set(u.uid, { root, img, hp, mp, st, bp });
+    views.set(u.uid, { root, body, img, hp, mp, st, bp });
   });
-
-  /** Attacker steps toward the other side. */
-  function lunge(u: Unit, magic: boolean) {
-    const v = views.get(u.uid);
-    if (!v) return;
-    const cls = magic ? "cast" : "lunge";
-    v.root.classList.remove("lunge", "cast");
-    void v.root.offsetWidth;
-    v.root.classList.add(cls);
-    setTimeout(() => v.root.classList.remove(cls), 420);
-  }
 
   function setAuto(v: boolean) {
     auto = v;
@@ -359,6 +363,50 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     for (const [uid, v] of views) v.root.classList.toggle("active", !!u && uid === u.uid);
   }
 
+  /** Acts out a skill or item: dash and strike, loose arrows, throw spells, or glow on allies. */
+  async function perform(u: Unit, skillId: string, targetIds: string[]) {
+    const v = views.get(u.uid);
+    const dir = u.side === "ally" ? 1 : -1;
+    const targets = targetIds.map((id) => battle.unit(id)).filter((t): t is Unit => !!t);
+    const foes = targets.filter((t) => t.side !== u.side);
+    blow = { side: u.side, melee: false };
+    if (!v?.body) { await delay(300); return; }
+    const from = fx.pos(v.img, 0.45);
+    const at = (t: Unit) => { const s = spriteOf(t); return s ? fx.pos(s, 0.45) : from; };
+    const volley = async (kind: Parameters<typeof fx.shoot>[2], el: Element) => {
+      await Promise.all(foes.map((t, i) => sleep((i * 70) / (fast ? 2.2 : 1)).then(() => fx.shoot(from, at(t), kind, el))));
+    };
+    if (skillId.startsWith("item:")) {
+      const it = getItem(skillId.slice(5));
+      if (it.use?.dmg && foes.length) { await fx.windup(v.body, dir); await volley("bomb", it.use.dmg.el); }
+      else { for (const t of targets) fx.sparkle(at(t)); await delay(220); }
+      return;
+    }
+    const sk = getSkill(skillId);
+    const offensive = (sk.power ?? 0) > 0 && foes.length > 0;
+    if (offensive && sk.kind === "physical" && !isBow(u, sk) && !isWandAttack(u, sk)) {
+      blow.melee = true;
+      const main = views.get(foes[0].uid);
+      if (main?.body) await fx.dash(v.root, v.body, main.body, sk.id === "attack" ? 60 : 90);
+      return;
+    }
+    if (offensive) {
+      v.root.classList.add("cast");
+      setTimeout(() => v.root.classList.remove("cast"), 600);
+      if (isBow(u, sk)) { await fx.windup(v.body, dir); await volley("arrow", "physical"); return; }
+      const el: Element = isWandAttack(u, sk) ? "arcane" : sk.el === "physical" ? "arcane" : sk.el;
+      await fx.windup(v.body, dir);
+      await volley(shotFor(el), el);
+      return;
+    }
+    // support: healing motes or an aura on whoever it is for
+    v.root.classList.add("cast");
+    setTimeout(() => v.root.classList.remove("cast"), 600);
+    await fx.windup(v.body, dir);
+    for (const t of targets.length ? targets : [u]) { const p = at(t); if ((sk.heal ?? 0) > 0) fx.sparkle(p); else fx.aura(p, sk.el === "physical" ? "light" : sk.el); }
+    await delay(260);
+  }
+
   async function playEvents() {
     const events = battle.drainEvents();
     for (const ev of events) await playEvent(ev);
@@ -375,12 +423,13 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
       case "use": {
         const u = battle.unit(ev.uid);
         if (!u) break;
-        const name = ev.skill.startsWith("item:") ? getItem(ev.skill.slice(5)).name : getSkill(ev.skill).name;
-        const icon = ev.skill.startsWith("item:") ? getItem(ev.skill.slice(5)).icon : getSkill(ev.skill).icon;
+        const isItem = ev.skill.startsWith("item:");
+        const item = isItem ? getItem(ev.skill.slice(5)) : null;
+        const name = item ? item.name : getSkill(ev.skill).name;
+        const icon = item ? item.icon : getSkill(ev.skill).icon;
         log(`${u.name} dùng ${icon} ${name}`);
-        if (!ev.skill.startsWith("item:")) { const sk = getSkill(ev.skill); if ((sk.power ?? 0) > 0) lunge(u, sk.kind !== "physical"); }
         if (ev.skill !== "attack") floaty(u, `${icon} ${name}`, "react");
-        await delay(ev.skill === "attack" ? 220 : 480);
+        await perform(u, ev.skill, ev.targets);
         break;
       }
       case "dmg": {
@@ -388,11 +437,11 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         if (!u) break;
         const v = views.get(u.uid);
         if (v && !ev.dot) {
-          v.root.classList.remove("hit");
-          void v.root.offsetWidth;
-          v.root.classList.add("hit", "flash");
-          setTimeout(() => v.root.classList.remove("flash"), 120);
-          if (ev.crit || u.broken) shake(false);
+          // the blow lands: recoil away from it, sparks the way it travelled, a shake on big hits
+          const dir = blow ? (blow.side === "ally" ? 1 : -1) : u.side === "enemy" ? 1 : -1;
+          if (v.body) fx.knock(v.body, dir, !!ev.crit);
+          fx.impact(fx.pos(v.img, 0.45), ev.el, { dir, crit: ev.crit, physical: blow?.melee || ev.el === "physical" });
+          if (ev.crit || u.broken) shake(!!ev.crit);
         }
         const col = ELEMENTS[ev.el]?.color ?? "#fff";
         const weak = u.side === "enemy" && battle.isWeak(u, ev.el) && !ev.dot;
@@ -407,6 +456,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         const u = battle.unit(ev.uid);
         if (!u) break;
         floaty(u, `+${ev.amount}${ev.mp ? " MP" : ""}`, ev.mp ? "mp" : "heal");
+        { const v = views.get(u.uid); if (v) ev.mp ? fx.sparkle(fx.pos(v.img, 0.5), "#7ab8ff", "rgba(120,180,255,") : fx.sparkle(fx.pos(v.img, 0.5)); }
         refresh(u);
         await delay(140);
         break;
@@ -502,8 +552,12 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
       }
       case "death": {
         const u = battle.unit(ev.uid);
-        if (u) { refresh(u); log(`${u.name} đã gục ngã!`); }
-        await delay(300);
+        if (u) {
+          refresh(u); log(`${u.name} đã gục ngã!`);
+          const v = views.get(u.uid);
+          if (v) fx.defeat(fx.pos(v.img, 0.5));
+        }
+        await delay(340);
         break;
       }
       case "revive": {
@@ -777,6 +831,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
       ch.mp = Math.max(0, Math.min(u.mp, charStats(ch).mp));
     }
     if (outcome === "flee") {
+      fx.destroy();
       el.remove();
       return outcome;
     }
@@ -849,6 +904,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     }
     app.dirty();
     await new Promise<void>((r) => result.append(h("button", { class: "btn primary result-go", onclick: () => r() }, "Tiếp tục")));
+    fx.destroy();
     el.remove();
     return outcome;
   });
