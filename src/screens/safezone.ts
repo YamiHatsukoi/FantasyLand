@@ -262,7 +262,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     sleep: () => {
       sfx("sleep");
       const rep = advanceDay(app.game);
-      app.dirty(true);
+      app.checkpoint(`Ngày ${app.game.day}`);
       showBanner(el, `Ngày ${app.game.day}`, "Cả đội đã hồi phục hoàn toàn");
       showReport(rep.lines, rep.gains);
       void showLevelUps(takeLevelUps());

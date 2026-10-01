@@ -63,6 +63,7 @@ export function openNpc(npc: NpcDef, onClose?: () => void) {
           say(done);
           sys(`Nhận ${q.reward.gold} vàng và ${Object.entries(q.reward.items).map(([id, n]) => `${getItem(id).name} ×${n}`).join(", ")}. Thiện cảm +15`);
           toast("✅ Hoàn thành nhiệm vụ!", "good");
+          app.checkpoint();
         } else say(["Việc tôi nhờ tới đâu rồi?", "Đừng quên lời hứa nhé.", "Tôi vẫn đang chờ đây."][mem.talks % 3]);
         render();
       });
@@ -98,6 +99,7 @@ export function openNpc(npc: NpcDef, onClose?: () => void) {
             if (ch) {
               sys(`🤝 ${ch.name} gia nhập${g.party.includes(ch.id) ? " đội" : " — đang đợi ở Thánh Địa (đội chỉ mang 3 người cùng bạn)"}.`);
               toast(`${ch.name} đã gia nhập!`, "good");
+              app.checkpoint();
             }
           }
           render();

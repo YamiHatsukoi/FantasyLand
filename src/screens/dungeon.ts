@@ -569,9 +569,11 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         busy = false;
         if (res.defeated) return defeat();
         if (res.done && e.kind !== "guardian") fs.done.push(e.id);
-        if (fs.cleared && e.kind === "guardian") showBanner(el, "Cầu thang đã mở!", `Xuống tầng ${floorN + 1}`);
+        const wasCleared = e.kind === "guardian" && fs.cleared;
+        if (wasCleared) showBanner(el, "Cầu thang đã mở!", `Xuống tầng ${floorN + 1}`);
         updateHud();
-        return savePos(true);
+        savePos();
+        return app.checkpoint(wasCleared ? `Hoàn thành tầng ${floorN}` : "");
       }
       case "town": {
         player.path = [];
@@ -609,7 +611,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         const next = g.floors[floorN + 1];
         if (next) { delete next.px; delete next.py; }
         ex.done = [];
-        app.dirty(true);
+        app.checkpoint(`Tầng ${floorN + 1}`);
         return hooks.changeFloor(floorN + 1);
       }
       case "portal": {
@@ -622,7 +624,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
           if (next) { delete next.px; delete next.py; }
           ex.done = [];
           logMsg(g, `Dịch chuyển tới tầng ${choice}.`);
-          app.dirty(true);
+          app.checkpoint(`Tầng ${choice}`);
           return hooks.changeFloor(choice);
         }
         savePos();
@@ -631,7 +633,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         g.meal = null;
         g.flags.tired = true;
         logMsg(g, `Trở về từ tầng ${floorN}.`);
-        app.dirty(true);
+        app.checkpoint("Về Thánh Địa");
         void Promise.resolve(hooks.toSafeZone()).then(() => showLoot("🏡 Về tới Thánh Địa", lines.length ? lines : ["Chuyến đi này không nhặt được gì."], "Bạn thấy mệt mỏi. Hãy vào Nhà Chính ngủ một giấc."));
         return;
       }
@@ -688,7 +690,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     g.meal = null;
     g.flags.tired = true;
     logMsg(g, voluntary ? `Thoát khẩn cấp khỏi tầng ${floorN}.` : `Gục ngã ở tầng ${floorN}.`);
-    app.dirty(true);
+    app.checkpoint("Về Thánh Địa");
     void Promise.resolve(hooks.toSafeZone()).then(() => showLoot(voluntary ? "🏳️ Thoát Khẩn Cấp" : "💀 Gục Ngã", lost.length ? lost : ["Không mất gì."],
       voluntary ? "Mầm kéo cả đội về Thánh Địa. Một nửa chiến lợi phẩm đã rơi lại dưới Vực Sâu." : "Bạn tỉnh dậy bên cạnh Mầm, toàn thân đau nhức. Một nửa chiến lợi phẩm đã bị bỏ lại dưới Vực Sâu."));
   }
@@ -770,6 +772,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     void showLevelUps(takeLevelUps());
     updateHud();
     savePos();
+    app.checkpoint(saga.name);
   }
 
   function sagaAfterFight(m: MapEntity) {
@@ -1324,7 +1327,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         g.meal = null;
         g.flags.tired = true;
         logMsg(g, `Dùng cuộn phép trở về từ tầng ${floorN}.`);
-        app.dirty(true);
+        app.checkpoint("Về Thánh Địa");
         void Promise.resolve(hooks.toSafeZone()).then(() => showLoot("📜 Dịch chuyển về Thánh Địa", lines.length ? lines : ["Chuyến đi này không nhặt được gì."]));
       }, 50);
       return true;

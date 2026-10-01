@@ -859,6 +859,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     }
     // the summary scrolls when the loot is long; the button below it always stays in reach
     const body = h("div", { class: "result-body" });
+    let leveled = false;
     const result = h("div", { class: `result ${outcome === "win" ? "" : "lose"}` }, body);
     panel.replaceChildren(result);
     if (outcome === "win") {
@@ -928,6 +929,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
       }
       if (enemies.some((u) => u.boss)) logMsg(g, `Hạ gục ${enemies.find((u) => u.boss)!.name}.`);
       const ups = takeLevelUps();
+      leveled = ups.length > 0;
       sfx("victory");
       body.append(...nn(
         h("h3", null, "Chiến Thắng!"),
@@ -955,7 +957,9 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
       sfx("defeat");
       body.append(h("h3", null, "Thất Bại..."), h("p", { class: "muted" }, "Bóng tối nuốt chửng cả đội..."));
     }
-    app.dirty();
+    // a boss down or someone levelling up is worth saving right away
+    if (outcome === "win" && (enemies.some((u) => u.boss) || leveled)) app.checkpoint(enemies.some((u) => u.boss) ? "Hạ Boss" : "Lên cấp");
+    else app.dirty();
     await new Promise<void>((r) => result.append(h("button", { class: "btn primary result-go", onclick: () => r() }, "Tiếp tục")));
     fx.destroy();
     el.remove();

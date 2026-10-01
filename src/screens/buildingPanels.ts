@@ -97,7 +97,7 @@ function upgradeRow(m: ModalHandle, b: PlacedBuilding, render: () => void, block
         if (b.type === "greenhouse") ensureSlots(b);
         logMsg(g, `Nâng cấp ${def.name} lên cấp ${b.level}.`);
         toast(`${def.name} đã lên cấp ${b.level}!`, "good");
-        app.dirty(true);
+        app.checkpoint(`${def.name} cấp ${b.level}`);
         m.setTitle(`${def.icon} ${def.name} · Cấp ${b.level}`);
         render();
       },
@@ -210,7 +210,7 @@ function houseBody(m: ModalHandle, b: PlacedBuilding, hooks: PanelHooks, render:
           g.territory = nextT;
           logMsg(g, "Thánh Địa được mở rộng.");
           toast("Thánh Địa đã được mở rộng! Mầm vui vẻ nhảy nhót.", "good");
-          app.dirty(true);
+          app.checkpoint("Mở rộng Thánh Địa");
           render();
         },
       }, "Mở rộng")));
