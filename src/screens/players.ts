@@ -37,13 +37,31 @@ export function openPlayers(visit: (p: PlayerVisit) => void) {
     m.body.append(h("p", { class: "muted" }, "Bạn đang chơi ngoại tuyến. Tính năng này cần đăng nhập vào máy chủ."));
     return;
   }
-  m.body.append(h("p", { class: "muted" }, "Đang tải…"));
-  listPlayers(s).then((list) => {
-    if (!list.length) { m.body.replaceChildren(h("p", { class: "muted" }, "Chưa có ai khác trên máy chủ.")); return; }
-    m.body.replaceChildren(
-      h("p", { class: "muted small", style: "margin-top:0" }, `${list.length} người chơi. Chạm để xem hồ sơ, hoặc sang thăm Thánh Địa của họ (chỉ đi dạo ngắm, không động vào được gì).`),
-      h("div", { class: "list" }, list.map((p) => playerRow(p, visit))));
-  }).catch((e) => m.body.replaceChildren(h("p", { class: "bad" }, errorText(e))));
+  const load = () => {
+    m.body.replaceChildren(h("p", { class: "muted" }, "Đang tải…"));
+    // push our own latest progress first, so what others see of us is current too
+    void app.saver?.flush().catch(() => undefined);
+    listPlayers(s).then((list) => {
+      m.body.replaceChildren(...nn(
+        h("div", { class: "row", style: "justify-content:space-between;gap:8px;align-items:center;margin-bottom:6px" },
+          h("span", { class: "muted small" }, selfLine()),
+          h("button", { class: "btn small", onclick: load }, "🔄 Làm mới")),
+        list.length
+          ? h("p", { class: "muted small", style: "margin-top:0" }, `${list.length} người chơi. Chạm để xem hồ sơ, hoặc sang thăm Thánh Địa của họ (chỉ đi dạo ngắm, không động vào được gì).`)
+          : h("p", { class: "muted" }, "Chưa có ai khác trên máy chủ."),
+        list.length ? h("div", { class: "list" }, list.map((p) => playerRow(p, visit))) : null));
+    }).catch((e) => m.body.replaceChildren(h("p", { class: "bad" }, errorText(e)), h("button", { class: "btn small", onclick: load }, "🔄 Thử lại")));
+  };
+  load();
+}
+
+/** How fresh our own copy on the server is (that is what other players see). */
+function selfLine() {
+  const sv = app.saver;
+  const g = app.game;
+  const when = sv?.lastSync ? ago(new Date(sv.lastSync).toISOString()) : "";
+  const st = sv?.status === "saved" ? `đã đồng bộ ${when || "vừa xong"}` : sv?.status === "saving" || sv?.status === "dirty" ? "đang đồng bộ…" : "chưa đồng bộ được";
+  return `Bạn: tầng ${g.maxFloor} · ngày ${g.day} · ${st}`;
 }
 
 function playerRow(p: PlayerSummary, visit: (p: PlayerVisit) => void) {

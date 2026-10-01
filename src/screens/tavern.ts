@@ -29,7 +29,7 @@ export function openTavern(onChange?: () => void) {
             const ch = hireOffer(g, o.id);
             if (!ch) return;
             toast(`${ch.name} gia nhập${g.party.includes(ch.id) ? " đội" : " (đợi ở Thánh Địa)"}!`, "good");
-            app.dirty(true);
+            app.checkpoint();
             render();
           },
         }, `Thuê 💰${o.price}`)));

@@ -222,7 +222,7 @@ function petPanel(rerender: () => void): HTMLElement {
     g.pets = [...(g.pets ?? []), p.id];
     g.pet ??= p.id;
     toast(`🐣 Trứng nở ra ${p.name}! Món quà: ${p.gift}.`, "good", 5000);
-    app.dirty(true);
+    app.checkpoint();
     rerender();
   };
   return h("div", { class: "col", style: "gap:8px" },

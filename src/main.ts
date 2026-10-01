@@ -18,7 +18,7 @@ import { mountLogin } from "./screens/login";
 import { mountSafeZone } from "./screens/safezone";
 import { mountVisit } from "./screens/visit";
 import { playStory } from "./screens/story";
-import { closeAllModals, h, toast } from "./ui/dom";
+import { closeAllModals, h, savedMark, toast } from "./ui/dom";
 
 app.root = document.getElementById("app")!;
 if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__fl = app;
@@ -99,6 +99,7 @@ window.addEventListener("pagehide", () => void app.saver?.flush());
 
 // sound: the audio context starts on the first tap; every button gets a soft click
 initAudio();
+app.onCheckpoint = savedMark;
 document.addEventListener("pointerdown", (e) => {
   const t = (e.target as Element | null)?.closest?.("button, .item-row, .choice, .dex-card");
   if (t && !(t as HTMLButtonElement).disabled && !t.classList.contains("dlg-choice")) sfx("click");

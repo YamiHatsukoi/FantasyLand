@@ -1080,3 +1080,10 @@ img.iicon.lg { width: 48px; height: 48px; }
 .snd-row .check { min-width: 120px; }
 .snd-vol { flex: 1; accent-color: var(--gold); }
 .snd input[type="checkbox"] { accent-color: var(--gold); }
+
+/* ---------- autosave mark ---------- */
+.saved-mark { position: fixed; right: 12px; bottom: calc(92px + var(--safe-b)); z-index: 79; display: flex; align-items: center; gap: 6px; padding: 5px 10px 5px 8px; border-radius: 999px; background: rgba(20, 24, 36, 0.82); border: 1px solid rgba(120, 220, 160, 0.45); color: #c9f5d8; font-size: 12px; pointer-events: none; opacity: 0; transform: translateY(6px); transition: opacity 0.25s, transform 0.25s; }
+.saved-mark.show { opacity: 1; transform: none; }
+.saved-mark .sm-ico { display: inline-block; }
+.saved-mark.show .sm-ico { animation: sm-pop 0.5s ease-out; }
+@keyframes sm-pop { 0% { transform: scale(0.4); } 60% { transform: scale(1.25); } 100% { transform: scale(1); } }

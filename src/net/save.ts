@@ -33,6 +33,10 @@ export class SaveManager {
   status: SaveStatus = "saved";
   onStatus?: (s: SaveStatus) => void;
   private timer: number | undefined;
+  /** When the scheduled server sync will run (0 = none scheduled). */
+  private due = 0;
+  /** Last time the server copy was written (ms), for the status line. */
+  lastSync = 0;
   private inflight: Promise<void> | null = null;
   private pending = false;
 
@@ -87,8 +91,17 @@ export class SaveManager {
       return;
     }
     this.setStatus("dirty");
+    // a deadline, not a quiet period: steady play (walking, auto-battle) used to push the
+    // timer back forever, so the server copy - what other players see - went stale
+    const at = Date.now() + (immediate ? 50 : 8000);
+    if (this.due && this.due <= at) return;
+    this.schedule(at - Date.now());
+  }
+
+  private schedule(ms: number) {
     window.clearTimeout(this.timer);
-    this.timer = window.setTimeout(() => void this.flush(), immediate ? 50 : 8000);
+    this.due = Date.now() + ms;
+    this.timer = window.setTimeout(() => { this.due = 0; void this.flush(); }, ms);
   }
 
   async flush(force = false): Promise<void> {
@@ -106,17 +119,19 @@ export class SaveManager {
       try {
         this.version = await storeSave(this.session, snapshot, this.version, force);
         writeLocal(this.session, { version: this.version, synced: !this.pending, data: this.game! });
+        this.lastSync = Date.now();
         this.setStatus(this.pending ? "dirty" : "saved");
       } catch (e) {
         this.pending = true;
         window.clearTimeout(this.timer);
+        this.due = 0;
         if (e instanceof ApiError && e.code === "conflict") {
           this.setStatus("conflict");
         } else if (e instanceof ApiError && e.code === "invalid_session") {
           this.setStatus("auth");
         } else {
           this.setStatus("error");
-          this.timer = window.setTimeout(() => void this.flush(), 20000);
+          this.schedule(20000);
         }
         throw e;
       } finally {
@@ -135,6 +150,7 @@ export class SaveManager {
   /** Deletes the progress on the server and on this device; the next load starts a new game. */
   async wipe() {
     window.clearTimeout(this.timer);
+    this.due = 0;
     this.pending = false;
     if (!this.session.offline) this.version = await storeSave(this.session, { wiped: true }, this.version, true);
     this.game = null;

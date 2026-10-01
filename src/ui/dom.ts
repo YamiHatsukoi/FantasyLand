@@ -196,3 +196,14 @@ export function bar(value: number, max: number, cls: string, label?: string) {
     label !== undefined ? h("span", { class: "bar-label" }, label) : null,
   );
 }
+
+let savedEl: HTMLDivElement | null = null;
+let savedTimer = 0;
+/** Small, quiet "💾 Saved" mark in the corner after an important moment was saved. */
+export function savedMark(label = "") {
+  if (!savedEl) { savedEl = h("div", { class: "saved-mark" }); document.body.append(savedEl); }
+  savedEl.replaceChildren(h("span", { class: "sm-ico" }, "💾"), h("span", null, label ? `Đã lưu · ${label}` : "Đã lưu"));
+  savedEl.classList.remove("show"); void savedEl.offsetWidth; savedEl.classList.add("show");
+  window.clearTimeout(savedTimer);
+  savedTimer = window.setTimeout(() => savedEl?.classList.remove("show"), 2200);
+}

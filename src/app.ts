@@ -35,6 +35,20 @@ class App {
   dirty(immediate = false) {
     this.saver?.markDirty(immediate);
   }
+
+  /**
+   * Important moment (new floor, boss down, back home, sleep...): save now, on this device
+   * and on the server, and show a small "saved" mark once it is through.
+   */
+  checkpoint(label = "") {
+    const s = this.saver;
+    if (!s?.game) return;
+    s.markDirty(true);
+    void s.flush().then(() => { if (s.status === "saved" || s.status === "offline") this.onCheckpoint?.(label); });
+  }
+
+  /** Set by the UI layer: shows the "saved" mark. */
+  onCheckpoint?: (label: string) => void;
 }
 
 export const app = new App();

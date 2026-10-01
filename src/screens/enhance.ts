@@ -57,7 +57,7 @@ export function openEnhance(onChange: () => void) {
             if (r === "ok") toast(`✨ ${getItem(ch.gear[key]!).name}!`, "good");
             else if (r === "fail") toast(cat === "soul_gem" ? "💥 Thất bại… Ngọc Hồn Đen đã hoàn lại vàng." : `💥 Thất bại… mất ${cost} vàng. Thử lại nhé.`, "bad");
             if (catalyst && !(g.inventory[catalyst] ?? 0)) catalyst = "";
-            app.dirty();
+            if (r === "ok") app.checkpoint(); else app.dirty();
             render();
           },
         }, max ? "Tối đa" : `💰${cost.toLocaleString("vi-VN")}`)), it.id, { slot: key });
