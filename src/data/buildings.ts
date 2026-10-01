@@ -29,7 +29,7 @@ export interface BuildingDef {
 export const RANK_NAMES = ["", "Trại", "Xóm", "Làng", "Thị Trấn", "Thành Phố", "Kinh Đô"];
 export const POP_REQ = [0, 0, 3, 8, 16, 30, 50];
 export const FLOOR_REQ = [0, 1, 2, 3, 5, 7, 10];
-export const TERRITORY_SIZES = [10, 14, 18, 22, 26, 32, 38, 44, 52, 60];
+export const TERRITORY_SIZES = [20, 28, 36, 44, 52, 64, 76, 88, 104, 120];
 export const MAX_TERRITORY_FOR_RANK = [0, 1, 3, 4, 6, 8, 9];
 
 const B = (d: BuildingDef) => d;
@@ -279,4 +279,4 @@ export function houseRequirement(nextLevel: number) {
 export const passiveSlotsFor = (houseLevel: number) => (houseLevel >= 4 ? 3 : 2);
 export const skillSlotsFor = (houseLevel: number) => (houseLevel >= 5 ? 6 : 5);
 export const PARTY_SIZE = 4; // hero + 3 companions
-export const farmLimitFor = (territory: number) => 8 + territory * 6;
+export const farmLimitFor = (territory: number) => 12 + territory * 9;

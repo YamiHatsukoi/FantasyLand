@@ -7,7 +7,7 @@ import { MapView } from "../render/mapview";
 import { spriteCanvas } from "../render/pixel";
 import { isPerson, personCanvas, type Dir } from "../render/people";
 import { findPath } from "../world/mapgen";
-import { SPROUT, SZ_H, SZ_W, blockerAt, buildingAt, inTerritory, territory } from "../world/sanctuary";
+import { SPROUT, SZ_C, SZ_H, SZ_SHIFT, SZ_W, blockerAt, buildingAt, inTerritory, territory } from "../world/sanctuary";
 import { cropStage, isReady } from "../world/town";
 import { h, toast, topModalOpen } from "../ui/dom";
 import { sanctuaryGround } from "./safezone";
@@ -26,8 +26,12 @@ export function mountVisit(root: HTMLElement, v: PlayerVisit, hooks: { leave: ()
   const view = new MapView(el);
 
   // their sanctuary, shaped like a GameState so the shared map helpers work on it
+  // a save last written before the sanctuary grew (v6) still uses the old, smaller grid
+  const house = v.buildings.find((b) => b.type === "house");
+  const oldGrid = v.v !== undefined ? v.v < 6 : !!house && house.x < SZ_C - 16;
+  const shift = oldGrid ? SZ_SHIFT : 0;
   const buildings: PlacedBuilding[] = v.buildings.filter((b) => BUILDINGS[b.type]).map((b, i) => ({
-    id: `v${i}`, type: b.type, x: b.x, y: b.y, level: b.level || 1,
+    id: `v${i}`, type: b.type, x: b.x + shift, y: b.y + shift, level: b.level || 1,
     plot: b.plot ? { soil: b.plot.soil ?? 0, watered: false, crop: b.plot.crop as CropState | undefined } : undefined,
   }));
   const place = { buildings, territory: v.territory ?? 0 } as unknown as GameState;

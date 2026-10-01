@@ -2,10 +2,12 @@ import { BUILDINGS, RANK_NAMES, TERRITORY_SIZES, farmLimitFor } from "../data/bu
 import type { GameState, PlacedBuilding } from "../core/state";
 import { rankOf } from "./town";
 
-export const SZ_W = 72;
-export const SZ_H = 72;
-export const SZ_C = 36;
-export const SPROUT = { x: 32, y: 35 };
+export const SZ_W = 136;
+export const SZ_H = 136;
+export const SZ_C = 68;
+/** How far everything moved when the sanctuary world grew from 72×72 to 136×136 (save v6). */
+export const SZ_SHIFT = 32;
+export const SPROUT = { x: 64, y: 67 };
 
 export function territory(level: number) {
   const s = TERRITORY_SIZES[Math.min(level, TERRITORY_SIZES.length - 1)];

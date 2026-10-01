@@ -86,6 +86,7 @@ begin
   return json_build_object(
     'username', v_name,
     'updated_at', v_upd,
+    'v', v_data->'v',
     'heroId', v_data->'heroId',
     'party', (select coalesce(jsonb_agg(public.game_public_char(v_data, x)), '[]'::jsonb)
                 from jsonb_array_elements_text(jsonb_build_array(v_data->'heroId') || coalesce(v_data->'party', '[]'::jsonb)) x),

@@ -86,7 +86,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   const view = new MapView(el);
 
   // hero position
-  const hero = { x: 35, y: 37, px: 35, py: 37, path: [] as { x: number; y: number }[], t: 0, flip: false, dir: 0 as Dir };
+  const hero = { x: SPROUT.x + 3, y: SPROUT.y + 2, px: SPROUT.x + 3, py: SPROUT.y + 2, path: [] as { x: number; y: number }[], t: 0, flip: false, dir: 0 as Dir };
   view.camX = hero.x;
   view.camY = hero.y;
   const petPos = { x: hero.x - 1, y: hero.y };

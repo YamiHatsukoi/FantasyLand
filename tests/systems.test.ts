@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SAVE_VERSION, addItem, migrate, newGame } from "../src/core/state";
-import { BUILDING_LIST, MAX_MATERIAL, costFor, expansionCost } from "../src/data/buildings";
+import { BUILDING_LIST, MAX_MATERIAL, TERRITORY_SIZES, costFor, expansionCost, farmLimitFor } from "../src/data/buildings";
+import { SZ_W, territory } from "../src/world/sanctuary";
 import { CROP_LIST, ITEMS, ITEM_LIST } from "../src/data/items";
 import { RECIPES } from "../src/data/recipes";
 import { getFloor } from "../src/world/floors";
@@ -74,11 +75,33 @@ describe("farming & town", () => {
     const g = newGame("A", "warrior", 7) as unknown as Record<string, unknown>;
     g.v = 1;
     const b = (g.buildings as { x: number; y: number; type: string; crop?: unknown; plot?: unknown }[]);
-    for (const x of b) { x.x -= 18; x.y -= 18; delete x.plot; if (x.type === "farm") x.crop = { id: "wheat", planted: 1 }; }
+    // v1 coordinates: 18 + 32 tiles up-left of today's (two world growths since)
+    for (const x of b) { x.x -= 50; x.y -= 50; delete x.plot; if (x.type === "farm") x.crop = { id: "wheat", planted: 1 }; }
     const m = migrate(g);
     expect(m.v).toBe(SAVE_VERSION);
-    expect(m.buildings.find((x) => x.type === "house")!.x).toBe(34);
+    expect(m.buildings.find((x) => x.type === "house")!.x).toBe(66);
     expect(m.buildings.find((x) => x.type === "farm")!.plot!.crop!.id).toBe("wheat");
+  });
+});
+
+describe("bigger sanctuary", () => {
+  it("territories are twice as wide, farm limits 1.5x, and old buildings move with the centre", () => {
+    expect(TERRITORY_SIZES).toEqual([20, 28, 36, 44, 52, 64, 76, 88, 104, 120]);
+    expect(farmLimitFor(0)).toBe(12);
+    expect(farmLimitFor(3)).toBe(39);
+    const g = newGame("A", "warrior", 7);
+    // every starting building sits inside the first territory and the world
+    const t = territory(0);
+    for (const b of g.buildings) expect(b.x >= t.x0 && b.y >= t.y0 && b.x < t.x1 && b.y < t.y1, b.type).toBe(true);
+    const big = territory(TERRITORY_SIZES.length - 1);
+    expect(big.x0).toBeGreaterThanOrEqual(0);
+    expect(big.x1).toBeLessThanOrEqual(SZ_W);
+    // a v5 save: house at the old centre ends up at the same place relative to the new one
+    const old = JSON.parse(JSON.stringify(g));
+    old.v = 5;
+    for (const b of old.buildings) { b.x -= 32; b.y -= 32; }
+    const m = migrate(old);
+    expect(m.buildings.map((b) => [b.x, b.y])).toEqual(g.buildings.map((b) => [b.x, b.y]));
   });
 });
 

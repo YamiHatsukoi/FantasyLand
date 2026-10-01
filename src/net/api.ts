@@ -117,6 +117,8 @@ export interface VisitBuilding {
 
 export interface PlayerVisit {
   username: string;
+  /** Save version of that player (absent if the server SQL predates it). */
+  v?: number;
   updated_at: string;
   heroId: string;
   party: (PublicChar | null)[];
