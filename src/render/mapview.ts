@@ -1,4 +1,11 @@
 import { covered } from "../ui/cover";
+
+/**
+ * Canvas resolution. On phones the map is drawn at one canvas pixel per CSS pixel and scaled up
+ * by the browser with nearest-neighbour (image-rendering: pixelated): pixel art looks the same
+ * (an exact 3x on most phones, sharper than 2x scaled by 1.5), at a fraction of the fill cost.
+ */
+const DPR_CAP = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches ? 1 : 2;
 /** Canvas camera + input for tile maps (dungeon floors and the safe zone). */
 export class MapView {
   canvas: HTMLCanvasElement;
@@ -56,7 +63,7 @@ export class MapView {
 
   resize() {
     const r = this.canvas.getBoundingClientRect();
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
     this.w = Math.max(1, r.width);
     this.h = Math.max(1, r.height);
     this.canvas.width = Math.round(this.w * this.dpr);

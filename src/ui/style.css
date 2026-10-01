@@ -140,14 +140,14 @@ img.sprite, .pix { image-rendering: pixelated; image-rendering: crisp-edges; }
 .note { font-size: 12px; color: var(--muted); text-align: center; margin: 0; }
 
 /* ---------------------------------------------------------------- map screens */
-.map-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.map-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; image-rendering: pixelated; image-rendering: crisp-edges; }
 .hud-top {
   position: absolute; top: 0; left: 0; right: 0; z-index: 5;
   display: flex; align-items: flex-start; gap: 8px; padding: 8px; padding-top: calc(8px + var(--safe-t));
   pointer-events: none;
 }
 .hud-top > * { pointer-events: auto; }
-.chip { background: rgba(8, 12, 10, 0.72); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; font-size: 13px; backdrop-filter: blur(4px); }
+.chip { background: rgba(8, 12, 10, 0.84); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; font-size: 13px; }
 .chip b { color: var(--gold); font-weight: 600; }
 .chip.title { font-family: var(--pixel); font-size: 20px; line-height: 1; }
 .chip.title small { display: block; font-family: var(--body); font-size: 11px; color: var(--muted); margin-top: 2px; }
@@ -163,7 +163,7 @@ img.sprite, .pix { image-rendering: pixelated; image-rendering: crisp-edges; }
 .dock {
   position: absolute; left: 50%; bottom: calc(10px + var(--safe-b)); transform: translateX(-50%); z-index: 5;
   display: flex; gap: 6px; padding: 6px; border-radius: 16px;
-  background: rgba(8, 12, 10, 0.8); border: 1px solid var(--line); backdrop-filter: blur(6px);
+  background: rgba(8, 12, 10, 0.9); border: 1px solid var(--line);
   max-width: calc(100vw - 16px); overflow-x: auto;
 }
 .dock button {
@@ -751,7 +751,7 @@ img.iicon.lg { width: 48px; height: 48px; }
 /* dock groups: a small menu pops up above the button */
 .dock button.has-menu span:nth-child(2)::after { content: " ▴"; opacity: .6; font-size: .85em; }
 .dock-menu { position: absolute; z-index: 8; transform: translateX(-50%); display: flex; flex-direction: column; gap: 2px; padding: 6px; min-width: 168px;
-  border-radius: 14px; background: rgba(8, 12, 10, 0.95); border: 1px solid var(--line); backdrop-filter: blur(6px); box-shadow: 0 10px 30px rgba(0,0,0,.45); animation: pop .12s ease; }
+  border-radius: 14px; background: rgba(8, 12, 10, 0.95); border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0,0,0,.45); animation: pop .12s ease; }
 .dock-menu button { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 0; border-radius: 10px; background: transparent; color: var(--text); font-size: 14px; text-align: left; cursor: pointer; }
 .dock-menu button:hover { background: rgba(255,255,255,.08); }
 .dock-menu .dm-ico { font-size: 20px; width: 24px; text-align: center; }
