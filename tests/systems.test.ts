@@ -231,3 +231,21 @@ describe("sanctuary build costs stay friendly", () => {
     expect(median).toBeLessThanOrEqual(7);
   });
 });
+
+describe("raw material buildings", () => {
+  it("pasture, hunter, vine trellis, pigsty, kiln and mana spring produce every day", async () => {
+    const { advanceDay } = await import("../src/world/town");
+    const g = newGame("A", "warrior", 7);
+    for (const [type, x] of [["pasture", 50], ["hunter", 54], ["vinegarden", 57], ["pigsty", 60], ["kiln", 63], ["mana_spring", 66]] as const) g.buildings.push({ id: `t_${type}`, type, x, y: 58, level: 2 });
+    g.inventory.wood = 50;
+    g.inventory.cloud_cabbage = 10;
+    g.settlers = 20;
+    const before = { ...g.inventory };
+    const rep = advanceDay(g);
+    for (const id of ["hide", "wool", "meat_beast", "fiber_forest", "charcoal", "mana_crystal"]) {
+      expect((g.inventory[id] ?? 0) > (before[id] ?? 0), id).toBe(true);
+      expect(rep.gains[id] ?? 0).toBeGreaterThan(0);
+    }
+    expect(g.inventory.wood).toBeLessThan(50); // the kiln burnt some
+  });
+});

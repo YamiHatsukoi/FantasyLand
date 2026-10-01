@@ -1,4 +1,4 @@
-import { cell, doorAt, foundation, groundShadow, roofSlab, wallTex, windowAt } from "./houses";
+import { cell, doorAt, foundation, groundShadow, house, roofSlab, wallTex, windowAt } from "./houses";
 import { hs, outline, type Paint } from "./palette";
 
 /**
@@ -121,6 +121,16 @@ function fence(p: Paint, col: string, pointed = false) {
 }
 
 // ------------------------------------------------------------ pieces
+/** A low rail fence around a pen: front and back rows of posts, side rails. */
+function penFence(p: Paint, x0: number, y0: number, x1: number, y1: number, col = WOOD) {
+  for (const x of [x0, x1 - 1]) { p.rect(x, y0, 1, y1 - y0, col); p.rect(x, y0, 1, y1 - y0, hs(col, x === x0 ? 0.2 : -0.15)); }
+  for (const y of [y0, y1]) {
+    p.rect(x0, y - 3, x1 - x0, 1, hs(col, 0.28)); p.rect(x0, y - 1, x1 - x0, 1, col);
+    for (let x = x0; x < x1; x += 6) post(p, Math.min(x, x1 - 2), y - 5, y + 1, col, 2);
+    post(p, x1 - 2, y - 5, y + 1, col, 2);
+  }
+}
+
 export const DECOR_DRAW: Record<string, Drawer> = {
   // ---------------------------------------------------------- farm & water buildings
   farm: (p) => {
@@ -275,6 +285,99 @@ export const DECOR_DRAW: Record<string, Drawer> = {
     wallTex(p, 0, 12, 16, H - 14, "#9a9aa0", "stone", 2);
     for (const x of [0, 6, 12]) { const w = x === 12 ? 4 : 4; p.rect(x, 7, w, 5, "#a8a8b0"); p.rect(x, 7, w, 1, "#d0d0d8"); p.rect(x + w - 1, 8, 1, 4, outline("#a8a8b0")); }
     p.rect(0, 12, 16, 1, outline("#9a9aa0"));
+  },
+
+  // ---------------------------------------------------------- livestock & raw materials
+  pasture: (p, W, H) => {
+    p.rect(1, 18, W - 2, H - 20, GRASS); p.rect(1, 18, W - 2, 1, hs(GRASS, 0.2));
+    grassTufts(p, 2, 20, W - 4, H - 24, 21, 24);
+    // hay trough
+    wallTex(p, W - 14, 22, 10, 4, "#9a6a3a", "plank", 2); p.rect(W - 13, 21, 8, 2, "#e0c060"); p.px(W - 11, 20, "#f0d880");
+    const sheep = (x: number, y: number) => {
+      shadow(p, x, y + 4, 4, 1.2);
+      for (const dx of [-2, 2]) p.rect(x + dx, y + 2, 1, 3, "#3a3038");
+      p.blob(x, y, 4.2, 3.2, "#f4f0e8", { lo: -0.12 });
+      for (const [dx, dy] of [[-2, -2], [1, -2], [-3, 0], [2, 1]]) p.px(x + dx, y + dy, "#ffffff");
+      p.blob(x + 4, y - 1, 1.8, 1.6, "#3a3038"); p.px(x + 5, y - 2, "#f4f0e8");
+    };
+    const goat = (x: number, y: number) => {
+      shadow(p, x, y + 4, 4, 1.2);
+      for (const dx of [-2, 2]) p.rect(x + dx, y + 2, 1, 3, "#6a4a30");
+      p.blob(x, y, 3.8, 2.6, "#c8a070");
+      p.blob(x - 4, y - 2, 1.8, 1.6, "#c8a070"); p.line(x - 4, y - 4, x - 2, y - 6, "#e8e0d0"); p.px(x - 5, y - 2, "#2a1a1a"); p.px(x - 5, y, "#f0f0f0");
+    };
+    sheep(10, 27); sheep(26, 33); sheep(36, 26); goat(16, 39);
+    penFence(p, 1, 19, W - 1, H - 2);
+  },
+  hunter: (p, W, H, lv) => {
+    house(p, W, H, { wall: "#8a6a4a", roof: "#4a5a3a", wallKind: "log", roofKind: "shingle", chimney: true, seed: "hunter", level: lv });
+    // antlers over the door and a stretched hide drying on a frame
+    p.line(W / 2 - 4, 26, W / 2 - 1, 29, "#e8dcc0"); p.line(W / 2 + 4, 26, W / 2 + 1, 29, "#e8dcc0"); p.px(W / 2 - 5, 25, "#e8dcc0"); p.px(W / 2 + 5, 25, "#e8dcc0"); p.px(W / 2 - 3, 25, "#e8dcc0"); p.px(W / 2 + 3, 25, "#e8dcc0");
+    p.rect(W - 9, H - 16, 1, 12, DARK); p.rect(W - 2, H - 16, 1, 12, DARK); p.rect(W - 9, H - 16, 8, 1, DARK);
+    p.blob(W - 5, H - 11, 3, 4, "#a87a4a"); p.blob(W - 5, H - 11, 1.6, 2.4, "#c89a6a", { outline: false });
+    for (const [x, y] of [[W - 8, H - 15], [W - 3, H - 15], [W - 8, H - 7], [W - 3, H - 7]]) p.px(x, y, "#e8dcc0");
+  },
+  vinegarden: (p, W, H) => {
+    p.rect(1, 18, W - 2, H - 20, "#6a4a2c"); p.rect(1, 18, W - 2, 1, "#8a6a44");
+    for (let y = 20; y < H - 3; y += 3) p.rect(2, y, W - 4, 1, "#5a3c22");
+    // three trellis rows heavy with vines, bundles of fibre hanging off them
+    for (const [k, y] of [[0, 26], [1, 35], [2, 44]] as const) {
+      if (y > H - 2) continue;
+      for (const x of [3, W / 2, W - 4]) post(p, x - 1, y - 9, y, DARK, 2);
+      p.rect(2, y - 9, W - 4, 1, WOOD); p.rect(2, y - 5, W - 4, 1, WOOD);
+      for (let x = 3; x < W - 3; x += 4) canopy(p, x + 1, y - 7, 3, 2.6, k % 2 ? "#4f9a35" : "#3f8a3a", x + k * 7);
+      for (const x of [8, 20]) { p.rect(x, y - 4, 2, 4, "#c8b070"); p.px(x, y - 4, "#e8d090"); }
+      shadow(p, W / 2, y + 1, W / 2 - 3, 1);
+    }
+  },
+  pigsty: (p, W, H) => {
+    // a low lean-to at the back, a muddy pen and a plank fence
+    wallTex(p, 3, 12, W - 6, 8, "#9a6a3a", "plank", 6);
+    roofSlab(p, 1, W - 2, 5, 12, "#8a6a4a", "thatch", 6);
+    p.rect(1, 20, W - 2, H - 22, "#7a5a3a");
+    for (let i = 0; i < 18; i++) p.px(2 + Math.floor(cell(i, 15) * (W - 4)), 21 + Math.floor(cell(i, 16) * (H - 25)), cell(i, 17) > 0.5 ? "#8a6a48" : "#5a3e26");
+    ell(p, 22, H - 12, 5, 2.2, "#5a4a3a"); ell(p, 22, H - 12.3, 4, 1.4, "#7a8aa0");
+    const pig = (x: number, y: number, c: string) => {
+      shadow(p, x, y + 4, 4, 1.2);
+      for (const dx of [-2, 2]) p.rect(x + dx, y + 2, 1, 2, hs(c, -0.35));
+      p.blob(x, y, 4.2, 3, c);
+      p.blob(x + 4, y, 2, 1.8, hs(c, 0.05)); p.rect(x + 5, y, 2, 1, hs(c, -0.3)); p.px(x + 4, y - 1, "#1a1010");
+      p.px(x + 3, y - 3, hs(c, -0.2)); p.px(x - 4, y - 1, hs(c, -0.3));
+    };
+    pig(10, 27, "#a07060"); pig(20, 33, "#6a4a3a"); p.px(26, 33, "#f0e8d8");
+    penFence(p, 1, 22, W - 1, H - 2);
+  },
+  kiln: (p, W, H) => {
+    groundShadow(p, W, H);
+    // a domed brick kiln with a glowing mouth, a chimney and a wood pile
+    const c = "#b0644a";
+    for (let y = 14; y < H - 5; y++) {
+      const t = (y - 14) / (H - 19), hw = Math.round(5 + Math.sqrt(t) * 8);
+      for (let x = W / 2 - hw; x <= W / 2 + hw; x++) {
+        const brick = (y % 3 === 0) || ((x + (Math.floor(y / 3) % 2) * 2) % 5 === 0);
+        const l = (W / 2 - x) / hw;
+        p.px(x, y, x === W / 2 - hw || x === W / 2 + hw ? outline(c) : brick ? hs(c, -0.3) : hs(c, l * 0.18));
+      }
+    }
+    foundation(p, 2, H - 5, W - 4);
+    glow(p, W / 2, H - 10, 9, "255,140,60");
+    p.rect(W / 2 - 4, H - 13, 8, 7, "#2a1410"); p.rect(W / 2 - 3, H - 12, 6, 5, "#c84a1a"); p.rect(W / 2 - 2, H - 10, 4, 3, "#ffb040"); p.px(W / 2, H - 9, "#fff0a0");
+    p.rect(W / 2 - 5, H - 14, 10, 1, outline(c));
+    p.rect(W / 2 + 3, 5, 4, 10, "#8a5a4a"); p.rect(W / 2 + 3, 5, 1, 10, "#b07a6a"); p.rect(W / 2 + 2, 4, 6, 1, "#5a4a4a");
+    for (const [dx, dy, r, a] of [[5, 1, 2, 0.5], [7, -3, 2.5, 0.38]] as const) { p.g.fillStyle = `rgba(90,86,96,${a})`; p.g.beginPath(); p.g.arc(W / 2 + dx, dy + 2, r, 0, Math.PI * 2); p.g.fill(); }
+    for (let k = 0; k < 3; k++) { p.blob(4 + k * 3, H - 6, 1.8, 1.6, "#8a5a30"); p.px(4 + k * 3, H - 6, "#e0b880"); }
+    p.rect(W - 8, H - 9, 5, 5, "#3a3438"); p.rect(W - 8, H - 9, 5, 1, "#5a5458");
+  },
+  mana_spring: (p, W, H) => {
+    // glowing water in a ring of carved stone, crystals growing out of the rim
+    glow(p, W / 2, H - 14, 18, "120,220,255");
+    pond(p, W / 2, H - 14, W / 2 - 5, 8, 9, "#3ab8e8");
+    for (let i = 0; i < 6; i++) p.px(W / 2 - 6 + i * 2.5, H - 16 + (i % 3), "#e8ffff");
+    for (const [x, base, h, c] of [[5, H - 10, 9, "#8ad8ff"], [W - 6, H - 12, 12, "#b08aff"], [10, H - 22, 7, "#8af0e0"], [W - 11, H - 21, 8, "#8ad8ff"]] as const) {
+      for (let y = base - h; y < base; y++) { const w = Math.min(2, y - (base - h)); for (let xx = x - w; xx <= x + w; xx++) p.px(xx, y, xx === x - w ? hs(c, 0.45) : xx === x + w ? hs(c, -0.3) : c); }
+      p.px(x, base - h, "#ffffff");
+    }
+    p.blob(W / 2, H - 15, 2, 2, "#e8ffff", { outline: false });
   },
 
   // ---------------------------------------------------------- small decorations
