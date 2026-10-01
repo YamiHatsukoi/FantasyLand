@@ -8,6 +8,7 @@ import { EVENTS } from "../story";
 import { ATTR_NAMES, applyEffect, condText, evalCond, fillText, rollCheck, type CheckResult, type StoryCtx } from "../story/runner";
 import type { BattleSpec, Choice, Effect, Scene } from "../story/types";
 import { h } from "../ui/dom";
+import { cover } from "../ui/cover";
 
 export type BattleOutcome = "win" | "lose" | "flee";
 
@@ -36,6 +37,7 @@ export function playStory(eventId: string, opts: StoryOptions): Promise<StoryRes
     const el = h("div", { class: "story", style: opts.bg ? `--sb1:${opts.bg[0]};--sb2:${opts.bg[1]}` : "" },
       h("div", { class: "story-inner" }, title, stage, choiceHost, box));
     document.body.append(el);
+    const uncover = cover();
 
     let typing: number | undefined;
     // number keys pick a choice, space / enter finish the typewriter
@@ -53,6 +55,7 @@ export function playStory(eventId: string, opts: StoryOptions): Promise<StoryRes
       window.clearInterval(typing);
       window.removeEventListener("keydown", onKey);
       el.remove();
+      uncover();
       app.dirty();
       void showLevelUps(takeLevelUps());
       resolve(res);
