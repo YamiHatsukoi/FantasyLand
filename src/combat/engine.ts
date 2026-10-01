@@ -20,6 +20,27 @@ export interface HitResult {
   dmg: number;
 }
 
+/** What one unit did over a battle, for the after-battle report. */
+export interface UnitStats {
+  dealt: number;
+  taken: number;
+  healed: number;
+  /** Shield (barrier) power this unit put on allies. */
+  shielded: number;
+  /** Damage its own barriers soaked up. */
+  absorbed: number;
+  crits: number;
+  kills: number;
+  breaks: number;
+  buffs: number;
+  debuffs: number;
+  dodged: number;
+  turns: number;
+  biggest: number;
+}
+
+export const emptyStats = (): UnitStats => ({ dealt: 0, taken: 0, healed: 0, shielded: 0, absorbed: 0, crits: 0, kills: 0, breaks: 0, buffs: 0, debuffs: 0, dodged: 0, turns: 0, biggest: 0 });
+
 export interface Action {
   skill: string;
   target?: string;
@@ -43,6 +64,10 @@ export class Battle {
   turn = 0;
   /** Shields broken this battle (rewards scale with it). */
   breaks = 0;
+  /** Per-unit tallies for the after-battle report. */
+  readonly stats = new Map<string, UnitStats>();
+  /** Who gets the credit for damage, healing and statuses happening right now. */
+  private credit: string | undefined;
   /** Builds a unit for reinforcements (set by the battle screen). */
   spawner?: (enemyId: string, level: number, index: number) => Unit;
   private spawned = 0;
@@ -164,6 +189,19 @@ export class Battle {
   // ------------------------------------------------------------ turn flow
   private emit(e: BattleEvent) { this.events.push(e); }
 
+  statsOf(uid: string): UnitStats {
+    let s = this.stats.get(uid);
+    if (!s) { s = emptyStats(); this.stats.set(uid, s); }
+    return s;
+  }
+
+  /** Runs `fn` with `uid` credited for whatever it causes. */
+  private as<T>(uid: string | undefined, fn: () => T): T {
+    const prev = this.credit;
+    this.credit = uid;
+    try { return fn(); } finally { this.credit = prev; }
+  }
+
   /** Advance the timeline to the next unit that can act. Returns null when the battle is over. */
   nextTurn(): Unit | null {
     for (let guard = 0; guard < 200; guard++) {
@@ -197,13 +235,13 @@ export class Battle {
         if (src) for (const h of this.hooks(src, "statusDmg")) if (h.s === s.id) dmg *= h.mult;
         if (s.id === "burn") dmg *= u.resist.fire ?? 1;
         if (s.id === "poison") dmg *= u.resist.poison ?? 1;
-        if (dmg > 0) this.damage(u, Math.max(1, Math.round(dmg)), s.id === "burn" ? "fire" : s.id === "poison" ? "poison" : "physical", { dot: true });
+        if (dmg > 0) this.as(s.source, () => this.damage(u, Math.max(1, Math.round(dmg)), s.id === "burn" ? "fire" : s.id === "poison" ? "poison" : "physical", { dot: true }));
       }
     }
     if (u.hp <= 0) return false;
     // regeneration
     const regen = this.has(u, "regen");
-    if (regen) this.heal(u, regen.power);
+    if (regen) this.as(regen.source ?? u.uid, () => this.heal(u, regen.power));
     let mpGain = 0.04;
     if (this.has(u, "manaRegen")) mpGain += 0.1;
     for (const h of this.hooks(u, "turnStart")) {
@@ -252,6 +290,11 @@ export class Battle {
 
   // ------------------------------------------------------------ actions
   act(actor: Unit, action: Action): void {
+    this.statsOf(actor.uid).turns++;
+    this.as(actor.uid, () => this.actInner(actor, action));
+  }
+
+  private actInner(actor: Unit, action: Action): void {
     const skill = getSkill(action.skill);
     const check = this.canUse(actor, skill);
     const sk = check.ok ? skill : getSkill("attack");
@@ -460,6 +503,7 @@ export class Battle {
       if (this.has(actor, "blind")) miss += 0.5;
       if (this.rng.next() < Math.min(0.8, miss)) {
         this.emit({ t: "miss", uid: target.uid });
+        this.statsOf(target.uid).dodged++;
         return { hit: false, dmg: 0 };
       }
     }
@@ -557,7 +601,7 @@ export class Battle {
 
     // thorns
     if (sk.kind === "physical" && this.has(target, "thorns") && final > 0 && actor.hp > 0) {
-      this.damage(actor, Math.max(1, Math.round(final * 0.3)), "physical", { dot: true });
+      this.as(target.uid, () => this.damage(actor, Math.max(1, Math.round(final * 0.3)), "physical", { dot: true }));
     }
 
     // crit follow-ups
@@ -597,7 +641,7 @@ export class Battle {
       // counter attack
       if (!opts.counter && sk.kind === "physical" && sk.target === "enemy" && this.has(target, "counter") && actor.hp > 0 && !this.isDisabled(target)) {
         this.emit({ t: "reaction", uid: target.uid, name: "Phản Đòn" });
-        this.hit(target, actor, getSkill("attack"), 0.6, { counter: true });
+        this.as(target.uid, () => this.hit(target, actor, getSkill("attack"), 0.6, { counter: true }));
       }
     }
     return { hit: true, dmg: final };
@@ -683,6 +727,7 @@ export class Battle {
     u.broken = true;
     if (u.mech === "countdown") u.mechCount = (u.mechCount ?? 5) + 2;
     this.breaks++;
+    if (this.credit) this.statsOf(this.credit).breaks++;
     this.emit({ t: "break", uid: u.uid });
     if (u.charged) {
       u.charged = false;
@@ -799,8 +844,21 @@ export class Battle {
       amount -= absorbed;
       if (sh.power <= 0) this.removeStatus(u, "shield");
     }
+    const hpBefore = u.hp;
     u.hp = Math.max(o.noKill ? 1 : 0, u.hp - amount);
     this.emit({ t: "dmg", uid: u.uid, amount, el, crit: o.crit, dot: o.dot, absorbed: absorbed || undefined });
+    // the report counts health actually lost (no overkill), and what barriers soaked up
+    const lost = hpBefore - u.hp;
+    const mine = this.statsOf(u.uid);
+    mine.taken += lost;
+    if (absorbed) mine.absorbed += absorbed;
+    const by = this.credit && this.credit !== u.uid ? this.statsOf(this.credit) : undefined;
+    if (by) {
+      by.dealt += lost;
+      by.biggest = Math.max(by.biggest, lost);
+      if (o.crit) by.crits++;
+      if (u.hp <= 0) by.kills++;
+    }
     if (u.mech) {
       if (u.hp <= 0 && u.mech === "rebirth" && !u.mechUsed) {
         u.mechUsed = true;
@@ -845,7 +903,10 @@ export class Battle {
     const max = this.maxHp(u);
     const before = u.hp;
     u.hp = Math.min(max, u.hp + Math.round(amount));
-    if (u.hp > before) this.emit({ t: "heal", uid: u.uid, amount: u.hp - before });
+    if (u.hp > before) {
+      this.emit({ t: "heal", uid: u.uid, amount: u.hp - before });
+      this.statsOf(this.credit ?? u.uid).healed += u.hp - before;
+    }
   }
 
   gainMp(u: Unit, amount: number, show: boolean) {
@@ -890,6 +951,12 @@ export class Battle {
       u.statuses.push(inst);
     }
     this.emit({ t: "status", uid: u.uid, s });
+    if (source) {
+      const st = this.statsOf(source.uid);
+      if (s === "shield") st.shielded += Math.round(power);
+      else if (def.kind === "buff" && source.side === u.side) st.buffs++;
+      else if (def.kind === "debuff" && source.side !== u.side) st.debuffs++;
+    }
     // stack thresholds
     const cur = this.has(u, s)!;
     if (s === "chill" && cur.stacks >= 3) {
@@ -927,6 +994,11 @@ export class Battle {
 
   /** Uses a consumable. `floor` scales bomb damage. */
   useItem(actor: Unit, use: ItemUse, targetUid: string | undefined, floor: number, itemId: string): void {
+    this.statsOf(actor.uid).turns++;
+    this.as(actor.uid, () => this.useItemInner(actor, use, targetUid, floor, itemId));
+  }
+
+  private useItemInner(actor: Unit, use: ItemUse, targetUid: string | undefined, floor: number, itemId: string): void {
     this.emit({ t: "use", uid: actor.uid, skill: `item:${itemId}`, targets: targetUid ? [targetUid] : [] });
     let targets: Unit[];
     if (use.target === "allies") targets = this.friends(actor);

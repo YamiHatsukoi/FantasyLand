@@ -257,3 +257,38 @@ describe("elites and boss tricks", () => {
     void a;
   });
 });
+
+describe("after-battle report", () => {
+  it("credits damage, kills, healing, statuses and damage over time to whoever caused them", () => {
+    const a = dummy("ally", "a");
+    const h = dummy("ally", "h");
+    const e = dummy("enemy", "e", { hp: 120 });
+    const b = new Battle([a, h], [e], 3);
+    a.hp = 500;
+    b.act(a, { skill: "attack", target: "e" });
+    const sa = b.statsOf("a"), se = b.statsOf("e");
+    expect(sa.turns).toBe(1);
+    expect(sa.dealt).toBe(se.taken);
+    expect(sa.dealt).toBeGreaterThan(0);
+    expect(sa.dealt).toBeLessThanOrEqual(120); // no overkill
+    // a poison applied by h keeps counting for h on the enemy's turns
+    const e2 = dummy("enemy", "e2");
+    const b2 = new Battle([a, h], [e2], 4);
+    b2.addStatus(e2, "poison", 3, 2, 0, h);
+    expect(b2.statsOf("h").debuffs).toBe(1);
+    const hp = e2.hp;
+    (b2 as unknown as { startTurn(u: Unit): boolean }).startTurn(e2);
+    expect(b2.statsOf("h").dealt).toBe(hp - e2.hp);
+    // healing goes to the healer, shields to whoever cast them
+    b2.addStatus(a, "regen", 2, 1, 40, h);
+    a.hp = 100;
+    (b2 as unknown as { startTurn(u: Unit): boolean }).startTurn(a);
+    expect(b2.statsOf("h").healed).toBe(40);
+    expect(b2.statsOf("h").buffs).toBe(1);
+    b2.addStatus(a, "shield", 2, 1, 300, h);
+    expect(b2.statsOf("h").shielded).toBe(300);
+    b2.damage(a, 100, "physical", {});
+    expect(b2.statsOf("a").absorbed).toBe(100);
+    expect(b2.statsOf("a").taken).toBe(0);
+  });
+});

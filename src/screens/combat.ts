@@ -26,6 +26,7 @@ import { BIOMES } from "../world/biomes";
 import { getFloor } from "../world/floors";
 import { h, nn, openModal, pace, toast } from "../ui/dom";
 import { showLevelUps } from "../ui/levelup";
+import { openBattleReport } from "../ui/battleReport";
 
 const ENEMY_EL: Record<string, string> = {
   forest: "earth", desert: "fire", swamp: "water", tundra: "ice", fungal: "poison", volcano: "fire", reef: "water", bamboo: "wind",
@@ -960,7 +961,11 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     // a boss down or someone levelling up is worth saving right away
     if (outcome === "win" && (enemies.some((u) => u.boss) || leveled)) app.checkpoint(enemies.some((u) => u.boss) ? "Hạ Boss" : "Lên cấp");
     else app.dirty();
-    await new Promise<void>((r) => result.append(h("button", { class: "btn primary result-go", onclick: () => r() }, "Tiếp tục")));
+    // the report is one tap away, next to "Tiếp tục"
+    const rounds = Math.max(...allies.map((u) => battle.statsOf(u.uid).turns), 0);
+    await new Promise<void>((r) => result.append(h("div", { class: "result-actions" },
+      h("button", { class: "btn result-stats", onclick: () => openBattleReport(battle, allies, enemies, rounds) }, "📊 Thống kê"),
+      h("button", { class: "btn primary result-go", onclick: () => r() }, "Tiếp tục"))));
     fx.destroy();
     el.remove();
     if (prevMusic) playMusic(prevMusic);
