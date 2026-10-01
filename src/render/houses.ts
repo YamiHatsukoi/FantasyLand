@@ -54,7 +54,7 @@ function rng(seed: string) {
   };
 }
 /** Stable per-cell noise in [0, 1). */
-const cell = (x: number, y: number, s = 0) => {
+export const cell = (x: number, y: number, s = 0) => {
   let h = (x * 374761393 + y * 668265263 + s * 2147483647) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
