@@ -1,7 +1,7 @@
 import { BUILDINGS } from "../data/buildings";
 import { CROPS, getItem } from "../data/items";
-import { iconCanvas } from "./icons";
 import { DECOR_DRAW } from "./decor";
+import { DARKWOOD, doorAt, foundation as baseStones, groundShadow, hangingSign, house, lantern as lanternAt, roofSlab, wallTex, windowAt as windowNew, type HouseOpts, type RoofKind, type WallKind } from "./houses";
 import { hs, makeCanvas, mix, outline, rgba, type Paint } from "./palette";
 
 /**
@@ -12,107 +12,25 @@ import { hs, makeCanvas, mix, outline, rgba, type Paint } from "./palette";
  */
 
 const cache = new Map<string, HTMLCanvasElement>();
-const WOOD = "#b07a48", DARKWOOD = "#7a4a2a", STONE = "#9a9aa0", CREAM = "#f0e4c8";
+const WOOD = "#b07a48", CREAM = "#f0e4c8";
 
-// ------------------------------------------------------------ parts
-function foundation(p: Paint, x: number, y: number, w: number, h = 3) {
-  p.rect(x, y, w, h, hs(STONE, -0.1));
-  for (let i = x; i < x + w; i += 4) {
-    const o = ((i - x) / 4) % 2 ? 2 : 0;
-    p.rect(i + o, y, 3, h - 1, STONE);
-    p.px(i + o, y, hs(STONE, 0.3));
-    p.px(i + o + 2, y + h - 2, hs(STONE, -0.3));
-  }
-  p.rect(x, y + h - 1, w, 1, outline(STONE));
+// ------------------------------------------------------------ parts (thin adapters over ./houses)
+function foundation(p: Paint, x: number, y: number, w: number, _h = 3) { baseStones(p, x, y, w); }
+function walls(p: Paint, x: number, y: number, w: number, h: number, col: string, kind: "wood" | "stone" | "plaster" | "log" | WallKind) {
+  wallTex(p, x, y, w, h, col, kind === "wood" ? "siding" : kind === "plaster" ? "timber" : kind);
 }
-
-/** Wooden siding (horizontal boards) or stone blocks. */
-function walls(p: Paint, x: number, y: number, w: number, h: number, col: string, kind: "wood" | "stone" | "plaster" | "log") {
-  p.rect(x, y, w, h, col);
-  if (kind === "wood") for (let yy = y + 2; yy < y + h; yy += 3) { p.rect(x, yy, w, 1, hs(col, -0.2)); p.rect(x, yy - 1, w, 1, hs(col, 0.12)); }
-  if (kind === "log") for (let yy = y + 1; yy < y + h; yy += 3) { p.rect(x, yy, w, 2, col); p.rect(x, yy + 2, w, 1, hs(col, -0.3)); p.px(x, yy, hs(col, 0.3)); p.px(x + w - 1, yy, hs(col, -0.15)); }
-  if (kind === "stone") for (let yy = y; yy < y + h; yy += 4) for (let xx = x + ((yy - y) / 4 % 2 ? 3 : 0); xx < x + w; xx += 6) { p.rect(xx, yy, 5, 3, hs(col, 0.06)); p.px(xx, yy, hs(col, 0.3)); p.rect(xx, yy + 3, 6, 1, hs(col, -0.25)); }
-  if (kind === "plaster") { for (let i = 0; i < w * h / 24; i++) p.px(x + ((i * 37) % w), y + ((i * 17) % h), hs(col, -0.08)); p.rect(x, y, 2, h, DARKWOOD); p.rect(x + w - 2, y, 2, h, DARKWOOD); p.rect(x, y + Math.floor(h / 2), w, 1, DARKWOOD); }
-  p.rect(x, y, 1, h, outline(col));
-  p.rect(x + w - 1, y, 1, h, outline(col));
-  p.rect(x + 1, y, 1, h, hs(col, 0.18));
-  p.rect(x + w - 2, y, 1, h, hs(col, -0.2));
+function roof(p: Paint, x: number, top: number, w: number, h: number, col: string, kind: RoofKind = "shingle") {
+  roofSlab(p, x, x + w - 1, top + 2, top + h, col, kind);
 }
-
-/** Gable roof seen from the front: shingle rows narrowing to a ridge, with an overhang. */
-function roof(p: Paint, x: number, top: number, w: number, h: number, col: string, kind: "shingle" | "thatch" | "slate" | "tile" = "shingle") {
-  for (let i = 0; i < h; i++) {
-    const inset = Math.round(((h - 1 - i) / Math.max(1, h - 1)) * Math.min(w / 2 - 3, h * 0.9));
-    const y = top + i, x0 = x + inset, x1 = x + w - inset - 1;
-    const rowCol = i % 3 === 2 ? hs(col, -0.18) : i % 3 === 0 ? hs(col, 0.08) : col;
-    p.rect(x0, y, x1 - x0 + 1, 1, rowCol);
-    if (kind === "shingle" && i % 3 === 2) for (let xx = x0 + (i % 6 === 2 ? 1 : 3); xx < x1; xx += 4) p.px(xx, y, hs(col, -0.35));
-    if (kind === "thatch") for (let xx = x0; xx <= x1; xx += 2) p.px(xx, y, i % 2 ? hs(col, -0.2) : hs(col, 0.2));
-    if (kind === "tile" && i % 2) for (let xx = x0; xx <= x1; xx += 3) p.px(xx, y, hs(col, -0.3));
-    p.px(x0, y, outline(col));
-    p.px(x1, y, outline(col));
-    if (i < h / 2) p.px(x0 + 1, y, hs(col, 0.3));
-  }
-  p.rect(x + Math.round(w / 2) - 3, top - 1, 6, 1, outline(col));
-  p.rect(x, top + h, w, 1, outline(col));
-  p.rect(x + 1, top + h + 1, w - 2, 1, "rgba(30,15,40,.35)");
-}
-
-function windowAt(p: Paint, x: number, y: number, box = true, lit = false) {
-  p.rect(x, y, 6, 6, CREAM);
-  p.rect(x + 1, y + 1, 4, 4, lit ? "#ffe89a" : "#6aa0c8");
-  p.px(x + 1, y + 1, lit ? "#fff8d0" : "#b8e0f0");
-  p.px(x + 2, y + 1, lit ? "#fff8d0" : "#98c8e8");
-  p.rect(x + 3, y + 1, 1, 4, CREAM);
-  p.rect(x + 1, y + 3, 4, 1, CREAM);
-  p.rect(x - 1, y - 1, 8, 1, outline(CREAM));
-  if (box) {
-    p.rect(x - 1, y + 6, 8, 2, DARKWOOD);
-    for (const [dx, c] of [[0, "#e84a6a"], [2, "#f7d44c"], [4, "#e84a6a"], [6, "#b88aff"]] as const) { p.px(x + dx, y + 5, c); p.px(x + dx, y + 6, "#4f9a35"); }
-  }
-}
-
-function door(p: Paint, x: number, y: number, col = DARKWOOD, w = 6, h = 9) {
-  p.rect(x, y, w, h, col);
-  p.rect(x, y, w, 1, hs(col, 0.25));
-  for (let i = x + 2; i < x + w; i += 2) p.rect(i, y + 1, 1, h - 1, hs(col, -0.2));
-  p.px(x + w - 2, y + Math.floor(h / 2), "#f2c230");
-  p.rect(x - 1, y - 1, w + 2, 1, outline(col));
-  p.rect(x - 1, y + h, w + 2, 2, STONE);
-  p.rect(x - 1, y + h + 1, w + 2, 1, hs(STONE, -0.3));
-}
-
+function windowAt(p: Paint, x: number, y: number, box = true, lit = false) { windowNew(p, x, y, { box, lit }); }
+function door(p: Paint, x: number, y: number, col = DARKWOOD, w = 6, h = 9) { doorAt(p, x, y, { col: hs(col, 0.15), w, h }); }
 function barnDoor(p: Paint, x: number, y: number, w: number, h: number, col: string) {
-  p.rect(x, y, w, h, col);
-  p.rect(x, y, w, 1, CREAM); p.rect(x, y + h - 1, w, 1, CREAM); p.rect(x, y, 1, h, CREAM); p.rect(x + w - 1, y, 1, h, CREAM); p.rect(x + Math.floor(w / 2), y, 1, h, CREAM);
-  p.line(x, y, x + Math.floor(w / 2), y + h - 1, CREAM); p.line(x + Math.floor(w / 2), y, x, y + h - 1, CREAM);
-  p.line(x + Math.floor(w / 2), y, x + w - 1, y + h - 1, CREAM); p.line(x + w - 1, y, x + Math.floor(w / 2), y + h - 1, CREAM);
+  wallTex(p, x, y, w, h, col, "plank", 3);
+  const mid = x + Math.floor(w / 2);
+  for (const [a, b] of [[x, mid], [mid, x + w - 1]]) { p.line(a + 1, y + 1, b - 1, y + h - 2, CREAM); p.line(b - 1, y + 1, a + 1, y + h - 2, CREAM); }
+  p.rect(x, y, w, 1, CREAM); p.rect(x, y + h - 1, w, 1, CREAM); p.rect(x, y, 1, h, CREAM); p.rect(x + w - 1, y, 1, h, CREAM); p.rect(mid, y, 1, h, CREAM);
+  p.rect(x - 1, y - 1, w + 2, 1, outline(col));
 }
-
-function chimney(p: Paint, x: number, y: number, h = 8) {
-  p.rect(x, y, 5, h, "#a8503a");
-  for (let yy = y + 1; yy < y + h; yy += 2) p.rect(x, yy, 5, 1, hs("#a8503a", -0.2));
-  p.rect(x - 1, y, 7, 2, "#8a3a2a");
-  p.rect(x - 1, y, 1, h, outline("#a8503a"));
-  p.g.fillStyle = "rgba(230,230,240,.55)";
-  p.g.fillRect(x + 1, y - 3, 3, 2); p.g.fillRect(x + 2, y - 6, 3, 2); p.g.fillRect(x + 3, y - 9, 2, 2);
-}
-
-function sign(p: Paint, x: number, y: number, emblem: string) {
-  p.rect(x + 1, y - 2, 1, 2, DARKWOOD); p.rect(x + 8, y - 2, 1, 2, DARKWOOD);
-  p.rect(x, y, 10, 9, "#d8b070"); p.rect(x, y, 10, 1, "#f0d8a0"); p.rect(x, y + 8, 10, 1, DARKWOOD);
-  p.rect(x - 1, y, 1, 9, outline("#d8b070")); p.rect(x + 10, y, 1, 9, outline("#d8b070"));
-  p.g.drawImage(iconCanvas(emblem, EMBLEM_PAL[emblem] ?? ["#f2c542", "#8a5a2a", "#ffffff"], 1), 0, 0, 16, 16, x + 1, y + 1, 8, 8);
-}
-
-const EMBLEM_PAL: Record<string, [string, string, string]> = {
-  egg: ["#f4efe6", "#d8c8a0", "#ffffff"], bottle: ["#f4f4f4", "#a0c8e8", "#ffffff"], wool: ["#f4f4f4", "#c8c8c8", "#ffffff"],
-  log: ["#8a5a2a", "#c8a070", "#5a3a1e"], stone: ["#8a8f96", "#6a6e76", "#b0b4ba"], ore: ["#6a6e76", "#e08a3a", "#f2c542"],
-  coin: ["#f2c542", "#c8902a", "#fff4b0"], bowl: ["#c8a070", "#f2c542", "#e04a2a"], ingot: ["#b0b4ba", "#e8e8f0", "#6a6e76"],
-  plank: ["#c8a070", "#8a5a2a", "#e8c890"], block: ["#9a9ea4", "#6a6e76", "#c0c4ca"], cloth: ["#c870a0", "#f0c0d8", "#8a3a6a"],
-  potion: ["#e04a4a", "#c8e0f0", "#ffffff"], book: ["#3a4a9a", "#f2c542", "#ffffff"], cup: ["#c8a070", "#f2e0a0", "#ffffff"], herb: ["#4ab04a", "#2a7a3a", "#a0e080"],
-};
-
 function shadowUnder(p: Paint, W: number, H: number) {
   p.g.fillStyle = "rgba(20,10,40,.25)";
   p.g.beginPath();
@@ -120,51 +38,48 @@ function shadowUnder(p: Paint, W: number, H: number) {
   p.g.fill();
 }
 
-// ------------------------------------------------------------ generic house
-interface HouseOpts {
-  wall: string; roof: string; wallKind?: "wood" | "stone" | "plaster" | "log"; roofKind?: "shingle" | "thatch" | "slate" | "tile";
-  chimney?: boolean; emblem?: string; floors?: number; lit?: boolean;
-}
-function house(p: Paint, W: number, H: number, o: HouseOpts) {
-  const tiles = W / 16;
-  const floors = o.floors ?? 1;
-  const wallH = Math.min(H - 14, 10 + floors * 9);
-  const wallTop = H - 3 - wallH;
-  const roofH = Math.max(8, Math.min(wallTop + 3, Math.round(W * 0.38)));
-  shadowUnder(p, W, H);
-  if (o.chimney) chimney(p, W - 12, Math.max(2, wallTop - roofH + 4), roofH - 2);
-  walls(p, 1, wallTop, W - 2, wallH, o.wall, o.wallKind ?? "wood");
-  foundation(p, 0, H - 4, W, 4);
-  roof(p, -1 + 1, wallTop - roofH + 2, W, roofH, o.roof, o.roofKind);
-  // windows
-  const winY = wallTop + 3;
-  for (let f = 0; f < floors; f++) {
-    const y = winY + f * 9;
-    if (y + 8 > H - 12 && f > 0) break;
-    const slots = tiles <= 2 ? [4, W - 10] : tiles === 3 ? [4, W - 10] : [5, 17, W - 23, W - 11];
-    for (const x of slots) if (f > 0 || Math.abs(x + 3 - W / 2) > 5) windowAt(p, x, y, f === floors - 1, o.lit ?? true);
-  }
-  door(p, Math.round(W / 2) - 3, H - 13, DARKWOOD);
-  if (o.emblem) sign(p, W - 13 > W / 2 + 4 ? W - 13 : W / 2 + 4, wallTop + (floors > 1 ? 12 : 3), o.emblem);
-}
-
 // ------------------------------------------------------------ building table
 type Drawer = (p: Paint, W: number, H: number, level: number) => void;
 
 const D: Record<string, Drawer> = {
   house: (p, W, H, lv) => {
-    const roofs = ["#b84a3a", "#c85a3a", "#6a4aa0", "#3a6ab0", "#c89a2a", "#d8a830"];
-    house(p, W, H, { wall: lv >= 4 ? "#d8c8b0" : "#c8945a", roof: roofs[lv - 1] ?? roofs[0], wallKind: lv >= 4 ? "plaster" : lv >= 2 ? "wood" : "log", chimney: true, floors: lv >= 3 ? 2 : 1 });
-    if (lv >= 5) { p.rect(2, H - 14, W - 4, 1, DARKWOOD); for (let x = 3; x < W - 3; x += 4) p.rect(x, H - 13, 1, 9, CREAM); }
-    if (lv >= 6) { p.rect(W / 2 - 1, 0, 2, 4, "#f2c230"); p.rect(W / 2, 0, 5, 3, "#c83a3a"); }
+    const roofs = ["#b84a3a", "#c0563a", "#6a4aa0", "#3a6ab0", "#3a7a5a", "#c89a2a"];
+    house(p, W, H, {
+      wall: lv >= 5 ? "#e8dcc8" : lv >= 3 ? "#c89a6a" : "#b8804a", roof: roofs[lv - 1] ?? roofs[0],
+      wallKind: lv >= 5 ? "timber" : lv >= 3 ? "siding" : "log", roofKind: lv >= 6 ? "tile" : lv >= 4 ? "slate" : "shingle",
+      chimney: true, floors: lv >= 3 ? 2 : 1, shutters: lv >= 2 ? "#3a6a4a" : undefined, dormer: lv >= 4, gable: lv >= 5, level: lv, seed: "house", props: lv >= 2,
+    });
   },
   gate: (p, W, H) => {
-    shadowUnder(p, W, H);
-    for (const x of [2, W - 9]) { p.rect(x, 10, 7, H - 12, STONE); walls(p, x, 10, 7, H - 12, "#8a8f98", "stone"); }
-    p.rect(1, 6, W - 2, 6, "#a0a4ac"); p.rect(1, 6, W - 2, 1, hs("#a0a4ac", 0.3)); p.rect(1, 11, W - 2, 1, outline("#a0a4ac"));
-    p.rect(9, 12, W - 18, H - 14, "#2a1650");
-    for (let i = 0; i < 8; i++) p.px(10 + ((i * 5) % (W - 20)), 14 + i * 3, i % 2 ? "#c8a0ff" : "#7a4ad8");
-    p.rect(W / 2 - 2, 7, 4, 3, "#b08aff");
+    groundShadow(p, W, H);
+    // violet glow spilling on the ground
+    p.g.fillStyle = "rgba(150,90,255,0.22)"; p.g.beginPath(); p.g.ellipse(W / 2, H - 3, 12, 3, 0, 0, Math.PI * 2); p.g.fill();
+    // the portal itself, an arched opening
+    const px0 = 8, px1 = W - 9, top = 14, bot = H - 5, cx = (px0 + px1) / 2, rx = (px1 - px0) / 2;
+    for (let y = top - Math.round(rx) + 2; y <= bot; y++) for (let x = px0; x <= px1; x++) {
+      const dy = y - (top + 2);
+      if (dy < 0 && (x - cx) ** 2 / (rx * rx) + (dy * dy) / ((rx - 1) * (rx - 1)) > 1) continue;
+      const d = Math.hypot((x - cx) / rx, (y - (top + bot) / 2) / ((bot - top) / 1.6));
+      const sw = Math.sin(Math.atan2(y - (top + bot) / 2, x - cx) * 3 + d * 9);
+      p.px(x, y, d < 0.35 ? "#f0d8ff" : sw > 0.55 ? "#9a6af0" : d < 0.7 ? "#5a2ab8" : "#2a1460");
+    }
+    // stone pillars with quoins and caps
+    for (const x of [1, W - 8]) {
+      walls(p, x, 10, 7, H - 15, "#8a8f9a", "stone");
+      for (let y = 12; y < H - 6; y += 5) { p.rect(x + (y % 10 ? 0 : 3), y, 4, 3, hs("#8a8f9a", 0.22)); p.rect(x + (y % 10 ? 0 : 3), y + 3, 4, 1, hs("#8a8f9a", -0.3)); }
+      p.rect(x - 1, 8, 9, 3, hs("#a0a4ae", 0.1)); p.rect(x - 1, 8, 9, 1, hs("#a0a4ae", 0.35)); p.rect(x - 1, 11, 9, 1, outline("#a0a4ae"));
+      p.rect(x + 2, 5, 3, 3, "#b48aff"); p.px(x + 3, 6, "#f0e0ff");
+      p.g.fillStyle = "rgba(180,140,255,0.3)"; p.g.beginPath(); p.g.arc(x + 3.5, 6.5, 4, 0, Math.PI * 2); p.g.fill();
+    }
+    // arch stones over the opening
+    for (let i = 0; i <= 12; i++) {
+      const a = Math.PI + (i / 12) * Math.PI;
+      const x = Math.round(cx + Math.cos(a) * (rx + 1.5)), y = Math.round(top + 2 + Math.sin(a) * (rx + 0.5));
+      p.rect(x - 1, y - 1, 3, 3, i % 2 ? "#9a9ea8" : "#b0b4be"); p.px(x - 1, y - 1, "#d0d4dc");
+    }
+    p.rect(cx - 1, top - rx - 1, 3, 3, "#c8a0ff"); p.px(cx, top - rx, "#ffffff");
+    foundation(p, 0, H - 5, W);
+    for (let i = 0; i < 7; i++) p.px(px0 + 2 + ((i * 7) % (px1 - px0 - 3)), top + 3 + ((i * 11) % (bot - top - 4)), "#ffffff");
   },
   farm: (p, W, H) => {
     // tilled soil with furrows
@@ -174,43 +89,85 @@ const D: Record<string, Drawer> = {
     p.rect(1, 17, 14, 1, hs(soil, 0.25)); p.rect(1, 30, 14, 1, outline(soil)); p.rect(1, 17, 1, 14, outline(soil)); p.rect(14, 17, 1, 14, outline(soil));
   },
   well: (p, W, H) => {
-    shadowUnder(p, W, H);
-    p.rect(2, 20, 12, 9, STONE); walls(p, 2, 20, 12, 9, "#9a9aa0", "stone");
-    p.rect(3, 20, 10, 2, "#2a4a7a"); p.px(5, 20, "#6aa0d8");
-    p.rect(2, 8, 2, 12, DARKWOOD); p.rect(12, 8, 2, 12, DARKWOOD);
-    roof(p, 0, 3, 16, 6, "#b84a3a");
-    p.rect(7, 12, 1, 5, "#c8a070"); p.rect(6, 17, 3, 3, "#8a5a2a");
+    groundShadow(p, W, H);
+    // round stone shaft seen from above: a ring of stones around dark water
+    walls(p, 1, 21, 14, 7, "#9a9aa0", "stone");
+    p.rect(1, 21, 14, 1, outline("#9a9aa0"));
+    p.g.fillStyle = "#b8b8c0"; p.g.beginPath(); p.g.ellipse(8, 21, 7, 3.5, 0, 0, Math.PI * 2); p.g.fill();
+    p.g.fillStyle = "#2a4a78"; p.g.beginPath(); p.g.ellipse(8, 21, 5, 2.2, 0, 0, Math.PI * 2); p.g.fill();
+    p.rect(5, 20, 3, 1, "#6aa8e0"); p.px(10, 22, "#4a7ab8");
+    for (const x of [2, 13]) p.column(x - 1, 9, 3, 13, "#7a4a2a");
+    p.rect(2, 11, 12, 1, "#5a3a20"); p.rect(7, 12, 1, 6, "#c8a070");
+    p.rect(6, 17, 3, 3, "#8a5a2a"); p.rect(6, 17, 3, 1, "#b88a5a"); p.rect(6, 18, 3, 1, "#4a4448");
+    roofSlab(p, 0, 15, 4, 9, "#b84a3a", "shingle", 5);
+    foundation(p, 0, H - 5, W);
   },
   sprinkler: (p) => { p.rect(7, 22, 2, 8, "#8a8f96"); p.blob(8, 21, 3, 2, "#c8ccd4"); p.px(7, 20, "#6ab8ff"); p.g.fillStyle = "rgba(120,190,255,.6)"; for (let i = 0; i < 6; i++) p.g.fillRect(2 + i * 2.4, 16 + Math.abs(2.5 - i), 1, 1); },
-  compost: (p, W, H) => { shadowUnder(p, W, H); p.rect(1, 20, 14, 10, WOOD); walls(p, 1, 20, 14, 10, WOOD, "wood"); p.rect(2, 19, 12, 3, "#5a3a1e"); for (const [x, c] of [[3, "#6fae4a"], [7, "#8a6a3a"], [11, "#a0c050"]] as const) p.rect(x, 18, 2, 2, c); },
+  compost: (p, W, H) => {
+    groundShadow(p, W, H);
+    walls(p, 1, 19, 14, 10, "#9a6a3a", "plank");
+    p.rect(0, 18, 16, 2, "#7a4a2a"); p.rect(0, 18, 16, 1, "#a87a48");
+    p.rect(2, 16, 12, 3, "#4a3220");
+    for (const [x, c] of [[3, "#6fae4a"], [6, "#8a6a3a"], [9, "#a0c050"], [12, "#c8a060"]] as const) { p.rect(x, 15, 2, 2, c); p.px(x, 15, hs(c, 0.3)); }
+    p.line(12, 14, 15, 7, "#7a4a2a"); p.rect(14, 5, 2, 3, "#b0b8c4");
+  },
   greenhouse: (p, W, H, lv) => {
-    shadowUnder(p, W, H);
-    p.rect(2, 14, W - 4, H - 18, "#a8dce8");
-    for (let x = 2; x < W - 2; x += 6) p.rect(x, 14, 1, H - 18, "#f0fcff");
-    for (let y = 22; y < H - 4; y += 8) p.rect(2, y, W - 4, 1, "#f0fcff");
-    p.rect(2, 14, 1, H - 18, outline("#a8dce8")); p.rect(W - 3, 14, 1, H - 18, outline("#a8dce8"));
-    for (let i = 0; i < 12; i++) { const w = W - 4 - i * 3; if (w < 4) break; p.rect(2 + i * 1.5, 13 - i, w, 1, i % 2 ? "#c8f0f8" : "#e8fcff"); }
-    for (let x = 6; x < W - 6; x += 7) { p.rect(x, H - 12, 4, 6, "#4f9a35"); p.blob(x + 2, H - 13, 2, 2, lv > 1 ? "#e84a6a" : "#6fcf5a"); }
-    foundation(p, 0, H - 4, W, 4);
-    door(p, W / 2 - 3, H - 13, "#a8dce8");
+    groundShadow(p, W, H);
+    const glass = "#a8dce8", frame = "#f4f8f8";
+    const wallTop = H - 26, eave = wallTop + 1;
+    // plants seen through the glass, then the panes over them
+    p.rect(1, wallTop, W - 2, 21, "#6aa8a0");
+    for (let x = 4; x < W - 4; x += 6) { p.blob(x + 2, wallTop + 12, 3, 3, lv > 1 ? "#4f9a35" : "#5aaa45"); p.px(x + 1, wallTop + 10, lv > 1 ? "#e84a6a" : "#f7d44c"); p.px(x + 3, wallTop + 12, "#f7d44c"); }
+    p.g.fillStyle = "rgba(220,250,255,0.42)"; p.g.fillRect(1, wallTop, W - 2, 21);
+    for (let x = 1; x < W - 1; x += 6) p.rect(x, wallTop, 1, 21, frame);
+    for (let y = wallTop; y < wallTop + 21; y += 7) p.rect(1, y, W - 2, 1, frame);
+    for (let i = 0; i < 5; i++) p.line(4 + i * 9, wallTop + 3, 7 + i * 9, wallTop + 1, "rgba(255,255,255,0.8)");
+    walls(p, 1, H - 9, W - 2, 4, "#b86a4a", "brick");
+    foundation(p, 0, H - 5, W);
+    // glass roof: panes on a white frame, sky reflections towards the upper left
+    const top = Math.max(6, eave - Math.round(W * 0.42)), h = eave - top + 1, inset = Math.round(h * 0.3);
+    for (let i = 0; i < h; i++) {
+      const t = i / (h - 1), l = Math.round(inset * (1 - t)), r = W - 1 - Math.round(inset * (1 - t));
+      for (let x = l; x <= r; x++) {
+        const edge = x === l || x === r, fr = (x - l) % 6 === 0 || i % 5 === 0;
+        const refl = (x + i * 2) % 17 < 2 && x < W * 0.6;
+        p.px(x, top + i, edge ? outline(glass) : fr ? frame : refl ? "#f0ffff" : hs(glass, 0.12 - t * 0.25 - (x / W) * 0.1));
+      }
+    }
+    p.rect(inset, top - 2, W - 2 * inset, 2, frame); p.rect(inset - 1, top - 3, W - 2 * inset + 2, 1, outline(glass));
+    p.rect(0, eave + 1, W, 1, outline(glass));
+    doorAt(p, W / 2 - 3, H - 15, { col: "#88c8d8", trim: frame });
   },
   coop: (p, W, H, lv) => {
-    house(p, W, H, { wall: "#c8945a", roof: "#8a4a2a", wallKind: "wood" });
-    p.rect(3, H - 10, 5, 5, "#3a2a1a"); p.line(3, H - 4, 8, H - 8, WOOD, 2);
-    p.blob(W - 6, H - 3, 2, 2, "#ffffff"); p.px(W - 5, H - 4, "#e84a2a");
-    if (lv >= 2) p.blob(W - 10, H - 3, 2, 2, "#e8e0c8");
+    house(p, W, H, { wall: "#c8945a", roof: "#8a4a2a", wallKind: "plank", roofKind: "shingle", seed: "coop", level: lv });
+    // a little ramp and the residents
+    p.rect(3, H - 11, 5, 5, "#2a1a14"); p.rect(3, H - 11, 5, 1, outline("#c8945a"));
+    p.line(2, H - 4, 8, H - 8, WOOD, 2); for (let i = 0; i < 3; i++) p.px(4 + i * 2, H - 5 - i, hs(WOOD, -0.3));
+    p.blob(W - 6, H - 4, 2.5, 2, "#ffffff"); p.px(W - 4, H - 6, "#e84a2a"); p.px(W - 3, H - 4, "#f2a030");
+    if (lv >= 2) { p.blob(W - 11, H - 3, 2.5, 2, "#e8d8b8"); p.px(W - 9, H - 5, "#e84a2a"); }
   },
-  barn: (p, W, H) => {
-    shadowUnder(p, W, H);
+  barn: (p, W, H, lv) => {
     const red = "#b8442e";
-    walls(p, 1, 12, W - 2, H - 15, red, "wood");
-    for (const x of [1, W - 3]) p.rect(x, 12, 2, H - 15, CREAM);
-    roof(p, 0, 2, W, 11, "#6a3a2a", "slate");
-    p.rect(W / 2 - 3, 4, 6, 5, CREAM); p.rect(W / 2 - 2, 5, 4, 3, "#3a2a1a");
-    barnDoor(p, W / 2 - 7, H - 15, 14, 12, hs(red, -0.1));
-    foundation(p, 0, H - 3, W, 3);
+    p.g.fillStyle = "rgba(24,12,40,0.3)"; p.g.fillRect(1, H - 2, W, 2);
+    walls(p, 1, 14, W - 2, H - 19, red, "plank");
+    for (const x of [1, W - 4]) { p.rect(x, 14, 3, H - 19, CREAM); p.rect(x, 14, 1, H - 19, hs(CREAM, 0.2)); }
+    foundation(p, 0, H - 5, W);
+    roofSlab(p, 0, W - 1, 3, 15, "#5a4a5a", "slate", 11);
+    p.g.fillStyle = "rgba(24,12,40,0.32)"; p.g.fillRect(1, 17, W - 2, 2);
+    // hay loft
+    p.rect(W / 2 - 4, 19, 8, 6, CREAM); p.rect(W / 2 - 3, 20, 6, 4, "#3a2618"); p.rect(W / 2 - 3, 22, 6, 2, "#e8c860"); p.px(W / 2 - 2, 22, "#fff0a0");
+    barnDoor(p, W / 2 - 8, H - 17, 16, 12, hs(red, -0.12));
+    p.rect(3, H - 8, 5, 3, "#e8c860"); p.rect(3, H - 8, 5, 1, "#fff0a0"); p.rect(W - 8, H - 8, 5, 3, "#e8c860"); p.rect(W - 8, H - 8, 5, 1, "#fff0a0");
+    if (lv >= 2) { p.rect(W - 6, 0, 1, 6, "#4a3a2a"); p.line(W - 9, 1, W - 3, 1, "#4a3a2a"); p.px(W - 3, 0, "#c8c8d0"); }
   },
-  beehive: (p, W, H) => { shadowUnder(p, W, H); p.rect(3, 15, 10, 14, "#f0e4c0"); walls(p, 3, 15, 10, 14, "#f0e4c0", "wood"); p.rect(2, 13, 12, 3, "#c89a5a"); p.rect(6, 25, 4, 1, "#3a2a1a"); p.px(13, 12, "#ffe45a"); p.px(1, 17, "#ffe45a"); p.rect(4, 29, 8, 2, DARKWOOD); },
+  beehive: (p, W, H) => {
+    groundShadow(p, W, H);
+    p.column(5, H - 5, 2, 3, "#6a4428"); p.column(10, H - 5, 2, 3, "#6a4428");
+    for (let k = 0; k < 3; k++) { walls(p, 3, 15 + k * 4, 10, 4, k % 2 ? "#e8d8a8" : "#f4e8c0", "siding"); p.rect(3, 18 + k * 4, 10, 1, outline("#f0e0b0")); }
+    p.rect(2, 13, 12, 3, "#b88a4a"); p.rect(2, 13, 12, 1, "#d8aa6a"); p.rect(2, 15, 12, 1, outline("#b88a4a"));
+    p.rect(6, 26, 4, 1, "#2a1a12");
+    for (const [x, y] of [[13, 11], [1, 17], [12, 20]]) { p.px(x, y, "#ffd23a"); p.px(x + 1, y, "#2a2020"); }
+  },
   fishpond: (p, W, H) => {
     p.g.fillStyle = "#8a8f96"; p.g.beginPath(); p.g.ellipse(W / 2, H / 2 + 8, W / 2 - 1, H / 2 - 7, 0, 0, Math.PI * 2); p.g.fill();
     p.g.fillStyle = "#3a7ab8"; p.g.beginPath(); p.g.ellipse(W / 2, H / 2 + 8, W / 2 - 4, H / 2 - 10, 0, 0, Math.PI * 2); p.g.fill();
@@ -218,43 +175,91 @@ const D: Record<string, Drawer> = {
     p.blob(10, H / 2 + 10, 2, 1, "#f28a3a"); p.blob(22, H / 2 + 5, 2, 1, "#e8e8f0");
     p.rect(4, 12, 2, 6, "#4f9a35"); p.rect(W - 6, H - 8, 2, 5, "#4f9a35"); p.blob(W - 8, H / 2 + 12, 3, 1.5, "#4fae4a");
   },
-  silkhouse: (p, W, H) => house(p, W, H, { wall: "#f0e0c0", roof: "#c89a5a", wallKind: "plaster", roofKind: "thatch", emblem: "wool" }),
+  silkhouse: (p, W, H, lv) => house(p, W, H, { wall: "#f0e0c0", roof: "#c8a050", wallKind: "timber", roofKind: "thatch", emblem: "wool", seed: "silk", level: lv }),
   lumber: (p, W, H) => {
-    shadowUnder(p, W, H);
-    for (let i = 0; i < 3; i++) for (let j = 0; j < 3 - i; j++) { const x = 4 + j * 8 + i * 4, y = H - 8 - i * 6; p.blob(x, y, 4, 3, "#9a6a3a"); p.blob(x, y, 2, 1.5, "#e0b880", { outline: false }); }
-    p.rect(W - 8, 10, 2, 18, DARKWOOD); p.rect(W - 14, 10, 14, 2, DARKWOOD); p.line(W - 11, 12, W - 4, 20, "#c8ccd4", 2);
+    groundShadow(p, W, H);
+    // stacked logs with cut ends facing us
+    for (let row = 0; row < 3; row++) for (let k = 0; k < 4 - row; k++) {
+      const x = 4 + k * 6 + row * 3, y = H - 9 - row * 5;
+      p.rect(x - 3, y - 4, 1, 1, "#6a4428");
+      p.blob(x, y, 3, 2.6, "#8a5a30");
+      p.blob(x - 0.3, y - 0.2, 2, 1.7, "#e0b880", { outline: false, hi: 0.2, lo: -0.15 });
+      p.px(x, y, "#b88a50");
+    }
+    // chopping block with an axe
+    p.column(W - 11, H - 11, 7, 6, "#8a5a30"); p.rect(W - 11, H - 12, 7, 2, "#e0b880"); p.rect(W - 11, H - 12, 7, 1, "#f0d0a0");
+    p.line(W - 8, H - 13, W - 3, H - 22, "#7a4a2a", 2); p.rect(W - 5, H - 24, 4, 3, "#b0b8c4"); p.px(W - 5, H - 24, "#e8f0f8");
+    p.rect(2, H - 4, 3, 1, "#d8b078"); p.rect(W - 14, H - 3, 2, 1, "#d8b078");
   },
   quarry: (p, W, H) => {
-    shadowUnder(p, W, H);
-    p.blob(W / 2, H - 10, W / 2 - 2, 9, "#8a8f96"); p.blob(10, H - 7, 6, 5, "#a0a4ac"); p.blob(W - 9, H - 6, 5, 4, "#7a7e86");
-    p.line(W - 12, 12, W - 4, 22, DARKWOOD, 2); p.line(W - 14, 13, W - 8, 11, "#c8ccd4", 2);
+    groundShadow(p, W, H);
+    // a cut rock face with stacked blocks in front
+    p.blob(W / 2, H - 13, W / 2 - 2, 10, "#8a8f96", { hi: 0.25, lo: -0.3 });
+    for (const [x, y] of [[6, H - 16], [14, H - 19], [22, H - 15]]) { p.rect(x, y, 5, 1, "#6a6e76"); p.rect(x + 1, y + 1, 1, 3, "#6a6e76"); }
+    for (const [x, y] of [[3, H - 10], [10, H - 10], [6, H - 15]]) { walls(p, x, y, 7, 5, "#b0b4ba", "stone"); p.rect(x, y, 7, 1, "#d0d4da"); }
+    p.line(W - 9, H - 6, W - 4, H - 16, "#7a4a2a", 2); p.line(W - 8, H - 17, W - 1, H - 14, "#c8ccd4", 2);
+    for (let i = 0; i < 6; i++) p.px(3 + ((i * 9) % (W - 6)), H - 3 - (i % 2), "#a0a4ac");
   },
   mine: (p, W, H) => {
-    p.blob(W / 2, H - 12, W / 2, 14, "#7a6a5a");
-    p.rect(W / 2 - 7, H - 16, 14, 13, "#1a1414");
-    p.rect(W / 2 - 8, H - 18, 16, 3, WOOD); p.rect(W / 2 - 8, H - 18, 2, 16, WOOD); p.rect(W / 2 + 6, H - 18, 2, 16, WOOD);
-    p.rect(4, H - 4, W - 8, 2, "#6a5a4a"); p.blob(W - 6, H - 6, 4, 3, "#c8a040");
+    // a rocky hillside with a timber-framed tunnel, a rail and a cart of ore
+    p.blob(W / 2, H - 14, W / 2, 13, "#7a6a5a", { hi: 0.2, lo: -0.3 });
+    p.blob(7, H - 20, 5, 4, "#8a7a6a"); p.blob(W - 8, H - 23, 4, 3, "#6a5a4a");
+    p.rect(W / 2 - 7, H - 19, 14, 15, "#140e0e");
+    p.rect(W / 2 - 7, H - 19, 14, 4, "#241a18");
+    for (const x of [W / 2 - 9, W / 2 + 6]) p.column(x, H - 21, 3, 17, "#8a5a30");
+    p.rect(W / 2 - 10, H - 22, 20, 3, "#9a6a3a"); p.rect(W / 2 - 10, H - 22, 20, 1, "#c89a60"); p.rect(W / 2 - 10, H - 19, 20, 1, outline("#9a6a3a"));
+    lanternAt(p, W / 2 + 4, H - 18);
+    for (let x = 4; x < W - 3; x += 3) p.rect(x, H - 4, 2, 1, "#6a4a2a");
+    p.rect(3, H - 5, W - 6, 1, "#8a8f96"); p.rect(3, H - 3, W - 6, 1, "#8a8f96");
+    p.rect(W - 13, H - 10, 9, 5, "#5a5e66"); p.rect(W - 13, H - 10, 9, 1, "#8a8f96");
+    p.blob(W - 11, H - 11, 2, 1.5, "#e0a040"); p.blob(W - 7, H - 11, 2, 1.5, "#c8c8d8");
+    p.blob(W - 11, H - 4, 1.2, 1.2, "#2a2a30", { outline: false }); p.blob(W - 6, H - 4, 1.2, 1.2, "#2a2a30", { outline: false });
   },
   herbgarden: (p, W, H) => {
     for (const [x, y] of [[2, 18], [18, 18], [2, 32], [18, 32]]) {
       if (y + 12 > H) continue;
-      p.rect(x, y, 12, 10, WOOD); p.rect(x + 1, y + 1, 10, 7, "#6a4428");
-      for (let i = 0; i < 3; i++) { p.rect(x + 2 + i * 3, y + 2, 2, 4, "#4f9a35"); p.px(x + 2 + i * 3, y + 1, "#8ad86a"); }
+      p.g.fillStyle = "rgba(24,12,40,0.25)"; p.g.fillRect(x + 1, y + 10, 12, 1);
+      walls(p, x, y + 6, 12, 4, "#9a6a3a", "plank");
+      p.rect(x, y, 12, 7, "#7a5230"); p.rect(x + 1, y + 1, 10, 5, "#5a3a22");
+      p.rect(x, y, 12, 1, "#b07a48"); p.rect(x, y, 1, 7, "#b07a48"); p.rect(x + 11, y, 1, 7, outline("#9a6a3a"));
+      for (let i = 0; i < 3; i++) { const c = ["#4f9a35", "#6ab84a", "#3a8a5a"][i]; p.rect(x + 2 + i * 3, y + 1, 2, 4, c); p.px(x + 2 + i * 3, y, hs(c, 0.35)); p.px(x + 3 + i * 3, y + 2, ["#e8e0ff", "#f7d44c", "#ffffff"][i]); }
     }
   },
   market: (p, W, H) => {
-    shadowUnder(p, W, H);
-    p.rect(3, H - 14, W - 6, 10, WOOD); walls(p, 3, H - 14, W - 6, 10, WOOD, "wood");
-    for (let x = 2; x < W - 2; x += 4) { p.rect(x, 10, 4, 7, Math.floor(x / 4) % 2 ? "#e84a4a" : "#f8f0e0"); p.rect(x, 17, 4, 1, "#a83a3a"); }
-    p.rect(2, 9, W - 4, 1, outline("#e84a4a"));
-    p.rect(3, 17, 1, H - 21, DARKWOOD); p.rect(W - 4, 17, 1, H - 21, DARKWOOD);
-    for (let x = 6; x < W - 6; x += 5) p.blob(x + 1, H - 16, 2, 2, ["#f28a3a", "#e84a4a", "#8ad86a", "#f7d44c"][Math.floor(x / 5) % 4]);
-    sign(p, W / 2 - 5, 0, "coin");
+    groundShadow(p, W, H);
+    // counter with crates of produce
+    walls(p, 2, H - 15, W - 4, 10, "#a8743e", "plank");
+    p.rect(1, H - 16, W - 2, 2, "#c89058"); p.rect(1, H - 16, W - 2, 1, "#e0b078"); p.rect(1, H - 14, W - 2, 1, outline("#c89058"));
+    const goods = ["#f28a3a", "#e84a4a", "#8ad86a", "#f7d44c", "#b88aff", "#e84a4a"];
+    for (let k = 0; k < 6; k++) {
+      const x = 4 + k * 7;
+      p.rect(x, H - 20, 6, 4, "#8a5a30"); p.rect(x, H - 20, 6, 1, "#b07a48");
+      for (let j = 0; j < 4; j++) p.blob(x + 1.5 + (j % 2) * 3, H - 21 + Math.floor(j / 2), 1.6, 1.4, goods[k], { outline: false });
+    }
+    // poles and a sloped striped awning with a scalloped valance
+    for (const x of [2, W - 4]) p.column(x, 12, 2, H - 17, "#7a4a2a");
+    const top = 6, eave = 16;
+    for (let i = 0; i <= eave - top; i++) {
+      const t = i / (eave - top), l = Math.round(5 * (1 - t)), r = W - 1 - Math.round(5 * (1 - t));
+      for (let x = l; x <= r; x++) { const red = Math.floor((x + 1) / 4) % 2 === 0; const c = red ? "#d84a4a" : "#f8f0e0"; p.px(x, top + i, x === l || x === r ? outline("#d84a4a") : hs(c, 0.08 - t * 0.2)); }
+    }
+    for (let x = 0; x < W; x++) { const red = Math.floor((x + 1) / 4) % 2 === 0; p.px(x, eave + 1, red ? "#b83a3a" : "#e0d8c8"); if (x % 4 !== 3) p.px(x, eave + 2, red ? "#9a2a2a" : "#c8c0b0"); }
+    p.g.fillStyle = "rgba(24,12,40,0.25)"; p.g.fillRect(2, eave + 3, W - 4, 2);
+    hangingSign(p, W / 2 - 6, 0, "coin");
   },
   tent: (p, W, H) => {
-    shadowUnder(p, W, H);
-    for (let i = 0; i < 14; i++) { const w = 2 + i; p.rect(8 - w / 2, 16 + i, w, 1, i % 3 ? "#d8b078" : "#c09860"); }
-    p.rect(6, 24, 4, 6, "#3a2a1a"); p.rect(8, 12, 1, 5, DARKWOOD); p.rect(9, 12, 4, 2, "#c83a3a");
+    groundShadow(p, W, H);
+    const c = "#d8b078";
+    for (let i = 0; i < 16; i++) {
+      const y = 13 + i, hw = 1 + i * 0.45;
+      for (let x = Math.round(8 - hw); x <= Math.round(8 + hw); x++) {
+        const lit = x < 8;
+        p.px(x, y, (x === Math.round(8 - hw) || x === Math.round(8 + hw)) ? outline(c) : (x - 1) % 4 === 0 ? hs(c, -0.2) : hs(c, lit ? 0.12 : -0.08));
+      }
+    }
+    for (let i = 0; i < 8; i++) { p.px(8 - Math.round(i * 0.35), 21 + i, "#3a2418"); p.px(8 + Math.round(i * 0.35), 21 + i, "#3a2418"); p.rect(9 - Math.round(i * 0.35), 21 + i, Math.round(i * 0.7) - 1, 1, "#2a1a12"); }
+    p.rect(8, 9, 1, 5, "#4a3a2a"); p.rect(9, 9, 4, 2, "#c83a3a"); p.px(9, 11, "#9a2a2a");
+    p.line(1, 29, 4, 22, "#c8b090"); p.line(15, 29, 12, 22, "#c8b090");
   },
   training: (p, W, H) => {
     for (const x of [7, 22]) { p.rect(x, 20, 2, H - 22, WOOD); p.blob(x + 1, 18, 5, 5, "#d8c090"); p.blob(x + 1, 18, 3, 3, "#c83a3a", { outline: false }); p.blob(x + 1, 18, 1.5, 1.5, "#f8f0e0", { outline: false }); p.rect(x - 4, 26, 10, 2, WOOD); }
@@ -294,15 +299,25 @@ const D: Record<string, Drawer> = {
   },
   wall: (p, W, H) => { walls(p, 0, 10, 16, H - 11, "#9a9aa0", "stone"); for (let x = 0; x < 16; x += 6) { p.rect(x, 6, 4, 4, "#a8a8b0"); p.rect(x, 6, 4, 1, hs("#a8a8b0", 0.3)); } },
   watchtower: (p, W, H) => {
-    shadowUnder(p, W, H);
-    p.rect(3, 12, 10, H - 13, WOOD); walls(p, 3, 12, 10, H - 13, WOOD, "log");
-    p.rect(1, 8, 14, 5, DARKWOOD); for (let x = 2; x < 15; x += 3) p.rect(x, 9, 1, 4, WOOD);
-    roof(p, 0, 1, 16, 7, "#6a3a2a"); windowAt(p, 5, 16, false, true);
+    groundShadow(p, W, H);
+    // four legs with a cross brace, a railed platform and a pointed roof
+    for (const x of [2, 12]) p.column(x, 14, 2, H - 16, "#8a5a30");
+    p.line(3, H - 4, 12, 16, "#7a4a2a"); p.line(12, H - 4, 3, 16, "#7a4a2a");
+    walls(p, 1, 10, 14, 7, "#b07a48", "plank");
+    p.rect(0, 16, 16, 2, "#7a4a2a"); p.rect(0, 16, 16, 1, "#a0703a");
+    for (let x = 1; x < 15; x += 3) p.rect(x, 11, 1, 5, "#5a3a20");
+    lanternAt(p, 7, 11);
+    roofSlab(p, 0, 15, 3, 9, "#6a3a2a", "shingle", 4);
   },
-  palace: (p, W, H) => {
-    house(p, W, H, { wall: "#f0e8d8", roof: "#d8a830", wallKind: "plaster", roofKind: "tile", floors: 2, lit: true });
-    for (const x of [1, W - 9]) { p.rect(x, 2, 8, H - 6, "#e8e0d0"); walls(p, x, 6, 8, H - 10, "#e8e0d0", "stone"); roof(p, x - 1, 0, 10, 7, "#d8a830", "tile"); }
-    p.rect(W / 2 - 1, 0, 2, 5, "#f2c230"); p.rect(W / 2 + 1, 0, 5, 3, "#c83a3a");
+  palace: (p, W, H, lv) => {
+    house(p, W, H, { wall: "#f0e8d8", roof: "#3a6ab0", wallKind: "stone", roofKind: "tile", floors: 2, gable: true, dormer: true, trim: "#f8f0e0", door: "#7a3a5a", shutters: "#3a5a9a", seed: "palace", level: lv });
+    for (const x of [0, W - 11]) {
+      walls(p, x + 1, 14, 9, H - 19, "#e8e0d0", "stone");
+      foundation(p, x, H - 5, 11);
+      roofSlab(p, x - 1, x + 11, 4, 14, "#3a6ab0", "tile", x);
+      windowAt(p, x + 3, 22, false, true); windowAt(p, x + 3, 34, false, true);
+      p.rect(x + 5, 0, 1, 4, "#4a3a2a"); p.rect(x + 6, 0, 4, 2, "#f2c230");
+    }
   },
   orchard: (p, W, H) => {
     p.rect(1, 18, W - 2, H - 20, "#5aa83a");
@@ -314,13 +329,26 @@ const D: Record<string, Drawer> = {
     }
   },
   windmill: (p, W, H) => {
-    shadowUnder(p, W, H);
-    for (let y = 14; y < H - 3; y++) { const w = 8 + (y - 14) * 0.35; p.rect(W / 2 - w, y, w * 2, 1, y % 3 ? "#e8dcc0" : "#d8c8a8"); }
-    p.rect(W / 2 - 9, H - 4, 18, 2, hs(STONE, -0.1)); door(p, W / 2 - 3, H - 13, DARKWOOD);
-    roof(p, W / 2 - 10, 6, 20, 9, "#8a3a2a");
-    p.g.save(); p.g.translate(W / 2, 14); p.g.rotate(0.35);
-    for (let i = 0; i < 4; i++) { p.g.rotate(Math.PI / 2); p.g.fillStyle = "#7a4a2a"; p.g.fillRect(-1, 0, 2, 14); p.g.fillStyle = "#f4efe6"; p.g.fillRect(1, 3, 4, 10); p.g.fillStyle = "#c8b890"; p.g.fillRect(1, 3, 4, 1); }
-    p.g.restore(); p.blob(W / 2, 14, 2, 2, "#5a3a1e");
+    groundShadow(p, W, H);
+    // tapered plaster tower
+    for (let y = 16; y < H - 5; y++) {
+      const hw = 7 + (y - 16) * 0.28, l = Math.round(W / 2 - hw), r = Math.round(W / 2 + hw);
+      for (let x = l; x <= r; x++) p.px(x, y, x === l || x === r ? outline("#e8dcc0") : x < l + 3 ? "#f8f0dc" : x > r - 4 ? "#d0c4a8" : (y % 4 === 0 && (x + y) % 7 === 0) ? "#d8ccb0" : "#e8dcc0");
+    }
+    foundation(p, W / 2 - 11, H - 5, 22);
+    doorAt(p, W / 2 - 3, H - 14, { col: "#8a5230", arch: true });
+    windowAt(p, W / 2 - 3, 21, false, true);
+    roofSlab(p, W / 2 - 10, W / 2 + 9, 8, 17, "#8a3a2a", "shingle", 9);
+    // sails: lattice frames on a hub
+    p.g.save(); p.g.translate(W / 2, 13); p.g.rotate(0.35);
+    for (let i = 0; i < 4; i++) {
+      p.g.rotate(Math.PI / 2);
+      p.g.fillStyle = "#6a4428"; p.g.fillRect(-1, 0, 2, 15);
+      p.g.fillStyle = "#f4efe6"; p.g.fillRect(1, 3, 5, 11);
+      p.g.fillStyle = "#c8b890"; for (let k = 4; k < 14; k += 3) p.g.fillRect(1, k, 5, 1);
+      p.g.fillStyle = "#a89870"; p.g.fillRect(5, 3, 1, 11);
+    }
+    p.g.restore(); p.blob(W / 2, 13, 2.2, 2.2, "#5a3a1e");
   },
   fisherhut: (p, W, H) => {
     p.g.fillStyle = "#4a9ad8"; p.g.fillRect(0, H - 9, W, 8); p.g.fillStyle = "#6ab8f0"; for (let x = 2; x < W; x += 6) p.g.fillRect(x, H - 7, 3, 1);
@@ -351,22 +379,28 @@ const D: Record<string, Drawer> = {
 
 /** Look of the remaining (shop / housing / service) buildings. */
 const HOUSES: Record<string, HouseOpts> = {
-  kitchen: { wall: "#d8b888", roof: "#8a5a3a", wallKind: "plaster", chimney: true, emblem: "bowl" },
-  forge: { wall: "#8a8a92", roof: "#4a4a58", wallKind: "stone", chimney: true, emblem: "ingot" },
-  sawmill: { wall: "#b07a48", roof: "#6a4a2a", wallKind: "log", emblem: "plank" },
-  workshop: { wall: "#a0a4aa", roof: "#5a5e6a", wallKind: "stone", emblem: "block" },
-  tailor: { wall: "#e0c8d8", roof: "#8a4a6a", wallKind: "plaster", emblem: "cloth" },
-  alchemy: { wall: "#8a9a78", roof: "#3a6a4a", wallKind: "stone", chimney: true, emblem: "potion" },
-  library: { wall: "#c8c0d8", roof: "#3a4a9a", wallKind: "stone", emblem: "book" },
-  cottage: { wall: "#c8945a", roof: "#b84a3a", wallKind: "wood", chimney: true },
-  stonehouse: { wall: "#b0b0a8", roof: "#4a5a8a", wallKind: "stone", chimney: true },
-  manor: { wall: "#ece4d4", roof: "#6a2a5a", wallKind: "plaster", chimney: true, floors: 2 },
-  apartment: { wall: "#d0c8b8", roof: "#3a3a4a", wallKind: "stone", floors: 3 },
-  tavern: { wall: "#b07a48", roof: "#6a2a1a", wallKind: "wood", chimney: true, emblem: "cup" },
-  academy: { wall: "#d8d0e8", roof: "#4a3a8a", wallKind: "stone", floors: 2, emblem: "book" },
-  temple: { wall: "#f4f0e4", roof: "#2a8a5a", wallKind: "plaster", roofKind: "tile", emblem: "herb" },
-  clinic: { wall: "#f4f4f4", roof: "#c83a3a", wallKind: "plaster", emblem: "potion" },
-  warehouse: { wall: "#9a7a4a", roof: "#5a4a2a", wallKind: "wood", emblem: "plank" },
+  kitchen: { wall: "#e0c8a0", roof: "#9a5a3a", wallKind: "timber", roofKind: "shingle", chimney: true, emblem: "bowl", props: true, door: "#a0603a" },
+  forge: { wall: "#8a8a92", roof: "#4a4a58", wallKind: "stone", roofKind: "slate", chimney: true, emblem: "ingot", props: true, door: "#5a4a4a" },
+  sawmill: { wall: "#b07a48", roof: "#6a4a2a", wallKind: "log", roofKind: "shingle", emblem: "plank", props: true },
+  workshop: { wall: "#a0a4aa", roof: "#5a5e6a", wallKind: "stone", roofKind: "slate", emblem: "block", props: true },
+  tailor: { wall: "#ecd8e0", roof: "#8a4a6a", wallKind: "timber", roofKind: "tile", emblem: "cloth", shutters: "#8a4a6a" },
+  alchemy: { wall: "#8a9a78", roof: "#3a6a4a", wallKind: "stone", roofKind: "slate", chimney: true, emblem: "potion", door: "#4a3a6a" },
+  library: { wall: "#c8c0d8", roof: "#3a4a9a", wallKind: "stone", roofKind: "slate", emblem: "book", gable: true, door: "#4a3a2a" },
+  cottage: { wall: "#c8945a", roof: "#b84a3a", wallKind: "siding", roofKind: "shingle", chimney: true, shutters: "#3a6a4a" },
+  stonehouse: { wall: "#b0b0a8", roof: "#4a5a8a", wallKind: "stone", roofKind: "slate", chimney: true, shutters: "#6a3a2a" },
+  manor: { wall: "#ece4d4", roof: "#6a2a5a", wallKind: "timber", roofKind: "slate", chimney: true, floors: 2, dormer: true, shutters: "#4a3a5a" },
+  apartment: { wall: "#c87a5a", roof: "#3a3a4a", wallKind: "brick", roofKind: "slate", floors: 3, trim: "#f0e8d8" },
+  tavern: { wall: "#b07a48", roof: "#6a2a1a", wallKind: "siding", roofKind: "shingle", chimney: true, emblem: "cup", props: true, dormer: true },
+  academy: { wall: "#d8d0e8", roof: "#4a3a8a", wallKind: "stone", roofKind: "slate", floors: 2, emblem: "book", gable: true },
+  temple: { wall: "#f4f0e4", roof: "#2a8a6a", wallKind: "stone", roofKind: "tile", emblem: "herb", gable: true, trim: "#f8f4e8", door: "#a07a3a" },
+  clinic: { wall: "#f4f4f4", roof: "#c83a3a", wallKind: "timber", roofKind: "tile", emblem: "potion", shutters: "#c83a3a" },
+  warehouse: { wall: "#9a7a4a", roof: "#5a4a2a", wallKind: "plank", roofKind: "shingle", emblem: "plank", props: true },
+  bakery: { wall: "#f0d8b0", roof: "#c8603a", wallKind: "timber", roofKind: "tile", chimney: true, props: true },
+  winery: { wall: "#9a8a7a", roof: "#6a2a4a", wallKind: "stone", roofKind: "tile", props: true },
+  dairy: { wall: "#f4f0e8", roof: "#4a7ab0", wallKind: "plank", roofKind: "shingle", props: true },
+  bathhouse: { wall: "#c8a07a", roof: "#2a5a7a", wallKind: "plank", roofKind: "tile", chimney: true },
+  inn: { wall: "#c89a6a", roof: "#3a6a4a", wallKind: "siding", roofKind: "shingle", chimney: true, dormer: true, props: true, shutters: "#3a4a6a" },
+  guild: { wall: "#a8a098", roof: "#7a2a2a", wallKind: "stone", roofKind: "slate", floors: 2, gable: true, props: true },
 };
 
 export function buildingCanvas(type: string, level: number): HTMLCanvasElement {
@@ -380,8 +414,7 @@ export function buildingCanvas(type: string, level: number): HTMLCanvasElement {
   if (D[type]) D[type](p, W, H, level);
   else {
     const o = HOUSES[type] ?? { wall: def?.style?.wall ?? "#c8945a", roof: def?.style?.roof ?? "#b84a3a", emblem: def?.style?.emblem };
-    house(p, W, H, { ...o, floors: Math.min((o.floors ?? 1) + (level >= 3 && tw >= 3 ? 1 : 0), 3) });
-    if (level >= 2) { p.rect(3, 3, 1, 7, DARKWOOD); p.rect(4, 3, 4, 3, level >= 3 ? "#f2c230" : "#c83a3a"); }
+    house(p, W, H, { ...o, emblem: o.emblem ?? def?.style?.emblem, floors: Math.min((o.floors ?? 1) + (level >= 3 && tw >= 3 ? 1 : 0), 3), level, seed: type });
   }
   cache.set(key, c);
   return c;
