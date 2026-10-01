@@ -52,6 +52,46 @@ const SPROUT_TIPS = [
   "Nhớ sinh nhật mọi người nha. Quà sinh nhật được quý gấp ba đấy!",
 ];
 
+/**
+ * Trees whose canopy (2 tiles wide, 3 tall, trunk mid-tile) can reach into the territory. They
+ * can stand in front of buildings and people, so they are drawn y-sorted with them instead of
+ * being baked into the ground.
+ */
+const reachesIn = (terr: ReturnType<typeof territory>, x: number, y: number) =>
+  y - 2 < terr.y1 && y > terr.y0 && x + 1 >= terr.x0 && x - 1 < terr.x1;
+
+/** The forest around the sanctuary: [x, y, sprite] for every tall tree outside the territory. */
+function forestTrees(terr: ReturnType<typeof territory>): [number, number, HTMLCanvasElement][] {
+  const tiles = tileSet(BIOMES.forest);
+  const out: [number, number, HTMLCanvasElement][] = [];
+  for (let y = 0; y < SZ_H; y++) for (let x = 0; x < SZ_W; x++) {
+    const hsh = hashString(`${x},${y}`);
+    const inside = x >= terr.x0 && y >= terr.y0 && x < terr.x1 && y < terr.y1;
+    if (!inside && hsh % 3 !== 0 && (x + y) % 2 === 0) out.push([x, y, tiles.tall[hsh % tiles.tall.length]]);
+  }
+  return out;
+}
+
+/** Trees at the edge of the territory, to be drawn y-sorted every frame. */
+export function edgeTrees(terr: ReturnType<typeof territory>) {
+  return forestTrees(terr).filter(([x, y]) => reachesIn(terr, x, y));
+}
+
+/** Draws one forest tree (trunk mid-tile). */
+export function drawTree(view: MapView, x: number, y: number, tall: HTMLCanvasElement, see = false) {
+  view.img(tall, x - 0.5, y - 2 - 6 / 16, { w: 2, h: 3, alpha: see ? 0.45 : 1 });
+}
+
+/** Whether a tree at (x, y) would hide part of a building or someone standing in the territory. */
+export function treeHides(x: number, y: number, buildings: PlacedBuilding[], people: { x: number; y: number }[]) {
+  const under = (px: number, py: number) => py >= y - 2 && py <= y - 1 && px >= x - 1 && px <= x + 1;
+  if (people.some((p) => under(Math.round(p.x), Math.round(p.y)))) return true;
+  return buildings.some((b) => {
+    const [w, h] = BUILDINGS[b.type].size;
+    return b.x - 1 <= x + 1 && b.x + w - 1 >= x - 1 && b.y - 1 <= y - 1 && b.y + h - 1 >= y - 2;
+  });
+}
+
 /** Pre-rendered sanctuary ground: grass, forest outside the territory, darkness past the border. */
 export function sanctuaryGround(terr: ReturnType<typeof territory>): HTMLCanvasElement {
   const tiles = tileSet(BIOMES.forest);
@@ -60,14 +100,12 @@ export function sanctuaryGround(terr: ReturnType<typeof territory>): HTMLCanvasE
   cv.height = SZ_H * 16;
   const gc = cv.getContext("2d")!;
   gc.imageSmoothingEnabled = false;
-  const trees: [number, number, HTMLCanvasElement][] = [];
   for (let y = 0; y < SZ_H; y++) {
     for (let x = 0; x < SZ_W; x++) {
       const hsh = hashString(`${x},${y}`);
       const inside = x >= terr.x0 && y >= terr.y0 && x < terr.x1 && y < terr.y1;
       const type = inside ? (hsh % 9 === 0 ? T.DECOR : T.GROUND) : (hsh % 3 === 0 ? T.GROUND : T.OBSTACLE);
       gc.drawImage(tiles.tiles[type === T.OBSTACLE ? T.GROUND : type][hsh % 4], x * 16, y * 16);
-      if (type === T.OBSTACLE && (x + y) % 2 === 0) trees.push([x, y, tiles.tall[hsh % tiles.tall.length]]);
       if (!inside) {
         const d = Math.max(terr.x0 - x, x - terr.x1 + 1, terr.y0 - y, y - terr.y1 + 1);
         gc.fillStyle = `rgba(3,6,5,${Math.min(0.92, 0.35 + d * 0.14)})`;
@@ -75,7 +113,8 @@ export function sanctuaryGround(terr: ReturnType<typeof territory>): HTMLCanvasE
       }
     }
   }
-  for (const [x, y, tall] of trees) gc.drawImage(tall, (x - 0.5) * 16, (y - 2) * 16 - 6, 32, 48); // trunk mid-tile
+  // trees that can stand in front of something are drawn live (edgeTrees), the rest are baked in
+  for (const [x, y, tall] of forestTrees(terr)) if (!reachesIn(terr, x, y)) gc.drawImage(tall, (x - 0.5) * 16, (y - 2) * 16 - 6, 32, 48);
   return cv;
 }
 
@@ -93,6 +132,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   let placing: { type: string; moving?: PlacedBuilding; x: number; y: number } | null = null;
   const sim = new ResidentSim(g);
   let ground: HTMLCanvasElement | null = null;
+  let edge: [number, number, HTMLCanvasElement][] = [];
   let groundSig = "";
   let talkingTo: string | null = null;
   const marks = new Map<string, boolean>(); // "!" markers, refreshed every few seconds
@@ -366,7 +406,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     const terr = territory(g.territory);
     // static ground (tiles, trees, darkness outside the territory) is pre-rendered once
     const gsig = `${g.territory}`;
-    if (gsig !== groundSig) { ground = sanctuaryGround(terr); groundSig = gsig; }
+    if (gsig !== groundSig) { ground = sanctuaryGround(terr); edge = edgeTrees(terr); groundSig = gsig; }
     {
       const sx0 = (view.camX + 0.5 - view.w / 2 / view.tile) * 16, sy0 = (view.camY + 0.5 - view.h / 2 / view.tile) * 16;
       c.drawImage(ground!, sx0, sy0, (view.w / view.tile) * 16, (view.h / view.tile) * 16, 0, 0, view.w, view.h);
@@ -380,6 +420,11 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
 
     // drawables sorted by bottom row
     const draw: { y: number; fn: () => void }[] = [];
+    for (const [x, y, tall] of edge) {
+      if (x < vr.x0 - 2 || x > vr.x1 + 2 || y < vr.y0 || y > vr.y1 + 3) continue;
+      const see = treeHides(x, y, g.buildings, [{ x: hero.px, y: hero.py }]);
+      draw.push({ y: y + 0.99, fn: () => drawTree(view, x, y, tall, see) });
+    }
     for (const b of g.buildings) {
       const [bw, bh] = BUILDINGS[b.type].size;
       if (placing?.moving === b) continue;
