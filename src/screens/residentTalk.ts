@@ -5,6 +5,7 @@ import { JOBS, PERSONAS } from "../data/npcText";
 import { DATES, FLIRT_LINES, TOPICS, type FlirtStyle, type Topic } from "../data/residentText";
 import { spriteImg } from "../render/pixel";
 import { h, openModal, toast, type ModalHandle } from "../ui/dom";
+import { Dialogue, type DlgChoice } from "../ui/dialogue";
 import { itemImg } from "../ui/icon";
 import {
   ACTS_PER_DAY, MOOD_ICONS, STAGE_NAMES, actsLeft, answerDeep, askMood, askPast, birthdayText, bondOf, canDate, canFlirt,
@@ -21,26 +22,20 @@ export function heartRow(pts: number, icon = "❤️") {
 /** Plays a milestone scene line by line, then offers its choices. */
 export function playScene(ch: Character, ps: PendingScene, done: (lines: Line[]) => void) {
   const g = app.game;
-  const m = openModal(ps.scene.title, { noClose: true, cls: "scene-modal" });
-  const box = h("div", { class: "story-box scene-box" });
-  const acts = h("div", { class: "choices" });
-  m.body.append(h("div", { class: "row", style: "gap:12px;align-items:center" }, spriteImg(ch.sprite, ch.pal, "sprite big-portrait"), h("b", null, ch.name)), box, acts);
+  const d = new Dialogue({ name: ch.name, title: ps.scene.title, portrait: spriteImg(ch.sprite, ch.pal, "sprite"), closable: false, accent: "#ff9ac8" });
+  d.setInfo(h("span", null, `✨ ${ps.scene.title}`));
   let i = 0;
   const finish = (choice?: number) => {
     const out = resolveScene(g, ch, ps, choice);
     app.dirty();
-    m.close();
+    d.close();
     done(out);
   };
   const step = () => {
-    if (i < ps.scene.lines.length) {
-      box.append(h("p", { class: "scene-line" }, ps.scene.lines[i++]));
-      box.scrollTop = box.scrollHeight;
-    }
-    acts.replaceChildren();
-    if (i < ps.scene.lines.length) acts.append(h("button", { class: "choice", onclick: step }, "▶ Tiếp"));
-    else if (ps.scene.choices?.length) ps.scene.choices.forEach((c, k) => acts.append(h("button", { class: "choice", onclick: () => finish(k) }, c.text)));
-    else acts.append(h("button", { class: "choice", onclick: () => finish() }, "✔ Kết thúc"));
+    if (i < ps.scene.lines.length) d.say(ps.scene.lines[i++]);
+    if (i < ps.scene.lines.length) d.choices([{ icon: "▶", label: "Tiếp", onPick: step }]);
+    else if (ps.scene.choices?.length) d.choices(ps.scene.choices.map((c, k) => ({ label: c.text, onPick: () => finish(k), tone: "love" as const })));
+    else d.choices([{ icon: "✔", label: "Kết thúc", onPick: () => finish() }]);
   };
   step();
 }
@@ -52,25 +47,36 @@ export function openResident(ch: Character, onClose?: () => void): ModalHandle {
   const log: Line[] = [];
   let sub: "" | "topic" | "deep" | "flirt" | "date" = "";
   let deep: ReturnType<typeof deepQuestion> = null;
-  const m = openModal(`${PERSONAS[p.persona].icon} ${ch.name}`, { wide: true, onClose: () => { app.dirty(); onClose?.(); } });
-  const push = (ls: Line[]) => { log.push(...ls); if (log.length > 40) log.splice(0, log.length - 40); };
+  const d = new Dialogue({
+    name: ch.name, title: `${p.race} · ${JOBS[p.job].name} · ${PERSONAS[p.persona].icon} ${PERSONAS[p.persona].name}`,
+    portrait: spriteImg(ch.sprite, ch.pal, "sprite"), accent: p.romanceable ? "#ffb0d0" : undefined,
+    onClose: () => { app.dirty(); onClose?.(); },
+  });
+  const m = { close: () => d.close() };
+  const push = (ls: Line[]) => {
+    log.push(...ls);
+    if (log.length > 40) log.splice(0, log.length - 40);
+    for (const l of ls) (l.who === "npc" ? d.say(l.text) : l.who === "you" ? d.you(l.text) : d.note(l.text));
+  };
 
   const render = () => {
     const b = bondOf(g, ch.id);
     const mood = moodOf(g, ch);
     const left = actsLeft(g, ch);
     const wish = wishOf(g, ch);
-    const header = h("div", { class: "row", style: "align-items:flex-start;gap:12px;flex-wrap:nowrap" },
-      spriteImg(ch.sprite, ch.pal, "sprite big-portrait"),
-      h("div", { class: "grow col", style: "gap:2px" },
-        h("div", { class: "small muted" }, `${p.race} · ${JOBS[p.job].name} · ${PERSONAS[p.persona].name} · Tâm trạng ${MOOD_ICONS[mood + 2]}${isBirthday(g, p) ? " · 🎂 Sinh nhật!" : ""}`),
-        h("div", { class: "small" }, heartRow(b.fp), ` ${friendTitle(b.fp)}`),
-        p.romanceable && !b.closed && (b.rp > 0 || b.stage !== "none") ? h("div", { class: "small" }, heartRow(b.rp, "💗"), b.stage !== "none" ? ` ${STAGE_NAMES[b.stage]}` : " Tình cảm") : null,
-        h("div", { class: "small muted" }, `Lượt trò chuyện hôm nay: ${left}/${ACTS_PER_DAY}${b.gift === g.day ? " · đã tặng quà" : ""}`)));
-    const box = h("div", { class: "story-box npc-log" }, log.slice(-10).map((l) =>
-      h("div", { class: `npc-line ${l.who}` }, l.who === "npc" ? h("b", null, `${p.first}: `) : l.who === "you" ? h("b", null, "Bạn: ") : "", l.text)));
-    const acts = h("div", { class: "choices res-acts" });
-    const add = (label: string, fn: () => void, disabled = false, cls = "") => acts.append(h("button", { class: `choice ${cls} ${disabled ? "locked" : ""}`, disabled, onclick: fn }, label));
+    d.setInfo(
+      h("span", null, heartRow(b.fp), ` ${friendTitle(b.fp)}`),
+      p.romanceable && !b.closed && (b.rp > 0 || b.stage !== "none") ? h("span", null, heartRow(b.rp, "💗"), b.stage !== "none" ? ` ${STAGE_NAMES[b.stage]}` : "") : null,
+      h("span", null, `Tâm trạng ${MOOD_ICONS[mood + 2]}${isBirthday(g, p) ? " · 🎂 Sinh nhật!" : ""}`),
+      h("span", { class: "muted" }, `Lượt hôm nay ${left}/${ACTS_PER_DAY}${b.gift === g.day ? " · đã tặng quà" : ""}`));
+    const list: DlgChoice[] = [];
+    const add = (label: string, fn: () => void, disabled = false, _cls = "") => {
+      void _cls;
+      const [icon, ...rest] = label.split(" ");
+      const emoji = /\p{Extended_Pictographic}|^[↩💬]/u.test(icon);
+      const tone = /^(💘|💗|🌹)/u.test(icon) ? "love" as const : icon === "↩" || icon === "👋" ? "quiet" as const : undefined;
+      list.push({ icon: emoji ? icon : undefined, label: emoji ? rest.join(" ") : label, onPick: fn, disabled, tone });
+    };
     const say = (you: string | null, lines: Line[]) => { if (you) push([{ who: "you", text: you }]); push(lines); sub = ""; checkScene(); };
 
     if (sub === "topic") {
@@ -80,7 +86,6 @@ export function openResident(ch: Character, onClose?: () => void): ModalHandle {
       }
       add("↩ Thôi", () => { sub = ""; render(); }, false, "half");
     } else if (sub === "deep" && deep) {
-      acts.append(h("div", { class: "npc-line" }, h("b", null, `${p.first}: `), deep.q));
       deep.answers.forEach((a, k) => add(`💭 ${a}`, () => { const d = deep!; deep = null; say(a, answerDeep(g, ch, d.idx, k)); }));
     } else if (sub === "flirt") {
       const kt = knownTastes(g, ch);
@@ -101,7 +106,7 @@ export function openResident(ch: Character, onClose?: () => void): ModalHandle {
       add("📖 Hỏi về quá khứ", () => say("Kể tôi nghe về bạn đi.", askPast(g, ch)), tired, "half");
       add("🗣️ Nghe chuyện Thánh Địa", () => { const l = gossipLine(g, ch); say("Dạo này có chuyện gì không?", l ? [l] : [{ who: "npc", text: "Yên ả lắm, chẳng có gì mới." }]); }, false, "half");
       const dq = heartsOf(b.fp) >= 3 ? deepQuestion(g, ch) : null;
-      add(heartsOf(b.fp) < 3 ? "💭 Tâm sự (cần 3 ❤️)" : dq ? "💭 Tâm sự" : "💭 Tâm sự (đã hỏi hết)", () => { deep = dq; sub = "deep"; render(); }, tired || !dq, "half");
+      add(heartsOf(b.fp) < 3 ? "💭 Tâm sự (cần 3 ❤️)" : dq ? "💭 Tâm sự" : "💭 Tâm sự (đã hỏi hết)", () => { deep = dq; sub = "deep"; if (dq) d.say(dq.q); render(); }, tired || !dq, "half");
       const fl = canFlirt(g, ch);
       if (p.romanceable && !b.closed) add(fl ? `💘 Tán tỉnh (${fl.replace(/\.$/, "")})` : "💘 Tán tỉnh", () => { sub = "flirt"; render(); }, !!fl || tired, "half");
       const dt = canDate(g, ch);
@@ -111,8 +116,7 @@ export function openResident(ch: Character, onClose?: () => void): ModalHandle {
       add("📋 Hồ sơ", () => openProfile(ch), false, "half");
       add("👋 Tạm biệt", () => m.close(), false, "half");
     }
-    m.body.replaceChildren(header, box, acts);
-    box.scrollTop = box.scrollHeight;
+    d.choices(list);
   };
 
   function fillAsk(t: Topic) {
@@ -153,7 +157,7 @@ export function openResident(ch: Character, onClose?: () => void): ModalHandle {
 
   push(greetResident(g, ch));
   checkScene();
-  return m;
+  return { el: d.root, body: d.root, close: () => d.close(), setTitle: () => undefined } as ModalHandle;
 }
 
 /** Everything the player has learned about a resident. */
