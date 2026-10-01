@@ -339,6 +339,39 @@ export function advanceDay(g: GameState): DayReport {
         if (L >= 3 && rng.chance(0.15)) gain("immortal_peach", 1);
         break;
       }
+      case "pasture":
+        gain("hide", 2 * L * prod);
+        gain("wool", L * prod);
+        if (L >= 2) gain(BIOME_MATS[rng.pick(unlockedBiomes)].hide, (L - 1) * 1.5 * prod);
+        break;
+      case "hunter":
+        gain("hide", (1 + L) * prod);
+        gain("meat_beast", L * prod);
+        if (rng.chance(0.3)) gain(rng.pick(["bone", "feather"]), L * prod);
+        if (L >= 2) gain(BIOME_MATS[rng.pick(unlockedBiomes)].hide, (L - 1) * 1.5 * prod);
+        break;
+      case "vinegarden":
+        gain("fiber_forest", 4 * L * prod);
+        if (L >= 2) gain(BIOME_MATS[rng.pick(unlockedBiomes)].fiber, (L - 1) * 2 * prod);
+        break;
+      case "pigsty": {
+        const fed = eat(g, FODDER, L);
+        const f = fed >= L ? 1 : 0.5;
+        gain("hide", 2.5 * L * f * prod);
+        gain("meat_beast", 2 * L * f * prod);
+        if (fed < L) lines.push("🐗 Heo rừng thiếu rau củ — sản lượng giảm một nửa.");
+        break;
+      }
+      case "kiln": {
+        const burnt = eat(g, ["wood"], 2 * L);
+        if (burnt) gain("charcoal", burnt * prod);
+        else lines.push("🔥 Lò Than hết gỗ để đốt.");
+        break;
+      }
+      case "mana_spring":
+        gain("mana_crystal", L * prod);
+        if (L >= 3 && rng.chance(0.2)) gain("mana_crystal", 1);
+        break;
       case "fisherhut":
         for (let i = 0; i < L; i++) gain(rng.pick(["carp", "silver_salmon"]), prod);
         break;
