@@ -148,6 +148,8 @@ export interface GameState {
   bonds: Record<string, Bond>;
   /** Elements the party has tried on each enemy kind (reveals weaknesses in battle). */
   scan?: Record<string, string[]>;
+  /** Monster codex: kills and the shallowest floor each kind was met on. */
+  dex?: Record<string, { k: number; f: number }>;
   /** Pets hatched so far, and the one travelling with the party. */
   pets?: string[];
   pet?: string;
@@ -360,7 +362,18 @@ const ENH_CHANCE = [1, 1, 1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3];
 export const enhanceCost = (g: GameState, lvl: number) => Math.round(80 * (lvl + 1) ** 2.2 * (1 + Math.max(1, g.maxFloor) / 8));
 export const enhanceChance = (lvl: number) => ENH_CHANCE[Math.min(lvl, ENH_CHANCE.length - 1)];
 /** Pays and rolls one enhancement of the item worn in `key`. A failure only costs the gold. */
-export function tryEnhance(g: GameState, ch: Character, key: GearKey, roll: number): "ok" | "fail" | "max" | "gold" | "empty" {
+/** Success chance with an optional catalyst gem on the bench. */
+export function chanceWith(lvl: number, catalyst?: string) {
+  const c = enhanceChance(lvl);
+  if (catalyst === "seal_gem") return 1;
+  if (catalyst === "tiger_eye") return Math.min(1, c + 0.25);
+  return c;
+}
+/**
+ * Pays and rolls one enhancement of the item worn in `key`. A failure only costs the gold.
+ * A catalyst gem is used up only when it can matter (the roll is not already certain).
+ */
+export function tryEnhance(g: GameState, ch: Character, key: GearKey, roll: number, catalyst?: string): "ok" | "fail" | "max" | "gold" | "empty" {
   const id = ch.gear[key];
   if (!id) return "empty";
   const lvl = enhLevel(id);
@@ -369,7 +382,12 @@ export function tryEnhance(g: GameState, ch: Character, key: GearKey, roll: numb
   if (g.gold < cost) return "gold";
   g.gold -= cost;
   g.stats.goldSpent = (g.stats.goldSpent ?? 0) + cost;
-  if (roll >= enhanceChance(lvl)) return "fail";
+  const cat = catalyst && enhanceChance(lvl) < 1 && (g.inventory[catalyst] ?? 0) > 0 ? catalyst : undefined;
+  if (cat) { g.inventory[cat]--; if (!g.inventory[cat]) delete g.inventory[cat]; }
+  if (roll >= chanceWith(lvl, cat)) {
+    if (cat === "soul_gem") { g.gold += cost; g.stats.goldSpent -= cost; }
+    return "fail";
+  }
   ch.gear[key] = enhancedId(id, lvl + 1);
   return "ok";
 }

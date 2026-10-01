@@ -88,6 +88,9 @@ ROWS.forEach(([biome, suffix, wood, stone, herb, fiber, hide, gem]) => {
   I(leather, `${nameOf(hd)} (đã thuộc)`, "material", v(11), `${nameOf(hd)} đã qua thuộc, bền và dẻo.`, "roll", [colOf(hd), C.darkwood, "#ffffff"], { tier: t, tags: [biome, "processed"] });
   BIOME_MATS[biome] = { wood: w, stone: s, herb: h, fiber: f, hide: hd, gem: g, plank, block, extract, cloth, leather };
 });
+// the three gems no recipe asks for are catalysts at the forge's enhancement bench
+for (const [id, extra] of [["seal_gem", "Đặt lên bàn Cường Hoá: lần đó chắc chắn thành công."], ["tiger_eye", "Đặt lên bàn Cường Hoá: +25% tỉ lệ thành công."], ["soul_gem", "Đặt lên bàn Cường Hoá: nếu thất bại sẽ được hoàn lại toàn bộ vàng."]] as const)
+  if (ITEMS[id]) ITEMS[id].desc = `Đá quý hiếm. ${extra}`;
 
 // Lookups for items registered earlier (legacy.ts runs before this module).
 function ITEM_NAME(id: string) { return ITEMS[id]?.name ?? id; }
