@@ -5,7 +5,7 @@ import { decodeFog, encodeFog } from "../world/fog";
 import { hashString } from "./rng";
 import { enhLevel, enhancedId, getItem, type GearKey, type MealBuff } from "../data/items";
 
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 /** Highest character level (the floor-100 gatekeeper stands at 200). */
 export const MAX_LEVEL = 200;
 
@@ -190,13 +190,13 @@ export function newGame(heroName: string, classId: string, seed: number): GameSt
     party: ["hero"],
     inventory: { seed_wheat: 6, seed_radish: 3, wood: 12, stone: 8, herb: 3, potion_hp: 3, bread: 2 },
     buildings: [
-      { id: "b_house", type: "house", x: 34, y: 34, level: 1 },
-      { id: "b_gate", type: "gate", x: 35, y: 31, level: 1 },
-      { id: "b_farm1", type: "farm", x: 38, y: 37, level: 1, plot: { soil: 0, watered: false } },
-      { id: "b_farm2", type: "farm", x: 39, y: 37, level: 1, plot: { soil: 0, watered: false } },
-      { id: "b_farm3", type: "farm", x: 38, y: 38, level: 1, plot: { soil: 0, watered: false } },
-      { id: "b_farm4", type: "farm", x: 39, y: 38, level: 1, plot: { soil: 0, watered: false } },
-      { id: "b_well", type: "well", x: 37, y: 39, level: 1 },
+      { id: "b_house", type: "house", x: 66, y: 66, level: 1 },
+      { id: "b_gate", type: "gate", x: 67, y: 63, level: 1 },
+      { id: "b_farm1", type: "farm", x: 70, y: 69, level: 1, plot: { soil: 0, watered: false } },
+      { id: "b_farm2", type: "farm", x: 71, y: 69, level: 1, plot: { soil: 0, watered: false } },
+      { id: "b_farm3", type: "farm", x: 70, y: 70, level: 1, plot: { soil: 0, watered: false } },
+      { id: "b_farm4", type: "farm", x: 71, y: 70, level: 1, plot: { soil: 0, watered: false } },
+      { id: "b_well", type: "well", x: 69, y: 71, level: 1 },
     ],
     territory: 0,
     flags: { seed: seed },
@@ -597,6 +597,11 @@ export function migrate(raw: unknown): GameState {
       // stat points need no change: 1.5 per doubled level is the same total as 3 per level
     }
     if (g.tavern) g.tavern.offers = [];
+  }
+  if ((g.v ?? 1) < 6) {
+    // v6: the sanctuary world grew from 72×72 to 136×136 (centre 36 -> 68) and every territory
+    // level doubled in width, so everything already built moves with the centre.
+    for (const b of g.buildings) { b.x += 32; b.y += 32; } // SZ_SHIFT in world/sanctuary
   }
   g.v = SAVE_VERSION;
   for (const b of g.buildings) if (b.type === "farm" && !b.plot) b.plot = { soil: 0, watered: false };
