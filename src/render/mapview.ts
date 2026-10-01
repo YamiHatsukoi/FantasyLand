@@ -1,3 +1,4 @@
+import { covered } from "../ui/cover";
 /** Canvas camera + input for tile maps (dungeon floors and the safe zone). */
 export class MapView {
   canvas: HTMLCanvasElement;
@@ -106,10 +107,14 @@ export class MapView {
   }
 
   start() {
+    let drawn = 0;
     const loop = (t: number) => {
+      this.raf = requestAnimationFrame(loop);
+      // under a conversation or story scene: about 12 frames a second is plenty
+      if (covered() && t - drawn < 80) return;
+      drawn = t;
       this.ctx.imageSmoothingEnabled = false;
       this.onDraw?.(t);
-      this.raf = requestAnimationFrame(loop);
     };
     this.raf = requestAnimationFrame(loop);
   }

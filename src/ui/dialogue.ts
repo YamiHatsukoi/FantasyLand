@@ -1,5 +1,6 @@
 import { h, isTopModal, nextLayer, trackModal, type ModalHandle } from "./dom";
 import { sfx } from "../audio/sfx";
+import { cover } from "./cover";
 
 /**
  * Cinematic conversation window: a large portrait sliding in from the side, an ornate name
@@ -43,6 +44,7 @@ export class Dialogue {
   private flushPending = false;
   private picks: (() => void)[] = [];
   private untrack: () => void;
+  private uncover = cover();
   private handle: ModalHandle;
   readonly log: Entry[] = [];
   private closed = false;
@@ -130,6 +132,7 @@ export class Dialogue {
     window.clearInterval(this.typing);
     window.removeEventListener("keydown", this.onKey);
     this.untrack();
+    this.uncover();
     this.root.classList.remove("in");
     this.root.classList.add("out");
     setTimeout(() => this.root.remove(), 220);
