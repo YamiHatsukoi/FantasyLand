@@ -9,13 +9,13 @@ import { K, type Sprite } from "./parts";
  */
 export type PlanArt = (s: Sprite, c: string, a: string, e: string, r: Rng) => void;
 
-const dk = (c: string, f = -0.25) => hs(c, f);
-const lt = (c: string, f = 0.3) => hs(c, f);
-const BONE = "#e8e0cc";
-const TEETH = "#f4ead8";
-const MAW = "#3a0a14";
+export const dk = (c: string, f = -0.25) => hs(c, f);
+export const lt = (c: string, f = 0.3) => hs(c, f);
+export const BONE = "#e8e0cc";
+export const TEETH = "#f4ead8";
+export const MAW = "#3a0a14";
 
-function horns(s: Sprite, x: number, y: number, a: string, r: Rng, kind = r.int(0, 3)) {
+export function horns(s: Sprite, x: number, y: number, a: string, r: Rng, kind = r.int(0, 3)) {
   if (kind === 1) {
     s.part((m) => m.path([[x - 2, y], [x - 4, y - 3], [x - 3, y - 6]], 1.2, 0.5), a);
     s.part((m) => m.path([[x + 2, y], [x + 4, y - 3], [x + 5, y - 6]], 1.2, 0.5), a);
@@ -26,14 +26,14 @@ function horns(s: Sprite, x: number, y: number, a: string, r: Rng, kind = r.int(
     s.part((m) => m.path([[x, y + 1], [x + 1, y - 3], [x + 2.5, y - 6]], 1.4, 0.4), a);
   }
 }
-function spikes(s: Sprite, pts: [number, number][], a: string, r: Rng) {
+export function spikes(s: Sprite, pts: [number, number][], a: string, r: Rng) {
   for (const [x, y] of pts) {
     const h = r.int(2, 4), lean = r.range(-0.8, 0.8);
     s.part((m) => m.poly([[x - 1.6, y + 1], [x + lean, y - h], [x + 1.6, y + 1]]), a, { k: 0.8 });
   }
 }
 /** Stripes, spots or nothing, blended into the shading of the body drawn so far. */
-function markings(s: Sprite, x0: number, y0: number, x1: number, y1: number, a: string, r: Rng, kind = r.int(0, 2)) {
+export function markings(s: Sprite, x0: number, y0: number, x1: number, y1: number, a: string, r: Rng, kind = r.int(0, 2)) {
   const paint = (x: number, y: number, t = 0.55) => { const o = s.get(Math.round(x), Math.round(y)); if (o) s.px(x, y, mix(o, a, t)); };
   if (kind === 1) for (let x = x0; x <= x1; x += 4) for (let y = y0; y <= y1; y++) paint(x - ((y - y0) * 2) / Math.max(1, y1 - y0), y);
   if (kind === 2) for (let i = 0; i < 6; i++) {
@@ -41,7 +41,7 @@ function markings(s: Sprite, x0: number, y0: number, x1: number, y1: number, a: 
     paint(x, y); paint(x + 1, y); paint(x, y + 1, 0.4);
   }
 }
-const wing = (pts: [number, number][]) => (m: { poly: (p: [number, number][]) => unknown }) => m.poly(pts);
+export const wing = (pts: [number, number][]) => (m: { poly: (p: [number, number][]) => unknown }) => m.poly(pts);
 
 export const PLAN_ART: Record<string, PlanArt> = {
   blob: (s, c, a, e, r) => {

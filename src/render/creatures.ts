@@ -1,7 +1,8 @@
 import { Rng, hashString } from "../core/rng";
-import { outline } from "./palette";
+import { hs, mix, outline } from "./palette";
 import { Sprite } from "./parts";
 import { PLAN_ART } from "./plans";
+import { VARIANTS } from "./variants";
 
 /**
  * Procedural 32x32 creature sprites. A creature is a body plan (quadruped, bird, serpent,
@@ -59,6 +60,8 @@ export interface CreatureSpec {
   el?: string;
   /** Material family of the floor: mushrooms, coral, bone plates, crystals, vines... */
   fam?: string;
+  /** Silhouette variant 0-2; picked from the seed when left out. */
+  v?: number;
 }
 
 // ------------------------------------------------------------ regional features
@@ -191,14 +194,19 @@ export function shrink32(key: string, make: () => HTMLCanvasElement): HTMLCanvas
   return c;
 }
 
+/** Which of the plan's three silhouettes this creature uses. */
+export function variantOf(s: CreatureSpec): number {
+  return s.v ?? ((s.seed >>> 5) % 3);
+}
+
 export function creatureKey(s: CreatureSpec) {
-  return `cr:${s.plan}:${s.c}:${s.c2 ?? ""}:${s.eye ?? ""}:${s.seed}:${s.boss ? 1 : 0}:${s.el ?? ""}:${s.fam ?? ""}`;
+  return `cr:${s.plan}:${s.c}:${s.c2 ?? ""}:${s.eye ?? ""}:${s.seed}:${s.boss ? 1 : 0}:${s.el ?? ""}:${s.fam ?? ""}${s.v === undefined ? "" : `:${s.v}`}`;
 }
 
 export function parseCreature(id: string): CreatureSpec | null {
   if (!id.startsWith("cr:")) return null;
-  const [, plan, c, c2, eye, seed, boss, el, fam] = id.split(":");
-  return { plan, c, c2: c2 || undefined, eye: eye || undefined, seed: Number(seed), boss: boss === "1", el: el || undefined, fam: fam || undefined };
+  const [, plan, c, c2, eye, seed, boss, el, fam, v] = id.split(":");
+  return { plan, c, c2: c2 || undefined, eye: eye || undefined, seed: Number(seed), boss: boss === "1", el: el || undefined, fam: fam || undefined, v: v ? Number(v) : undefined };
 }
 
 export function creatureCanvas(s: CreatureSpec): HTMLCanvasElement {
@@ -210,14 +218,26 @@ export function creatureCanvas(s: CreatureSpec): HTMLCanvasElement {
   const a = s.c2 ?? sh(s.c, 0.45);
   const e = s.eye ?? (rng.chance(0.5) ? "#ffe14a" : "#ff4a4a");
   const art = new Sprite((c) => c);
-  (PLAN_ART[s.plan] ?? PLAN_ART.blob)(art, s.c, a, e, rng);
+  const v = variantOf(s);
+  ((v && VARIANTS[s.plan]?.[v - 1]) || PLAN_ART[s.plan] || PLAN_ART.blob)(art, s.c, a, e, rng);
   for (let i = 0; i < S * S; i++) g.g[Math.floor(i / S)][i % S] = art.g[i];
   // the region leaves its mark: family first (body), then the element (aura)
   if (s.fam) FAM_FX[s.fam]?.(g, new Rng(s.seed ^ 0x5eed));
   if (s.el) EL_FX[s.el]?.(g, new Rng(s.seed ^ 0xe1e));
   if (s.boss) {
-    // bosses get a crown of accent spikes and a glowing core
-    for (let x = 9; x <= 23; x += 3) if (g.get(x, 3) === null) g.line(x, 3, x, 0, a);
+    // bosses get a crown of accent spikes and a rim of accent light along their top/right edges
+    const { top } = silhouette(g);
+    let cx = 16, t = 99;
+    for (let x = 10; x <= 24; x++) if (top[x] >= 0 && top[x] < t) { t = top[x]; cx = x; }
+    if (t >= 4) {
+      const gold = hs(a, 0.15), dark = hs(a, -0.35);
+      for (let x = cx - 4; x <= cx + 4; x++) { g.px(x, t - 1, gold); g.px(x, t - 2, x % 2 ? gold : dark); }
+      for (const dx of [-4, 0, 4]) { g.px(cx + dx, t - 3, gold); g.px(cx + dx, t - 4 + (dx ? 1 : 0), hs(a, 0.5)); }
+      g.px(cx, t - 2, "#ff4a6a");
+    }
+    const rim = hs(a, 0.35);
+    const lit = Array.from({ length: S }, (_, y) => g.g[y].map((c, x) => !!c && (!g.get(x, y - 1) || !g.get(x + 1, y))));
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) if (lit[y][x]) g.px(x, y, mix(g.g[y][x]!, rim, 0.55));
   }
   // outline
   const out = Array.from({ length: S }, (_, y) => g.g[y].slice());

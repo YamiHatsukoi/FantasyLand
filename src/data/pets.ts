@@ -49,7 +49,7 @@ export const PETS: PetDef[] = [
   { id: "pet_wisp", name: "Đom Đóm Hiền Triết", hook: "xp", gift: "Ánh Sáng Tri Thức", desc: "+25% kinh nghiệm sau mỗi trận.", look: { plan: "elemental", c: "#fff3a0", c2: "#ffffff" } },
 ];
 export const PET = Object.fromEntries(PETS.map((p) => [p.id, p]));
-export const petSpec = (p: PetDef): CreatureSpec => ({ ...p.look, seed: p.id.length * 7919 + p.id.charCodeAt(4) });
+export const petSpec = (p: PetDef): CreatureSpec => ({ v: 0, ...p.look, seed: p.id.length * 7919 + p.id.charCodeAt(4) });
 
 /** Every how many party turns an acting pet does its thing. */
 export const PET_EVERY: Partial<Record<PetHook, number>> = { burn: 3, rain: 3, spark: 4 };

@@ -5,6 +5,7 @@ import { I, ITEMS } from "../data/items/core";
 import { registerRelic } from "../data/items/equipment";
 import { BIOME_MATS, METALS, metalTierForFloor } from "../data/items/materials";
 import { creatureKey, type Plan } from "../render/creatures";
+import { isBeast } from "../render/bestiary";
 import { SKILLS } from "../data/skills";
 import { PASSIVES } from "../data/passives";
 import { mix, sh } from "../render/tiles";
@@ -212,7 +213,8 @@ export function registerMonsters(s: FloorSpec) {
   const resist: EnemyDef["resist"] = { [s.el]: 0.3 };
   if (weak) resist[weak] = 1.35;
   ENEMIES[id] = {
-    id, name, sprite: creatureKey({ plan, c, c2, seed: hashString(id), boss: true, el: s.el, fam: s.fam }), tags: PLAN_TAGS[plan] ?? ["beast"],
+    // milestone gatekeepers have their own hand-drawn art
+    id, name, sprite: isBeast(id) ? id : creatureKey({ plan, c, c2, seed: hashString(id), boss: true, el: s.el, fam: s.fam }), tags: PLAN_TAGS[plan] ?? ["beast"],
     base: statsFor(role, true, s.n), resist,
     skills: [...new Set([...(PLAN_SKILLS[plan] ?? ["bite"]), ...elSkills, ...(REGION_SKILLS[s.fam] ?? []).map((k) => `r_${s.fam}_${k}`).filter((k) => SKILLS[k]), s.n % 3 === 0 ? "cataclysm" : s.n % 3 === 1 ? "roar" : "rage"])],
     passives: ["e_boss", "e_enrage", ...(PASSIVES[`r_${s.fam}`] ? [`r_${s.fam}`] : []), ...(s.n >= 30 ? ["e_regen"] : [])], boss: true, scale: 2, ai: "smart",
