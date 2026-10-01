@@ -1,5 +1,7 @@
 import type { Palette } from "../../render/icons";
 import { C, I, ITEMS } from "./core";
+// base items (wood, stone, herb, hide...) must exist before their processed forms are named
+import "./legacy";
 
 // ------------------------------------------------------------ metals (tiered by floor depth)
 export interface Metal { tier: number; ore: string; ingot: string; name: string; col: string }

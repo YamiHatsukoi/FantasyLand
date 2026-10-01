@@ -58,11 +58,11 @@ async function startSession(s: Session) {
   else goSafeZone(false);
 }
 
-function goSafeZone(animate = true) {
+function goSafeZone(animate = true): Promise<void> {
   closeAllModals();
   const show = () => app.show((root) => mountSafeZone(root, { enterDungeon: (f) => enterDungeon(f), visit: goVisit }));
-  if (!animate) return show();
-  void playTransition({ kicker: "TRỞ VỀ", title: "⌂", name: "Thánh Địa", sub: "Ánh đèn nhà đang chờ", accent: "#ffd27a", ground: "#1a2a18" }, show);
+  if (!animate) { show(); return Promise.resolve(); }
+  return playTransition({ kicker: "TRỞ VỀ", title: "⌂", name: "Thánh Địa", sub: "Ánh đèn nhà đang chờ", accent: "#ffd27a", ground: "#1a2a18" }, show);
 }
 
 function goVisit(v: PlayerVisit) {

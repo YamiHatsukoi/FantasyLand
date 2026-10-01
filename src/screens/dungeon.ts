@@ -71,7 +71,8 @@ export function startExpedition(g: GameState, floor: number) {
 }
 
 export interface DungeonHooks {
-  toSafeZone: () => void;
+  /** Goes home; resolves once the transition has finished (so reports show after it). */
+  toSafeZone: () => Promise<void> | void;
   changeFloor: (n: number) => void;
 }
 
@@ -616,8 +617,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         g.flags.tired = true;
         logMsg(g, `Trở về từ tầng ${floorN}.`);
         app.dirty(true);
-        hooks.toSafeZone();
-        showLoot("🏡 Về tới Thánh Địa", lines.length ? lines : ["Chuyến đi này không nhặt được gì."], "Bạn thấy mệt mỏi. Hãy vào Nhà Chính ngủ một giấc.");
+        void Promise.resolve(hooks.toSafeZone()).then(() => showLoot("🏡 Về tới Thánh Địa", lines.length ? lines : ["Chuyến đi này không nhặt được gì."], "Bạn thấy mệt mỏi. Hãy vào Nhà Chính ngủ một giấc."));
         return;
       }
     }
@@ -674,9 +674,8 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     g.flags.tired = true;
     logMsg(g, voluntary ? `Thoát khẩn cấp khỏi tầng ${floorN}.` : `Gục ngã ở tầng ${floorN}.`);
     app.dirty(true);
-    hooks.toSafeZone();
-    showLoot(voluntary ? "🏳️ Thoát Khẩn Cấp" : "💀 Gục Ngã", lost.length ? lost : ["Không mất gì."],
-      voluntary ? "Mầm kéo cả đội về Thánh Địa. Một nửa chiến lợi phẩm đã rơi lại dưới Vực Sâu." : "Bạn tỉnh dậy bên cạnh Mầm, toàn thân đau nhức. Một nửa chiến lợi phẩm đã bị bỏ lại dưới Vực Sâu.");
+    void Promise.resolve(hooks.toSafeZone()).then(() => showLoot(voluntary ? "🏳️ Thoát Khẩn Cấp" : "💀 Gục Ngã", lost.length ? lost : ["Không mất gì."],
+      voluntary ? "Mầm kéo cả đội về Thánh Địa. Một nửa chiến lợi phẩm đã rơi lại dưới Vực Sâu." : "Bạn tỉnh dậy bên cạnh Mầm, toàn thân đau nhức. Một nửa chiến lợi phẩm đã bị bỏ lại dưới Vực Sâu."));
   }
 
   // ------------------------------------------------------------ the great event of this floor
@@ -1310,8 +1309,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         g.flags.tired = true;
         logMsg(g, `Dùng cuộn phép trở về từ tầng ${floorN}.`);
         app.dirty(true);
-        hooks.toSafeZone();
-        showLoot("📜 Dịch chuyển về Thánh Địa", lines.length ? lines : ["Chuyến đi này không nhặt được gì."]);
+        void Promise.resolve(hooks.toSafeZone()).then(() => showLoot("📜 Dịch chuyển về Thánh Địa", lines.length ? lines : ["Chuyến đi này không nhặt được gì."]));
       }, 50);
       return true;
     }
