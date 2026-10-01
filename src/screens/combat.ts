@@ -38,6 +38,8 @@ export interface BattleSetup {
   /** The pack is led by an elite (its first monster). */
   elite?: boolean;
   seed?: number;
+  /** Resolves when the encounter wipe has cleared; the first turn waits for it. */
+  ready?: Promise<void>;
 }
 
 export type BattleOutcome = "win" | "lose" | "flee";
@@ -771,6 +773,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   // ------------------------------------------------------------ main loop
   const loop = async (): Promise<BattleOutcome> => {
     refreshAll();
+    if (setup.ready) await setup.ready;
     if (!g.flags.cb_help2) { g.flags.cb_help2 = true; combatHelp(); }
     if (bossUnit && mech) {
       const minion = setup.enemies.find((e) => !ENEMIES[e.id]?.boss)?.id ?? getFloor(Math.max(1, setup.floor)).enemies[0];
