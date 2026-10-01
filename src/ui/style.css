@@ -548,6 +548,8 @@ img.iicon.lg { width: 48px; height: 48px; }
 .arena .fighter .body img { width: var(--sz); height: var(--sz); position: relative; z-index: 1; animation: idle 1.8s ease-in-out infinite; animation-delay: var(--d, 0s); filter: drop-shadow(0 4px 3px rgba(0,0,0,.45)); }
 .arena .fighter .body img.tall { width: calc(var(--sz) * 0.62); height: calc(var(--sz) * 1.24); }
 .arena .fighter.ally .body img { transform: scaleX(1); }
+/* monster art faces right; turn enemies towards the party */
+.arena .fighter.enemy .body img { scale: -1 1; }
 @keyframes idle { 50% { translate: 0 -3px; } }
 .arena .fighter .plat {
   position: absolute; bottom: calc(var(--sz) * -0.1); left: 50%; transform: translateX(-50%); z-index: 0;

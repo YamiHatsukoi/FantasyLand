@@ -1,5 +1,5 @@
 import { Rng, hashString } from "../core/rng";
-import { outline } from "./palette";
+import { hs, outline } from "./palette";
 
 /**
  * Procedural 32x32 creature sprites. A creature is a body plan (quadruped, bird, serpent,
@@ -44,7 +44,7 @@ class Grid {
       const d = dx * dx + dy * dy;
       if (d > 1) continue;
       const lit = -dx * 0.55 - dy * 0.75 + (1 - d) * 0.5 + (BAYER[(y & 3) * 4 + (x & 3)] - 0.5) * 0.35;
-      this.px(x, y, lit > 0.8 ? sh(base, lightF) : lit > 0.1 ? base : sh(base, darkF));
+      this.px(x, y, lit > 1.05 && d > 0.25 ? hs(base, lightF + 0.15) : lit > 0.8 ? hs(base, lightF * 0.75) : lit > 0.1 ? base : lit > -0.45 ? hs(base, darkF * 0.85) : hs(base, darkF * 1.35));
     }
   }
   line(x0: number, y0: number, x1: number, y1: number, c: string, t = 1) {
@@ -243,10 +243,14 @@ const smallCache = new Map<string, HTMLCanvasElement>();
  * silhouette and face survive the reduction.
  */
 export function creatureSmall(s: CreatureSpec): HTMLCanvasElement {
-  const key = creatureKey(s);
+  return shrink32(creatureKey(s), () => creatureCanvas(s));
+}
+
+/** Halves a 32x32 sprite onto the 16px map grid (see creatureSmall); cached under `key`. */
+export function shrink32(key: string, make: () => HTMLCanvasElement): HTMLCanvasElement {
   const hit = smallCache.get(key);
   if (hit) return hit;
-  const big = creatureCanvas(s);
+  const big = make();
   const data = big.getContext("2d")!.getImageData(0, 0, 32, 32).data;
   const c = document.createElement("canvas");
   c.width = 16;
