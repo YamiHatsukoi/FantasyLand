@@ -35,19 +35,29 @@ export function unitFromCharacter(ch: Character, buffs: StatMods = {}): Unit {
   };
 }
 
+/**
+ * How much harder the abyss gets with depth, on top of plain level growth. Players out-scale
+ * monsters through gear, enhancement, passives and pets, so deeper monsters hit harder and last
+ * a little longer, and guardians grow tougher without turning into damage sponges.
+ */
+export const DEPTH = { offense: 0.017, mobHp: 0.012, bossHp: -0.002, bossOffense: 0.004 };
+
 export function enemyStats(def: EnemyDef, level: number): Stats {
-  const g = 1 + 0.14 * (level - 1);
+  const l = level - 1;
+  const g = 1 + 0.14 * l;
   const b = def.base;
   // a bit tougher than before: breaking shields and boosting is how the party gets ahead
   const tough = def.boss ? 1.1 : 1.05;
+  // guardians get their own (gentler) curve: their tricks already stack up with depth
+  const hit = def.boss ? 1.05 * (1 + DEPTH.bossOffense * l) : 1 + DEPTH.offense * l;
   return {
-    hp: Math.round(b.hp * g * tough * (def.boss ? 1 + 0.05 * (level - 1) : 1)),
-    mp: Math.round(b.mp * (1 + 0.05 * (level - 1))),
-    atk: Math.round(b.atk * g * (def.boss ? 1.05 : 1)),
-    mag: Math.round(b.mag * g * (def.boss ? 1.05 : 1)),
+    hp: Math.round(b.hp * g * tough * (1 + (def.boss ? DEPTH.bossHp : DEPTH.mobHp) * l)),
+    mp: Math.round(b.mp * (1 + 0.05 * l)),
+    atk: Math.round(b.atk * g * hit),
+    mag: Math.round(b.mag * g * hit),
     def: Math.round(b.def * g),
     res: Math.round(b.res * g),
-    spd: Math.round(b.spd + 0.6 * (level - 1)),
+    spd: Math.round(b.spd + 0.6 * l),
     crit: b.crit,
     eva: b.eva,
   };

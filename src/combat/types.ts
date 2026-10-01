@@ -169,6 +169,8 @@ export interface Unit {
   elite?: string[];
   /** Boss signature mechanic (see combat/bossMech.ts) and its bookkeeping. */
   mech?: string;
+  /** Deeper bosses stack several tricks; `mech` is the first of them. */
+  mechs?: string[];
   mechT?: number;
   mechCount?: number;
   mechLow?: string[];

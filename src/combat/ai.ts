@@ -25,6 +25,20 @@ export function chooseAction(b: Battle, u: Unit): Action {
   const hurt = friends.filter((f) => ratio(f) < 0.6).sort((a, c) => ratio(a) - ratio(c));
   const cands: Candidate[] = [];
 
+  // a party member on auto braces for a blow it can see coming: a doom countdown about to strike,
+  // or a gathered-power attack aimed at it or at everyone
+  if (u.side === "ally" && b.canUse(u, getSkill("defend")).ok) {
+    const danger = b.opponents(u).some((o) => {
+      if ((o.mechs ?? (o.mech ? [o.mech] : [])).includes("countdown") && (o.mechCount ?? 5) <= 1) return true;
+      if (!o.charged || !o.intent) return false;
+      const t = getSkill(o.intent.skill).target;
+      return o.intent.target === u.uid || t === "enemies";
+    });
+    // bracing beats everything except saving someone about to fall
+    const canSave = u.ai === "support" && hurt.some((f) => ratio(f) < 0.3) && skills.some((sk) => !!sk.heal);
+    if (danger && !canSave) return { skill: "defend" };
+  }
+
   for (const sk of skills) {
     if (sk.target === "deadAlly") {
       const dead = b.friendsDead(u);
@@ -67,18 +81,27 @@ export function chooseAction(b: Battle, u: Unit): Action {
     const count = sk.target === "enemies" ? b.opponents(u).length : 1;
     let w = 1 + (sk.power ?? 1) * (sk.hits ?? 1) * count * 0.8 + sk.tier * 0.4;
     if (sk.id === "attack") w *= u.mp < 10 ? 1.2 : 0.45;
+    // physical blows into thorns hurt the attacker: prefer spells, or another target
+    const thorny = (t: Unit) => sk.kind === "physical" && !!b.has(t, "thorns");
     if (sk.target === "enemy" && targets.length) {
       let best = targets[0];
       let bestScore = -Infinity;
       for (const t of targets) {
         let score = u.ai === "random" ? b.rng.next() * 2 : 1 - ratio(t) + b.rng.next() * 0.4;
+        if (u.side === "ally" && thorny(t)) score -= ratio(u) < 0.5 ? 3 : 1.2;
+        // never feed a foe that drinks this element
+        if (u.side === "ally" && (t.resist[sk.el] ?? 1) < 0) score -= 6;
+        // hit weaknesses to break shields, above all on a foe gathering power (a break cancels it)
+        if (u.side === "ally" && (t.resist[sk.el] ?? 1) > 1 && !t.broken) score += t.charged ? 3.5 : 1.5;
         for (const s of REACTION_BONUS[sk.el] ?? []) if (b.has(t, s)) score += 0.8;
         if (sk.sp?.some((s) => s.k === "consume" && b.has(t, s.s))) score += 1.2;
         if (score > bestScore) { bestScore = score; best = t; }
       }
-      cands.push({ a: { skill: sk.id, target: best.uid }, w: w + Math.max(0, bestScore) });
+      const prick = ratio(u) < 0.4 ? 0.05 : 0.35;
+      cands.push({ a: { skill: sk.id, target: best.uid }, w: (w + Math.max(0, bestScore)) * (u.side === "ally" && thorny(best) ? prick : 1) });
     } else {
-      cands.push({ a: { skill: sk.id }, w });
+      const spiky = u.side === "ally" && sk.target === "enemies" && b.opponents(u).some(thorny);
+      cands.push({ a: { skill: sk.id }, w: w * (spiky ? (ratio(u) < 0.4 ? 0.05 : 0.5) : 1) });
     }
   }
 

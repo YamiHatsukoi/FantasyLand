@@ -292,3 +292,45 @@ describe("after-battle report", () => {
     expect(b2.statsOf("a").taken).toBe(0);
   });
 });
+
+describe("difficulty curve", () => {
+  it("guardians stack more tricks with depth, within the floor's danger budget, never a forbidden pair", async () => {
+    const { mechsForFloor, threatBudget } = await import("../src/combat/bossMech");
+    const deep = ["giant", "quicksilver", "glass", "diamond", "vampire", "enrage", "gravity", "silence", "plague", "nullheal", "regen"];
+    const avg = (a: number, z: number) => { let t = 0; for (let n = a; n <= z; n++) t += mechsForFloor(n).length; return t / (z - a + 1); };
+    expect(avg(41, 70)).toBeGreaterThan(avg(1, 30));
+    expect(avg(71, 100)).toBeGreaterThan(avg(41, 70));
+    for (let n = 1; n <= 100; n++) {
+      const ms = mechsForFloor(n).map((m) => m.id);
+      expect(new Set(ms).size).toBe(ms.length);
+      if (n <= 20) expect(ms.some((m) => deep.includes(m)), `floor ${n}: ${ms}`).toBe(false);
+      expect(threatBudget(n)).toBeGreaterThanOrEqual(threatBudget(Math.max(1, n - 1)));
+      for (const [a, b] of [["rally", "summon"], ["countdown", "petrify"], ["regen", "shift"], ["giant", "glass"]]) expect(ms.includes(a) && ms.includes(b), `floor ${n}: ${ms}`).toBe(false);
+    }
+  });
+
+  it("armour works as before at level 1 and keeps mattering deeper", async () => {
+    const { armorFactor } = await import("../src/combat/engine");
+    expect(armorFactor(50, 1)).toBeCloseTo(0.5);
+    expect(armorFactor(300, 100)).toBeGreaterThan(armorFactor(300, 1));
+    expect(armorFactor(600, 100)).toBeLessThan(armorFactor(300, 100));
+  });
+
+  it("deeper monsters hit harder relative to their level, guardians on a gentler curve", async () => {
+    const { enemyStats } = await import("../src/combat/factory");
+    const mob = Object.values(ENEMIES).find((e) => !e.boss)!;
+    const boss = Object.values(ENEMIES).find((e) => e.boss)!;
+    const perLevel = (d: typeof mob, l: number) => enemyStats(d, l).atk / (1 + 0.14 * (l - 1));
+    expect(perLevel(mob, 150)).toBeGreaterThan(perLevel(mob, 10) * 2);
+    expect(perLevel(boss, 150) / perLevel(boss, 10)).toBeLessThan(perLevel(mob, 150) / perLevel(mob, 10));
+  });
+
+  it("an auto-battling ally braces when a doom countdown is about to strike", () => {
+    const a = dummy("ally", "a", { skills: ["attack"] });
+    const e = dummy("enemy", "e", { boss: true });
+    const b = new Battle([a], [e], 9);
+    b.initBoss(e, ["countdown"]);
+    e.mechCount = 1;
+    expect(chooseAction(b, a).skill).toBe("defend");
+  });
+});
