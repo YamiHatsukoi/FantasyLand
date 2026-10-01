@@ -10,6 +10,7 @@ import { mapPinURL, type MapPin } from "../render/icons";
 import { tip } from "../ui/tooltip";
 import { spriteCanvas } from "../render/pixel";
 import { creatureSmall, parseCreature } from "../render/creatures";
+import { beastSmall, isBeast } from "../render/bestiary";
 import { isPerson, personCanvas, type Dir } from "../render/people";
 import { PASSABLE, T, tileSet } from "../render/tiles";
 import { EVENTS, RANDOM_EVENTS, RANDOM_POOL } from "../story";
@@ -1059,7 +1060,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
           c.fillStyle = gr;
           c.fillRect(cx - TL, cy - TL, TL * 2, TL * 2);
         }
-        view.img(small ? creatureSmall(small) : spriteCanvas(ed.sprite, ed.palette), e.px, e.py, { dy: bob(e.x) - 0.05, flip: player.x < e.x });
+        view.img(small ? creatureSmall(small) : isBeast(ed.sprite) ? beastSmall(ed.sprite, ed.palette) : spriteCanvas(ed.sprite, ed.palette), e.px, e.py, { dy: bob(e.x) - 0.05, flip: player.x < e.x });
         if (isElite) {
           c.font = `${Math.round(TL * 0.34)}px sans-serif`;
           c.textAlign = "center";

@@ -1,6 +1,7 @@
 import { SPRITES } from "./sprites";
 import { tint } from "../data/enemies";
 import { creatureCanvas, parseCreature } from "./creatures";
+import { beastCanvas, isBeast } from "./bestiary";
 import { isPerson, portraitCanvas } from "./people";
 import { isProp, propCanvas } from "./props";
 
@@ -18,6 +19,7 @@ export function spriteCanvas(id: string, pal?: Record<string, string>): HTMLCanv
   if (hit) return hit;
   const cr = parseCreature(id);
   if (cr) return creatureCanvas(cr);
+  if (isBeast(id)) return beastCanvas(id, pal);
   if (isPerson(id)) return portraitCanvas(id, pal);
   if (isProp(id)) return propCanvas(id);
   const def = SPRITES[id] ?? SPRITES.slime;
