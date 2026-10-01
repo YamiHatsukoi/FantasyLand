@@ -41,6 +41,8 @@ export interface ModalHandle {
 }
 
 let modalStack: ModalHandle[] = [];
+/** z-index for a new window: above every open one, below toasts (80) and hover cards (90). */
+export const nextLayer = () => Math.min(78, 50 + modalStack.length * 2);
 
 export function openModal(title: string, opts: { onClose?: () => void; wide?: boolean; noClose?: boolean; cls?: string } = {}): ModalHandle {
   const titleEl = h("h2", { class: "modal-title" }, title);
@@ -50,6 +52,8 @@ export function openModal(title: string, opts: { onClose?: () => void; wide?: bo
     body,
   );
   const backdrop = h("div", { class: "backdrop" }, box);
+  // each window opened later sits above the earlier ones (a gift picker over a conversation...)
+  backdrop.style.zIndex = String(nextLayer());
   backdrop.addEventListener("pointerdown", (e) => {
     if (e.target === backdrop && !opts.noClose) handle.close();
   });
@@ -117,6 +121,15 @@ function autoSearch(m: ModalHandle) {
   };
   new MutationObserver(ensure).observe(m.body, { childList: true, subtree: true });
 }
+
+/** Lets a custom full-screen window (dialogue...) count as a modal: it blocks map keys and closes with the rest. */
+export function trackModal(hd: ModalHandle): () => void {
+  modalStack.push(hd);
+  return () => { modalStack = modalStack.filter((m) => m !== hd); };
+}
+
+/** True when `hd` is the window on top (so it should get the keyboard). */
+export const isTopModal = (hd: ModalHandle) => modalStack[modalStack.length - 1] === hd;
 
 export function closeAllModals() {
   for (const m of [...modalStack]) m.close();

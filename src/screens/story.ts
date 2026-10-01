@@ -29,13 +29,26 @@ export function playStory(eventId: string, opts: StoryOptions): Promise<StoryRes
     const title = h("h2", { class: "story-title" }, fillText(ev.title, ctx));
     const stage = h("div", { class: "story-stage" });
     const box = h("div", { class: "story-box" });
+    const choiceHost = h("div", { class: "story-choices" });
     const el = h("div", { class: "story", style: opts.bg ? `--sb1:${opts.bg[0]};--sb2:${opts.bg[1]}` : "" },
-      h("div", { class: "story-inner" }, title, stage, box));
+      h("div", { class: "story-inner" }, title, stage, choiceHost, box));
     document.body.append(el);
 
     let typing: number | undefined;
+    // number keys pick a choice, space / enter finish the typewriter
+    const onKey = (e: KeyboardEvent) => {
+      if (el.style.visibility === "hidden" || document.querySelector(".backdrop")) return;
+      if ((e.key === " " || e.key === "Enter") && typing) { e.preventDefault(); box.click(); return; }
+      const n = Number(e.key);
+      if (n >= 1 && n <= 9 && !(e.target instanceof HTMLInputElement)) {
+        const btn = choiceHost.querySelectorAll<HTMLButtonElement>(".choice")[n - 1];
+        if (btn && !btn.disabled) { e.preventDefault(); btn.click(); }
+      }
+    };
+    window.addEventListener("keydown", onKey);
     const finish = (res: StoryResult) => {
       window.clearInterval(typing);
+      window.removeEventListener("keydown", onKey);
       el.remove();
       app.dirty();
       resolve(res);
@@ -80,6 +93,7 @@ export function playStory(eventId: string, opts: StoryOptions): Promise<StoryRes
       if (portrait) stage.append(spriteImg(portrait, undefined, "sprite story-portrait"));
 
       box.replaceChildren();
+      choiceHost.replaceChildren();
       if (sc.speaker) box.append(h("div", { class: "speaker" }, sc.speaker));
       const textEl = h("div", { class: "story-text" });
       box.append(textEl);
@@ -94,7 +108,7 @@ export function playStory(eventId: string, opts: StoryOptions): Promise<StoryRes
       const renderRest = () => {
         if (fxLines.length) after.append(h("div", { class: "fx-list" }, fxLines.map((l) => h("span", null, l))));
         const choices = h("div", { class: "choices" });
-        after.append(choices);
+        choiceHost.append(choices);
         if (battle) {
           choices.append(h("button", { class: "choice", onclick: () => void doBattle(battle) }, "⚔️ Vào trận!"));
           return;

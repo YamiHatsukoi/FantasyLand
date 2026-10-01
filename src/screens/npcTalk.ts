@@ -3,6 +3,7 @@ import { getItem } from "../data/items";
 import { JOBS, PERSONAS, REPLY_TOPICS } from "../data/npcText";
 import { spriteImg } from "../render/pixel";
 import { h, openModal, toast, type ModalHandle } from "../ui/dom";
+import { Dialogue, type DlgChoice } from "../ui/dialogue";
 import { itemImg, lootChips } from "../ui/icon";
 import {
   AFF_NAMES, acceptQuest, activeQuest, affTier, askAbout, canGift, chat, completeQuest, doRecruit, giftTier, giveGift, greet,
@@ -13,26 +14,30 @@ import {
 export function openNpc(npc: NpcDef, onClose?: () => void) {
   const g = app.game;
   const ctx = { g, npc };
-  const m = openModal(`${JOBS[npc.job].icon} ${npc.name}`, { wide: true, onClose: () => { app.dirty(); onClose?.(); } });
-  const log: { who: "npc" | "you" | "sys"; text: string }[] = greet(ctx).map((text) => ({ who: "npc" as const, text }));
-  const say = (text: string) => log.push({ who: "npc", text });
-  const you = (text: string) => log.push({ who: "you", text });
-  const sys = (text: string) => log.push({ who: "sys", text });
+  const d = new Dialogue({
+    name: npc.name, title: `${npc.race} · ${JOBS[npc.job].icon} ${JOBS[npc.job].name} · ${npc.town}`,
+    portrait: spriteImg(npc.sprite, npc.pal, "sprite"), onClose: () => { app.dirty(); onClose?.(); },
+  });
+  const m = { close: () => d.close() };
+  const say = (text: string) => d.say(text);
+  const you = (text: string) => d.you(text);
+  const sys = (text: string) => d.note(text);
+  for (const line of greet(ctx)) say(line);
 
   const render = () => {
     const mem = memOf(g, npc.id);
     const q = activeQuest(g, npc.id);
     const recruited = !!mem.recruited || !!g.chars[`npc_${npc.id}`];
-    const header = h("div", { class: "row", style: "align-items:flex-start;gap:12px;flex-wrap:nowrap" },
-      spriteImg(npc.sprite, npc.pal, "sprite big-portrait"),
-      h("div", { class: "grow" },
-        h("div", { class: "small muted" }, `${npc.race} · ${JOBS[npc.job].name} · ${PERSONAS[npc.persona].icon} ${PERSONAS[npc.persona].name} · Cấp ${npc.level}`),
-        h("div", { class: "small" }, `${hearts(mem.aff)} ${AFF_NAMES[affTier(mem.aff)]} (${mem.aff}) · Đã nói chuyện ${mem.talks} lần`),
-        h("div", { class: "small muted" }, tasteHint(g, npc))));
-    const box = h("div", { class: "story-box npc-log" }, log.slice(-8).map((l) =>
-      h("div", { class: `npc-line ${l.who}` }, l.who === "npc" ? h("b", null, `${npc.name.split(" ")[0]}: `) : l.who === "you" ? h("b", null, "Bạn: ") : "", l.text)));
-    const acts = h("div", { class: "choices" });
-    const add = (label: string, fn: () => void, disabled = false) => acts.append(h("button", { class: `choice ${disabled ? "locked" : ""}`, disabled, onclick: fn }, label));
+    d.setInfo(
+      h("span", null, `${hearts(mem.aff)} ${AFF_NAMES[affTier(mem.aff)]} · ${mem.aff}`),
+      h("span", null, `${PERSONAS[npc.persona].icon} ${PERSONAS[npc.persona].name} · Cấp ${npc.level}`),
+      h("span", { class: "muted" }, tasteHint(g, npc)));
+    const list: DlgChoice[] = [];
+    const add = (label: string, fn: () => void, disabled = false, tone?: DlgChoice["tone"], hint?: string) => {
+      const [icon, ...rest] = label.split(" ");
+      const emoji = /\p{Extended_Pictographic}/u.test(icon);
+      list.push({ icon: emoji ? icon : undefined, label: emoji ? rest.join(" ") : label, onPick: fn, disabled, tone, hint });
+    };
 
     add("💬 Trò chuyện", () => { you("Dạo này thế nào?"); say(chat(ctx)); render(); });
     add("📖 Hỏi về bản thân họ", () => { you("Kể tôi nghe về bạn đi."); const r = askAbout(ctx); say(r.text); render(); });
@@ -99,8 +104,7 @@ export function openNpc(npc: NpcDef, onClose?: () => void) {
       }
     } else add("🤝 Đã là đồng đội của bạn", () => undefined, true);
     add("👋 Tạm biệt", () => m.close());
-    m.body.replaceChildren(header, box, acts);
-    box.scrollTop = box.scrollHeight;
+    d.choices(list);
   };
 
   function openGift() {
@@ -129,5 +133,5 @@ export function openNpc(npc: NpcDef, onClose?: () => void) {
   }
 
   render();
-  return m as ModalHandle;
+  return { el: d.root, body: d.root, close: () => d.close(), setTitle: () => undefined } as ModalHandle;
 }
