@@ -1,4 +1,4 @@
-import { audioCtx, routes } from "./engine";
+import { audioCtx, busNode } from "./engine";
 
 /**
  * Plays recorded instruments (VS Chamber Orchestra: Community Edition, CC0 - see
@@ -28,30 +28,30 @@ const loading = new Map<string, Promise<boolean>>();
 /** Instruments whose notes can be held as long as the music asks. */
 const SUSTAINED = new Set(["violins", "violas", "cellos", "basses", "solovln", "flute", "oboe", "clarinet", "bassoon", "horn", "trumpet", "trombone"]);
 
-/** Seating of the orchestra, left (-1) to right (+1), and how much hall each one gets. */
-export const SEAT: Record<string, { pan: number; verb: number; gain: number }> = {
-  violins: { pan: -0.45, verb: 0.55, gain: 0.9 },
-  solovln: { pan: -0.2, verb: 0.5, gain: 0.85 },
-  violas: { pan: 0.1, verb: 0.55, gain: 0.8 },
-  cellos: { pan: 0.4, verb: 0.5, gain: 0.85 },
-  basses: { pan: 0.55, verb: 0.45, gain: 0.8 },
-  spic: { pan: -0.4, verb: 0.35, gain: 0.85 },
-  cellospic: { pan: 0.4, verb: 0.35, gain: 0.85 },
-  pizz: { pan: -0.3, verb: 0.45, gain: 0.9 },
-  harp: { pan: -0.6, verb: 0.55, gain: 0.85 },
-  piano: { pan: 0.05, verb: 0.4, gain: 0.85 },
-  flute: { pan: -0.15, verb: 0.55, gain: 0.8 },
-  oboe: { pan: 0.15, verb: 0.55, gain: 0.75 },
-  clarinet: { pan: -0.25, verb: 0.55, gain: 0.75 },
-  bassoon: { pan: 0.25, verb: 0.5, gain: 0.8 },
-  horn: { pan: -0.3, verb: 0.65, gain: 0.8 },
-  trumpet: { pan: 0.25, verb: 0.55, gain: 0.7 },
-  trombone: { pan: 0.4, verb: 0.55, gain: 0.75 },
-  timp: { pan: 0.0, verb: 0.6, gain: 1.0 },
-  glock: { pan: 0.35, verb: 0.6, gain: 0.55 },
-  marimba: { pan: 0.3, verb: 0.4, gain: 0.8 },
-  bells: { pan: 0.2, verb: 0.7, gain: 0.7 },
-  perc: { pan: 0.0, verb: 0.45, gain: 1.0 },
+/** Seating of the orchestra, left (-1) to right (+1), and its level. */
+export const SEAT: Record<string, { pan: number; gain: number }> = {
+  violins: { pan: -0.45, gain: 0.9 },
+  solovln: { pan: -0.2, gain: 0.85 },
+  violas: { pan: 0.1, gain: 0.8 },
+  cellos: { pan: 0.4, gain: 0.85 },
+  basses: { pan: 0.55, gain: 0.8 },
+  spic: { pan: -0.4, gain: 0.85 },
+  cellospic: { pan: 0.4, gain: 0.85 },
+  pizz: { pan: -0.3, gain: 0.9 },
+  harp: { pan: -0.6, gain: 0.85 },
+  piano: { pan: 0.05, gain: 0.85 },
+  flute: { pan: -0.15, gain: 0.8 },
+  oboe: { pan: 0.15, gain: 0.75 },
+  clarinet: { pan: -0.25, gain: 0.75 },
+  bassoon: { pan: 0.25, gain: 0.8 },
+  horn: { pan: -0.3, gain: 0.8 },
+  trumpet: { pan: 0.25, gain: 0.7 },
+  trombone: { pan: 0.4, gain: 0.75 },
+  timp: { pan: 0.0, gain: 1.0 },
+  glock: { pan: 0.35, gain: 0.55 },
+  marimba: { pan: 0.3, gain: 0.8 },
+  bells: { pan: 0.2, gain: 0.7 },
+  perc: { pan: 0.0, gain: 1.0 },
 };
 
 async function loadMap(): Promise<BankMap | null> {
@@ -95,19 +95,17 @@ function measureShift(buf: AudioBuffer, first: Entry): number {
   return 0;
 }
 
-// ------------------------------------------------------------ channel strips (shared pan + send)
+// ------------------------------------------------------------ channel strips (shared pan)
 const strips = new Map<string, GainNode>();
-function strip(bus: Bus, pan: number, verb: number): GainNode {
-  const key = `${bus}|${pan.toFixed(2)}|${verb.toFixed(2)}`;
+function strip(bus: Bus, pan: number): GainNode {
+  const key = `${bus}|${pan.toFixed(2)}`;
   let g = strips.get(key);
   if (g) return g;
   const ctx = audioCtx()!;
-  const r = routes(bus);
   g = ctx.createGain();
   const p = ctx.createStereoPanner();
   p.pan.value = pan;
-  g.connect(p).connect(r.dry);
-  if (verb > 0) { const s = ctx.createGain(); s.gain.value = verb; g.connect(s).connect(r.verb); }
+  g.connect(p).connect(busNode(bus));
   strips.set(key, g);
   return g;
 }
@@ -123,7 +121,6 @@ export interface NoteOpts {
   vel?: number;
   bus?: Bus;
   pan?: number;
-  verb?: number;
   attack?: number;
   release?: number;
   /** Extra pitch bend in semitones (sound effects). */
@@ -172,13 +169,13 @@ export function note(name: string, midi: number, dur: number, o: NoteOpts = {}) 
   const list = map?.[name];
   if (!ctx || !list || !buffers.has(name)) return;
   if (voices >= MAX_VOICES && o.bus !== "sfx") return;
-  const seat = SEAT[name] ?? { pan: 0, verb: 0.4, gain: 0.8 };
+  const seat = SEAT[name] ?? { pan: 0, gain: 0.8 };
   const when = Math.max(ctx.currentTime, o.when ?? ctx.currentTime);
   const e = nearest(list, midi);
   const rate = 2 ** ((midi + (o.bend ?? 0) - (e.k as number)) / 12);
   const vel = o.vel ?? 0.8;
   const peak = seat.gain * vel * vel * 1.2;
-  const out = strip(o.bus ?? "music", o.pan ?? seat.pan, o.verb ?? seat.verb);
+  const out = strip(o.bus ?? "music", o.pan ?? seat.pan);
   const release = o.release ?? (SUSTAINED.has(name) ? Math.min(0.35, dur * 0.4) : 0.25);
   const attack = o.attack ?? 0.004;
   const natural = e.d / rate;
@@ -210,7 +207,7 @@ export function hit(key: string, o: NoteOpts & { rate?: number } = {}) {
   const when = Math.max(ctx.currentTime, o.when ?? ctx.currentTime);
   const rate = (o.rate ?? 1) * 2 ** ((o.bend ?? 0) / 12);
   const vel = o.vel ?? 0.8;
-  const out = strip(o.bus ?? "music", o.pan ?? 0, o.verb ?? SEAT.perc.verb);
+  const out = strip(o.bus ?? "music", o.pan ?? 0);
   voice("perc", e, rate, when, 0, e.d / rate, vel * vel * 1.1, 0.002, 0.15, out, o.glide);
 }
 
