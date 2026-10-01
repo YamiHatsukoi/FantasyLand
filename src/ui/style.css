@@ -1016,3 +1016,60 @@ img.iicon.lg { width: 48px; height: 48px; }
 .enc-call::before, .enc-call::after { content: ""; position: absolute; top: 50%; width: 30vw; height: 2px; background: linear-gradient(90deg, transparent, var(--edge)); }
 .enc-call::before { right: 100%; margin-right: 18px; }
 .enc-call::after { left: 100%; margin-left: 18px; transform: scaleX(-1); }
+
+/* ---------------------------------------------------------------- level up */
+.lvup { position: fixed; inset: 0; z-index: 300; display: grid; place-items: center; overflow: hidden; padding: 16px;
+  background: radial-gradient(circle at 50% 45%, rgba(90,60,10,.55), rgba(5,6,8,.88) 70%); opacity: 0; transition: opacity .25s ease; }
+.lvup.in { opacity: 1; }
+.lvup.out { opacity: 0; }
+.lv-rays {
+  position: absolute; left: 50%; top: 45%; width: 160vmax; height: 160vmax; margin: -80vmax 0 0 -80vmax; pointer-events: none;
+  background: repeating-conic-gradient(from 0deg, rgba(255,214,90,.16) 0deg 7deg, transparent 7deg 18deg);
+  mask-image: radial-gradient(circle, #000 0%, transparent 55%); -webkit-mask-image: radial-gradient(circle, #000 0%, transparent 55%);
+  animation: lv-spin 18s linear infinite; will-change: transform;
+}
+@keyframes lv-spin { to { transform: rotate(360deg); } }
+.lv-spark { position: absolute; bottom: -10px; left: var(--x); width: 6px; height: 6px; background: #ffe58a; box-shadow: 0 0 8px #ffd23a;
+  transform: rotate(45deg) scale(var(--s)); animation: lv-rise 2.6s linear var(--d) infinite; opacity: 0; pointer-events: none; }
+@keyframes lv-rise { 0% { transform: translateY(0) rotate(45deg) scale(var(--s)); opacity: 0; } 15% { opacity: 1; } 100% { transform: translateY(-105vh) rotate(225deg) scale(var(--s)); opacity: 0; } }
+.lv-card { position: relative; width: min(560px, 94vw); max-height: 88vh; overflow-y: auto; display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 22px 20px 18px; border-radius: 10px; background: linear-gradient(180deg, rgba(30,24,10,.94), rgba(10,10,8,.96));
+  border: 1px solid rgba(242,197,66,.7); box-shadow: 0 0 0 4px rgba(0,0,0,.35), 0 0 60px rgba(242,197,66,.25), 0 20px 60px rgba(0,0,0,.6);
+  transform: scale(.85); transition: transform .45s cubic-bezier(.2,1.4,.4,1); }
+.lvup.in .lv-card { transform: none; }
+.lv-title { position: relative; overflow: hidden; font-family: var(--pixel); font-size: clamp(40px, 11vw, 68px); line-height: 1; padding: 0 6px;
+  background: linear-gradient(180deg, #fff 0%, #ffe9a0 40%, #f2b52a 70%, #b8741a 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 3px 0 #4a2a06) drop-shadow(0 0 18px rgba(255,200,60,.55)); animation: lv-pop .6s cubic-bezier(.2,1.6,.4,1) both; }
+@keyframes lv-pop { from { transform: scale(2.2); opacity: 0; } to { transform: none; opacity: 1; } }
+.lv-sub { color: #e8d8a8; font-size: 13.5px; margin-bottom: 6px; }
+.lv-rows { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.lv-row { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 8px; background: rgba(255,255,255,.05); border: 1px solid rgba(242,197,66,.25);
+  opacity: 0; transform: translateY(12px); animation: dlg-in .4s cubic-bezier(.2,.9,.3,1) forwards; animation-delay: calc(.35s + var(--i) * .15s); }
+.lv-face { flex: none; width: 56px; height: 56px; border-radius: 8px; background: radial-gradient(circle, rgba(255,214,90,.35), transparent 70%); display: grid; place-items: center; }
+.lv-face img { width: 52px; height: 52px; image-rendering: pixelated; }
+.lv-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.lv-name { font-weight: 700; font-size: 15px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.lv-levels { display: inline-flex; align-items: baseline; gap: 6px; font-weight: 400; }
+.lv-from { color: #9aa49e; font-size: 13px; }
+.lv-arrow { color: #f2c542; }
+.lv-to { color: #ffd23a; font-size: 18px; font-family: var(--pixel); text-shadow: 0 0 10px rgba(255,210,60,.6); }
+.lv-stats { display: flex; flex-wrap: wrap; gap: 4px; }
+.lv-stat { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: rgba(79,174,90,.18); border: 1px solid rgba(79,174,90,.5); color: #c8f5c8;
+  opacity: 0; animation: dlg-in .3s ease forwards; animation-delay: calc(.6s + var(--i) * .15s + var(--j) * 40ms); }
+.lv-skill { font-size: 13px; color: #f4e4a8; }
+.lv-skill b { margin-right: 8px; }
+.lv-points { font-size: 12.5px; color: #ffd23a; }
+.lv-ok { margin-top: 8px; min-width: 160px; }
+
+/* the moment it happens, on the battlefield */
+.arena .fighter.lvl-up .body::after {
+  content: ""; position: absolute; left: 50%; bottom: -6px; width: 130%; height: 230%; z-index: 2; pointer-events: none;
+  transform: translateX(-50%) scaleY(0); transform-origin: bottom;
+  background: linear-gradient(0deg, rgba(255,214,90,.15), rgba(255,226,120,.95) 25%, rgba(255,250,210,.55) 70%, rgba(255,255,220,0));
+  box-shadow: 0 0 30px 10px rgba(255,210,80,.35); mix-blend-mode: screen;
+  border-radius: 40% 40% 0 0; animation: lv-beam 1.9s ease-out forwards;
+}
+@keyframes lv-beam { 0% { transform: translateX(-50%) scaleY(0); opacity: 1; } 25% { transform: translateX(-50%) scaleY(1); opacity: 1; } 70% { opacity: .9; } 100% { transform: translateX(-50%) scaleY(1); opacity: 0; } }
+.lvl-pop { position: absolute; left: 50%; top: -18px; z-index: 5; white-space: nowrap; pointer-events: none; font-family: var(--pixel); font-size: 28px; color: #ffe58a;
+  text-shadow: 0 2px 0 #4a2a06, 0 0 12px rgba(255,200,60,.8); animation: lv-float 1.9s cubic-bezier(.2,.9,.3,1) forwards; }
+@keyframes lv-float { 0% { transform: translate(-50%, 10px) scale(.6); opacity: 0; } 20% { transform: translate(-50%, 0) scale(1.15); opacity: 1; } 70% { opacity: 1; } 100% { transform: translate(-50%, -26px) scale(1); opacity: 0; } }

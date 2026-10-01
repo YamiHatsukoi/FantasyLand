@@ -56,3 +56,19 @@ describe("enhancement catalysts", () => {
     expect(before - g2.gold).toBe(enhanceCost(g2, 0));
   });
 });
+
+describe("level-up records", () => {
+  it("records one merged entry per character with stat gains", async () => {
+    const { giveXp, takeLevelUps, newGame: ng } = await import("../src/core/state");
+    const g = ng("A", "warrior", 7);
+    const ch = g.chars[g.heroId];
+    takeLevelUps();
+    giveXp(ch, 1e6);
+    const ups = takeLevelUps();
+    expect(ups.length).toBe(1);
+    expect(ups[0].to).toBeGreaterThan(ups[0].from + 1);
+    expect(ups[0].after.hp).toBeGreaterThan(ups[0].before.hp);
+    expect(ups[0].points).toBeGreaterThan(0);
+    expect(takeLevelUps().length).toBe(0);
+  });
+});

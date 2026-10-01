@@ -447,17 +447,47 @@ export function charPassives(ch: Character): string[] {
 export const XP_RATE = 0.5;
 
 /** Adds XP, returns list of level-up messages. */
+/** One character's level-up, kept so the interface can celebrate it properly. */
+export interface LevelUp {
+  charId: string;
+  name: string;
+  sprite: string;
+  pal?: Record<string, string>;
+  from: number;
+  to: number;
+  before: Stats;
+  after: Stats;
+  skills: string[];
+  points: number;
+}
+const levelUps: LevelUp[] = [];
+/** Level-ups since the last call (merged per character), for the celebration screen. */
+export function takeLevelUps(): LevelUp[] {
+  const out: LevelUp[] = [];
+  for (const l of levelUps.splice(0)) {
+    const prev = out.find((o) => o.charId === l.charId);
+    if (prev) { prev.to = l.to; prev.after = l.after; prev.skills.push(...l.skills); prev.points += l.points; }
+    else out.push({ ...l, skills: [...l.skills] });
+  }
+  return out;
+}
+
 export function giveXp(ch: Character, amount: number): string[] {
   const msgs: string[] = [];
   ch.xp += amount;
+  const from = ch.level;
+  const before = ch.level < MAX_LEVEL && ch.xp >= xpForLevel(ch.level) ? charStats(ch) : null;
+  const learned: string[] = [];
+  let points = 0;
   while (ch.xp >= xpForLevel(ch.level) && ch.level < MAX_LEVEL) {
     ch.xp -= xpForLevel(ch.level);
     ch.level++;
     msgs.push(`${ch.name} lên cấp ${ch.level}!`);
-    if (ch.id === "hero") { ch.points = (ch.points ?? 0) + POINTS_PER_LEVEL; msgs.push(`+${POINTS_PER_LEVEL} điểm chỉ số để phân bổ!`); }
+    if (ch.id === "hero") { ch.points = (ch.points ?? 0) + POINTS_PER_LEVEL; points += POINTS_PER_LEVEL; msgs.push(`+${POINTS_PER_LEVEL} điểm chỉ số để phân bổ!`); }
     const learn = CLASSES[ch.classId].learnset[ch.level];
     if (learn && !ch.skills.includes(learn)) {
       ch.skills.push(learn);
+      learned.push(learn);
       if (ch.equipped.length < 5) ch.equipped.push(learn);
       msgs.push(`${ch.name} học được kỹ năng mới!`);
     }
@@ -465,6 +495,7 @@ export function giveXp(ch: Character, amount: number): string[] {
     ch.hp = s.hp;
     ch.mp = s.mp;
   }
+  if (before && ch.level > from) levelUps.push({ charId: ch.id, name: ch.name, sprite: ch.sprite, pal: ch.pal, from, to: ch.level, before, after: charStats(ch), skills: learned, points });
   return msgs;
 }
 

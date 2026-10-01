@@ -1,6 +1,6 @@
 import { app, type Screen } from "../app";
 import { hashString } from "../core/rng";
-import { addItem, buildingCost, canAfford, count, logMsg, pay, type PlacedBuilding } from "../core/state";
+import { addItem, buildingCost, canAfford, count, logMsg, pay, takeLevelUps, type PlacedBuilding } from "../core/state";
 import { BUILDINGS, BUILDING_LIST, RANK_NAMES, type BuildingCategory } from "../data/buildings";
 import { SEASON_ICONS, SEASON_NAMES, seasonOf } from "../data/items";
 import { CROP_LIFT, buildingCanvas, cropCanvas } from "../render/buildings";
@@ -26,6 +26,7 @@ import { openSanctuaryMarket } from "./settlement";
 import { fold } from "../ui/smart";
 import { PET, petSpec } from "../data/pets";
 import { creatureSmall } from "../render/creatures";
+import { showLevelUps } from "../ui/levelup";
 import { openCodex } from "./codex";
 import { openPlayers } from "./players";
 import { checkGifts, giftsWaiting, openGifts } from "./gifts";
@@ -260,6 +261,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
       app.dirty(true);
       showBanner(el, `Ngày ${app.game.day}`, "Cả đội đã hồi phục hoàn toàn");
       showReport(rep.lines, rep.gains);
+      void showLevelUps(takeLevelUps());
       updateHud();
     },
     enterDungeon: (f) => hooks.enterDungeon(f),
