@@ -308,6 +308,60 @@ const HOUSES: Record<string, HouseOpts> = {
   guild: { wall: "#a8a098", roof: "#7a2a2a", wallKind: "stone", roofKind: "slate", floors: 2, gable: true, props: true },
 };
 
+/**
+ * What an upgrade adds around any building, special shapes included: planters at the corners
+ * (flowering from level 3), lamp posts (3), banners on poles (4), a golden shimmer (5+), and a
+ * row of small gold stars on the ground, one per level above the first.
+ */
+function dressing(p: Paint, W: number, H: number, level: number) {
+  const g = p.g;
+  const planter = (x: number, flowers: boolean) => {
+    p.rect(x, H - 5, 5, 3, "#9a5a32"); p.rect(x, H - 5, 5, 1, "#c07a48"); p.rect(x, H - 3, 5, 1, "#6a3a22");
+    p.blob(x + 2.5, H - 7, 3.2, 2.6, "#4a9a3a");
+    if (flowers) for (const [dx, dy, c] of [[1, -8, "#ff8ab8"], [3, -9, "#ffe05a"], [4, -7, "#ff8ab8"]] as const) p.px(x + dx, H + dy, c);
+  };
+  const post = (x: number) => {
+    p.rect(x, H - 13, 1, 11, "#3a3640"); p.rect(x - 1, H - 3, 3, 1, "#2a2630");
+    p.rect(x - 1, H - 16, 3, 3, "#3a3640"); p.px(x, H - 15, "#ffe08a");
+    g.fillStyle = "rgba(255,220,120,.18)"; g.beginPath(); g.arc(x + 0.5, H - 14.5, 4, 0, Math.PI * 2); g.fill();
+  };
+  const banner = (x: number, col: string) => {
+    p.rect(x, H - 22, 1, 20, "#5a4632"); p.px(x, H - 23, "#f2c230");
+    p.rect(x + 1, H - 21, 4, 8, col); p.rect(x + 1, H - 21, 4, 1, hs(col, 0.25)); p.rect(x + 4, H - 21, 1, 8, hs(col, -0.25));
+    p.px(x + 1, H - 13, col); p.px(x + 3, H - 13, col); p.px(x + 2, H - 17, "#f2c230");
+  };
+  const wide = W >= 48;
+  const stars = () => {
+    const n = Math.min(6, level - 1);
+    const x0 = Math.round(W / 2 - (n * 4 - 1) / 2);
+    for (let i = 0; i < n; i++) {
+      const x = x0 + i * 4, y = H - 2;
+      p.px(x + 1, y - 1, "#ffe58a"); p.rect(x, y, 3, 1, "#f2c230"); p.px(x + 1, y + 1, "#b8861a");
+    }
+  };
+  // one-tile pieces only get their stars: props would bury them
+  if (W < 32) return stars();
+  // the shimmer sits on the building itself, never in the empty sky above a low one
+  const solid = g.getImageData(0, 0, W, H).data;
+  const opaque = (x: number, y: number) => solid[(y * W + x) * 4 + 3] > 200;
+  planter(1, level >= 3);
+  if (W >= 32) planter(W - 6, level >= 3);
+  if (level >= 3) { post(wide ? 8 : 7); if (wide) post(W - 9); }
+  if (level >= 4) { banner(0, level >= 5 ? "#c8302a" : "#3a6ab0"); if (W >= 32) banner(W - 6, level >= 5 ? "#c8302a" : "#3a6ab0"); }
+  if (level >= 5) {
+    let placed = 0;
+    for (let i = 0; i < 60 && placed < 7; i++) {
+      const x = 3 + Math.floor(cellNoise(i, level) * (W - 6)), y = 3 + Math.floor(cellNoise(i + 99, level) * (H - 14));
+      if (!opaque(x, y)) continue;
+      placed++;
+      p.px(x, y, "#fff6c0");
+      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) p.px(x + dx, y + dy, "rgba(255,214,90,.75)");
+    }
+  }
+  stars();
+}
+const cellNoise = (a: number, b: number) => { let h = (a * 374761393 + b * 668265263) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+
 export function buildingCanvas(type: string, level: number): HTMLCanvasElement {
   const key = `${type}:${level}`;
   const hit = cache.get(key);
@@ -321,6 +375,7 @@ export function buildingCanvas(type: string, level: number): HTMLCanvasElement {
     const o = HOUSES[type] ?? { wall: def?.style?.wall ?? "#c8945a", roof: def?.style?.roof ?? "#b84a3a", emblem: def?.style?.emblem };
     house(p, W, H, { ...o, emblem: o.emblem ?? def?.style?.emblem, floors: Math.min((o.floors ?? 1) + (level >= 3 && tw >= 3 ? 1 : 0), 3), level, seed: type });
   }
+  if ((def?.maxLevel ?? 1) > 1 && level >= 2) dressing(p, W, H, level);
   cache.set(key, c);
   return c;
 }
