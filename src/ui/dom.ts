@@ -1,3 +1,4 @@
+import { recentSfx, sfx } from "../audio/sfx";
 type Child = Node | string | number | null | undefined | false;
 type Props = Record<string, unknown> & { class?: string; style?: string };
 
@@ -58,10 +59,12 @@ export function openModal(title: string, opts: { onClose?: () => void; wide?: bo
     if (e.target === backdrop && !opts.noClose) handle.close();
   });
   document.body.append(backdrop);
+  sfx("open");
   const handle: ModalHandle = {
     el: backdrop,
     body,
     close: () => {
+      if (backdrop.isConnected) sfx("close");
       backdrop.remove();
       modalStack = modalStack.filter((m) => m !== handle);
       opts.onClose?.();
@@ -148,6 +151,7 @@ export function toast(msg: string, kind: "info" | "good" | "bad" = "info", ms = 
     document.body.append(toastBox);
   }
   const t = h("div", { class: `toast ${kind}` }, msg);
+  if (!recentSfx(150)) sfx(kind === "good" ? "good" : kind === "bad" ? "error" : "notify");
   toastBox.append(t);
   setTimeout(() => t.classList.add("out"), ms);
   setTimeout(() => t.remove(), ms + 400);

@@ -1,4 +1,6 @@
 import { inTransition, playEncounter } from "../ui/transition";
+import { playMusic } from "../audio/music";
+import { sfx } from "../audio/sfx";
 import { showLevelUps } from "../ui/levelup";
 import { app, type Screen } from "../app";
 import { Rng, hashString } from "../core/rng";
@@ -341,6 +343,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     trail.length = Math.min(trail.length, 8);
     player.x = nx;
     player.y = ny;
+    sfx("step");
     ex.steps++;
     g.stats.steps++;
     reveal();
@@ -459,6 +462,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
       case "monster":
         return fightMonster(e, true);
       case "node": {
+        sfx("pickup");
         const n = (rng.chance(0.3) ? 2 : 1) * (g.pet && PET[g.pet]?.hook === "dig" ? 2 : 1);
         const lines = giveToGame(g, { [e.ref!]: n, ...(rng.chance(0.04) ? { mana_crystal: 1 } : {}) });
         ex.done.push(e.id);
@@ -506,6 +510,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         return savePos();
       }
       case "chest": {
+        sfx("chest");
         // chests in hidden rooms hold a lot more
         const loot = randomLoot({ g, floor: floorN, vars: {}, rng }, e.ref === "secret" ? 6 : 2);
         if (e.ref === "secret") { loot.mana_crystal = (loot.mana_crystal ?? 0) + 2; if (rng.chance(0.5)) { const id = gearForFloor(floorN, (xs) => rng.pick(xs), 1).id; loot[id] = (loot[id] ?? 0) + 1; } }
@@ -529,6 +534,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         return savePos();
       }
       case "camp": {
+        sfx("sleep");
         for (const id of g.party) {
           const ch = g.chars[id];
           const s = charStats(ch);
@@ -1325,6 +1331,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     }
     return false;
   });
+  playMusic(`dungeon:${def.family}`);
   view.start();
   reveal();
   checkRegion();

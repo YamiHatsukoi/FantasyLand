@@ -1,4 +1,6 @@
 import { app } from "../app";
+import { sfx } from "../audio/sfx";
+import { currentMusic, playMusic } from "../audio/music";
 import { chooseAction } from "../combat/ai";
 import { AFFIX, makeElite } from "../combat/elite";
 import { MECH, mechForFloor } from "../combat/bossMech";
@@ -128,6 +130,8 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   const allies = g.party.map((id) => g.chars[id]).filter(Boolean).map((ch) => unitFromCharacter(ch, buffs));
   const enemies = setup.enemies.map((e, i) => unitFromEnemy(e.id, e.level, i));
   const battle = new Battle(allies, enemies, rng.int(1, 1e9));
+  const prevMusic = currentMusic();
+  playMusic(enemies.some((u) => u.boss) ? "boss" : "battle");
   for (const e of setup.enemyFx ?? []) for (const u of enemies) battle.addStatus(u, e.s, e.t ?? 2, e.st ?? 1, 0);
   if (setup.elite && enemies[0] && !enemies[0].boss) makeElite(battle, enemies[0], setup.floor, setup.seed ?? 1);
   // a milestone floor's lord is much tougher
@@ -384,7 +388,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     };
     if (skillId.startsWith("item:")) {
       const it = getItem(skillId.slice(5));
-      if (it.use?.dmg && foes.length) { await fx.windup(v.body, dir); await volley("bomb", it.use.dmg.el); }
+      if (it.use?.dmg && foes.length) { await fx.windup(v.body, dir); sfx("whoosh"); await volley("bomb", it.use.dmg.el); }
       else { for (const t of targets) fx.sparkle(at(t)); await delay(220); }
       return;
     }
@@ -393,14 +397,16 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     if (offensive && sk.kind === "physical" && !isBow(u, sk) && !isWandAttack(u, sk)) {
       blow.melee = true;
       const main = views.get(foes[0].uid);
+      sfx("whoosh");
       if (main?.body) await fx.dash(v.root, v.body, main.body, sk.id === "attack" ? 60 : 90);
       return;
     }
     if (offensive) {
       v.root.classList.add("cast");
       setTimeout(() => v.root.classList.remove("cast"), 600);
-      if (isBow(u, sk)) { await fx.windup(v.body, dir); await volley("arrow", "physical"); return; }
+      if (isBow(u, sk)) { await fx.windup(v.body, dir); sfx("bow"); await volley("arrow", "physical"); return; }
       const el: Element = isWandAttack(u, sk) ? "arcane" : sk.el === "physical" ? "arcane" : sk.el;
+      sfx("cast", el);
       await fx.windup(v.body, dir);
       await volley(shotFor(el), el);
       return;
@@ -409,6 +415,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     v.root.classList.add("cast");
     setTimeout(() => v.root.classList.remove("cast"), 600);
     await fx.windup(v.body, dir);
+    if (!((sk.heal ?? 0) > 0)) sfx(targets.some((t) => t.side !== u.side) ? "debuff" : "buff");
     for (const t of targets.length ? targets : [u]) { const p = at(t); if ((sk.heal ?? 0) > 0) fx.sparkle(p); else fx.aura(p, sk.el === "physical" ? "light" : sk.el); }
     await delay(260);
   }
@@ -442,6 +449,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         const u = battle.unit(ev.uid);
         if (!u) break;
         const v = views.get(u.uid);
+        if (!ev.dot) sfx(ev.crit ? "crit" : blow?.melee ? "slash" : "impact", ev.el);
         if (v && !ev.dot) {
           // the blow lands: recoil away from it, sparks the way it travelled, a shake on big hits
           const dir = blow ? (blow.side === "ally" ? 1 : -1) : u.side === "enemy" ? 1 : -1;
@@ -462,6 +470,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         const u = battle.unit(ev.uid);
         if (!u) break;
         floaty(u, `+${ev.amount}${ev.mp ? " MP" : ""}`, ev.mp ? "mp" : "heal");
+        sfx(ev.mp ? "mana" : "heal");
         { const v = views.get(u.uid); if (v) ev.mp ? fx.sparkle(fx.pos(v.img, 0.5), "#7ab8ff", "rgba(120,180,255,") : fx.sparkle(fx.pos(v.img, 0.5)); }
         refresh(u);
         await delay(140);
@@ -470,6 +479,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
       case "miss": {
         const u = battle.unit(ev.uid);
         if (u) floaty(u, "Trượt!", "miss");
+        sfx("miss");
         await delay(200);
         break;
       }
@@ -509,6 +519,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         const v = views.get(u.uid);
         const sb = v?.shield?.querySelector(".shield-badge");
         sb?.classList.remove("pop"); void (sb as HTMLElement | undefined)?.offsetWidth; sb?.classList.add("pop");
+        sfx("shield");
         break;
       }
       case "break": {
@@ -516,6 +527,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         if (!u) break;
         refresh(u);
         announce("💥 PHÁ KHIÊN!", "break", 1100);
+        sfx("break");
         shake(true);
         log(`${u.name} bị phá khiên! Mất lượt kế tiếp và chịu thêm sát thương.`);
         await delay(650);
@@ -538,6 +550,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         if (!u) break;
         refresh(u);
         announce(`⚠️ ${u.name} đang tụ lực!`, "warn", 1300);
+        sfx("charge");
         log(`${u.name} tụ lực — đòn kế tiếp cực mạnh! Phòng thủ hoặc phá khiên để huỷ.`);
         await delay(700);
         break;
@@ -553,6 +566,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         v.root.classList.add("arrive");
         setTimeout(() => v.root.classList.remove("arrive"), 600);
         log(`${u.name} xuất hiện!`);
+        sfx("spawn");
         await delay(450);
         break;
       }
@@ -562,13 +576,14 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
           refresh(u); log(`${u.name} đã gục ngã!`);
           const v = views.get(u.uid);
           if (v) fx.defeat(fx.pos(v.img, 0.5));
+          sfx("death");
         }
         await delay(340);
         break;
       }
       case "revive": {
         const u = battle.unit(ev.uid);
-        if (u) { refresh(u); floaty(u, "Hồi sinh!", "heal"); }
+        if (u) { refresh(u); floaty(u, "Hồi sinh!", "heal"); sfx("revive"); }
         await delay(300);
         break;
       }
@@ -913,6 +928,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
       }
       if (enemies.some((u) => u.boss)) logMsg(g, `Hạ gục ${enemies.find((u) => u.boss)!.name}.`);
       const ups = takeLevelUps();
+      sfx("victory");
       body.append(...nn(
         h("h3", null, "Chiến Thắng!"),
         h("div", null, `+${xp} kinh nghiệm · +${gold} vàng`),
@@ -929,18 +945,21 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
           if (!v) continue;
           v.root.classList.add("lvl-up");
           v.root.append(h("div", { class: "lvl-pop" }, "LEVEL UP!"));
+          sfx("buff");
         }
         await pace(1500);
         await showLevelUps(ups);
       }
     } else {
       g.stats.deaths++;
+      sfx("defeat");
       body.append(h("h3", null, "Thất Bại..."), h("p", { class: "muted" }, "Bóng tối nuốt chửng cả đội..."));
     }
     app.dirty();
     await new Promise<void>((r) => result.append(h("button", { class: "btn primary result-go", onclick: () => r() }, "Tiếp tục")));
     fx.destroy();
     el.remove();
+    if (prevMusic) playMusic(prevMusic);
     return outcome;
   });
 }

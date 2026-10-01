@@ -1,4 +1,6 @@
 import { openCodex } from "./codex";
+import { applySettings, settings as audio } from "../audio/engine";
+import { sfx } from "../audio/sfx";
 import { app } from "../app";
 import { charStats } from "../core/state";
 import { ONLINE, clearSession, errorText, logout } from "../net/api";
@@ -85,6 +87,7 @@ export function openMenu(extra: HTMLElement[] = []) {
     h("div", { class: "col" },
       h("div", { class: "stat" }, "Tài khoản", h("b", null, app.session?.username ?? "")),
       h("div", { class: "stat" }, "Lưu trữ", status),
+      soundSettings(),
       ...extra,
       h("button", {
         class: "btn blue",
@@ -115,6 +118,19 @@ export function openMenu(extra: HTMLElement[] = []) {
       }, "🚪 Đăng xuất"),
     ),
   );
+}
+
+/** Music and sound effects: on/off and volume each, remembered on this device. */
+function soundSettings() {
+  const row = (label: string, on: "music" | "sfx", vol: "musicVol" | "sfxVol") => {
+    const slider = h("input", { type: "range", min: "0", max: "100", value: String(Math.round(audio[vol] * 100)), class: "snd-vol", disabled: !audio[on] }) as HTMLInputElement;
+    slider.addEventListener("input", () => { audio[vol] = Number(slider.value) / 100; applySettings(); });
+    slider.addEventListener("change", () => { if (on === "sfx") sfx("coin"); });
+    const box = h("input", { type: "checkbox", checked: audio[on] }) as HTMLInputElement;
+    box.addEventListener("change", () => { audio[on] = box.checked; slider.disabled = !box.checked; applySettings(); if (on === "sfx" && box.checked) sfx("good"); });
+    return h("div", { class: "snd-row" }, h("label", { class: "check" }, box, label), slider);
+  };
+  return h("div", { class: "snd" }, h("div", { class: "section-title" }, "🔊 Âm thanh"), row("🎵 Nhạc nền", "music", "musicVol"), row("🔔 Hiệu ứng", "sfx", "sfxVol"));
 }
 
 export function openHelp() {

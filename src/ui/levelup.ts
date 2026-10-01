@@ -1,4 +1,5 @@
 import type { LevelUp } from "../core/state";
+import { sfx } from "../audio/sfx";
 import { getSkill } from "../data/skills";
 import { spriteImg } from "../render/pixel";
 import { h } from "./dom";
@@ -45,6 +46,7 @@ function play(list: LevelUp[]): Promise<void> {
         h("div", { class: "lv-rows" }, rows),
         btn));
     document.body.append(root);
+    sfx("levelup");
     requestAnimationFrame(() => root.classList.add("in"));
     let done = false;
     const close = () => {

@@ -1,4 +1,5 @@
 import { app } from "../app";
+import { sfx } from "../audio/sfx";
 import { takeLevelUps } from "../core/state";
 import { showLevelUps } from "../ui/levelup";
 import { Rng } from "../core/rng";
@@ -156,6 +157,7 @@ export function playStory(eventId: string, opts: StoryOptions): Promise<StoryRes
         typing = window.setInterval(() => {
           i += step;
           textEl.textContent = full.slice(0, i);
+          if (/\S/.test(full[i - 1] ?? "")) sfx("blip", "300");
           if (i >= full.length) complete();
         }, 16);
         box.onclick = () => { if (typing) complete(); };

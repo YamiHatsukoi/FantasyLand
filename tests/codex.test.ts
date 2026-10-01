@@ -72,3 +72,18 @@ describe("level-up records", () => {
     expect(takeLevelUps().length).toBe(0);
   });
 });
+
+describe("codex backfill", () => {
+  it("counts the gatekeepers of cleared floors as defeated", async () => {
+    const { newGame: ng } = await import("../src/core/state");
+    const { getFloor } = await import("../src/world/floors");
+    const g = ng("A", "warrior", 7);
+    g.maxFloor = 3;
+    g.flags.f1_cleared = true;
+    const { backfillBosses } = await import("../src/world/dex");
+    backfillBosses(g);
+    const boss = getFloor(1).boss.find((id) => id === "ancient_treant")!;
+    expect(g.dex?.[boss]?.k).toBe(1);
+    expect(g.dex?.sand_wyrm).toBeUndefined();
+  });
+});
