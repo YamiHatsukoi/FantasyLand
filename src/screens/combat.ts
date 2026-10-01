@@ -151,6 +151,9 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   }
   battle.drainEvents();
   g.stats.battles++;
+  // the monster codex remembers everything the party has faced
+  const dex = (g.dex ??= {});
+  for (const u of enemies) if (u.enemyId) { const d = (dex[u.enemyId] ??= { k: 0, f: Math.max(1, setup.floor) }); d.f = Math.min(d.f, Math.max(1, setup.floor)); }
 
   const biome = BIOMES[setup.biome] ?? BIOMES.forest;
   let auto = pref.auto;
@@ -895,6 +898,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
       const bossWin = enemies.some((u) => u.boss);
       if ((bossWin && (setup.floor % 10 === 0 || rng.chance(0.25))) || (setup.elite && rng.chance(0.1))) loot[PET_EGG] = (loot[PET_EGG] ?? 0) + 1;
       g.stats.kills += enemies.length;
+      for (const u of enemies) if (u.enemyId && dex[u.enemyId]) dex[u.enemyId].k++;
       g.gold += gold;
       if (g.expedition) g.expedition.bagGold += gold;
       const lootLines = giveToGame(g, loot);

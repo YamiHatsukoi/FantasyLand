@@ -441,6 +441,7 @@ img.iicon.lg { width: 48px; height: 48px; }
 .tipcard .tip-stats { display: grid !important; grid-template-columns: 1fr 1fr; gap: 1px 10px; font-weight: 600; }
 .tipcard .tip-sub { border-left: 2px solid var(--gold); padding-left: 8px; gap: 2px !important; }
 .tipcard .tip-desc { font-size: 12.5px; }
+.tipcard .tip-label { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--gold); }
 
 /* ---------------------------------------------------------------- dungeon map pins */
 .mm-wrap { position: relative; line-height: 0; }
@@ -765,3 +766,36 @@ img.iicon.lg { width: 48px; height: 48px; }
 /* battle effects canvas over the stage */
 .cb-fx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 40; }
 .arena .fighter .body { will-change: transform; }
+
+/* enhancement catalysts */
+.catalysts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 8px; }
+.catalysts .btn img { width: 18px; height: 18px; vertical-align: -4px; }
+
+/* ---------------------------------------------------------------- monster codex */
+.codex .dex-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.codex .dex-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.08); margin: 8px 0 12px; overflow: hidden; }
+.codex .dex-bar > div { height: 100%; background: linear-gradient(90deg, #c8902a, #f2c542); }
+.codex .dex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.codex .dex-card {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; border-radius: 10px; cursor: pointer;
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(0,0,0,.18)); border: 1px solid rgba(255,255,255,.08); color: inherit; font: inherit;
+  transition: transform .12s, border-color .12s;
+}
+.codex .dex-card:hover { transform: translateY(-2px); border-color: rgba(242,197,66,.6); }
+.codex .dex-card.boss { border-color: rgba(242,197,66,.45); background: linear-gradient(180deg, rgba(242,197,66,.14), rgba(0,0,0,.2)); }
+.codex .dex-card img { width: 64px; height: 64px; }
+.codex .dex-name { font-weight: 700; font-size: 12.5px; text-align: center; line-height: 1.2; }
+.codex .dex-page { display: grid; grid-template-columns: 168px 1fr; gap: 14px; margin: 10px 0; }
+@media (max-width: 520px) { .codex .dex-page { grid-template-columns: 1fr; } .codex .dex-portrait { justify-self: center; } }
+.codex .dex-portrait { width: 168px; height: 168px; border-radius: 14px; display: grid; place-items: center;
+  background: radial-gradient(circle at 50% 60%, rgba(255,255,255,.12), rgba(0,0,0,.35) 70%); border: 1px solid rgba(255,255,255,.1); }
+.codex .dex-portrait.boss { background: radial-gradient(circle at 50% 60%, rgba(242,197,66,.28), rgba(0,0,0,.4) 70%); border-color: rgba(242,197,66,.5); }
+.codex .dex-portrait img { width: 150px; height: 150px; }
+.codex .dex-el { padding: 2px 8px; border-radius: 999px; border: 1px solid var(--c, #888); background: color-mix(in srgb, var(--c, #888) 16%, transparent); font-size: 12.5px; }
+.codex .dex-el.unknown { --c: #777; color: #aaa; }
+.codex .dex-drops { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; }
+.codex .dex-drop { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 8px; background: rgba(255,255,255,.05); }
+.codex .dex-drop img { width: 24px; height: 24px; }
+.codex .dex-drop-name { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.codex .dex-drop-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.codex .dex-drop-name small { font-size: 11px; }

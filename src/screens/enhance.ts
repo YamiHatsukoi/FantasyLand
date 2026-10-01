@@ -1,5 +1,6 @@
 import { app } from "../app";
-import { ENH_MAX, GEAR_KEYS, enhanceChance, enhanceCost, tryEnhance, type Character } from "../core/state";
+import { ENH_MAX, GEAR_KEYS, chanceWith, enhanceChance, enhanceCost, tryEnhance, type Character } from "../core/state";
+import { CATALYSTS } from "../data/uses";
 import { enhLevel, enhancedId, getItem } from "../data/items";
 import { statText } from "./party";
 import { itemTip } from "../ui/tooltip";
@@ -13,6 +14,8 @@ import { GEAR_ICONS, GEAR_NAMES, rarityClass } from "../ui/gear";
  * item ("Kiếm Sắt +4"), so it goes wherever the item goes.
  */
 let current = "";
+/** Catalyst gem placed on the bench (used up by the next roll that is not already certain). */
+let catalyst = "";
 
 export function openEnhance(onChange: () => void) {
   const g = app.game;
@@ -34,7 +37,9 @@ export function openEnhance(onChange: () => void) {
       const next = id && lvl < ENH_MAX ? getItem(enhancedId(id, lvl + 1)) : null;
       const max = lvl >= ENH_MAX;
       const cost = enhanceCost(g, lvl);
-      const chance = enhanceChance(lvl);
+      const base = enhanceChance(lvl);
+      const cat = catalyst && (g.inventory[catalyst] ?? 0) > 0 && base < 1 ? catalyst : "";
+      const chance = chanceWith(lvl, cat);
       if (!it) return h("div", { class: "item-row locked" }, h("span", { class: "ico" }, GEAR_ICONS[key]),
         h("div", { class: "meta" }, h("div", { class: "name" }, GEAR_NAMES[key], h("span", { class: "tag" }, "trống")), h("div", { class: "desc muted" }, "Mặc một món vào ô này để cường hoá.")));
       return itemTip(h("div", { class: "item-row" },
@@ -42,13 +47,14 @@ export function openEnhance(onChange: () => void) {
         h("div", { class: "meta" },
           h("div", { class: "name" }, h("span", { class: rarityClass(it) }, it.name), h("span", { class: "tag" }, GEAR_NAMES[key])),
           h("div", { class: "desc good" }, statText(it.equip!.stats)),
-          h("div", { class: "desc" }, max ? "Đã cường hoá tối đa." : `➜ +${lvl + 1}: ${statText(next!.equip!.stats)} · thành công ${Math.round(chance * 100)}%${chance < 1 ? " (thất bại chỉ mất vàng)" : ""}`)),
+          h("div", { class: "desc" }, max ? "Đã cường hoá tối đa." : `➜ +${lvl + 1}: ${statText(next!.equip!.stats)} · thành công ${Math.round(chance * 100)}%${cat ? ` (có ${CATALYSTS[cat].name})` : ""}${chance < 1 ? (cat === "soul_gem" ? " · thất bại được hoàn vàng" : " (thất bại chỉ mất vàng)") : ""}`)),
         h("button", {
           class: "btn small primary", disabled: max || g.gold < cost,
           onclick: () => {
-            const r = tryEnhance(g, ch, key, Math.random());
+            const r = tryEnhance(g, ch, key, Math.random(), cat || undefined);
             if (r === "ok") toast(`✨ ${getItem(ch.gear[key]!).name}!`, "good");
-            else if (r === "fail") toast(`💥 Thất bại… mất ${cost} vàng. Thử lại nhé.`, "bad");
+            else if (r === "fail") toast(cat === "soul_gem" ? "💥 Thất bại… Ngọc Hồn Đen đã hoàn lại vàng." : `💥 Thất bại… mất ${cost} vàng. Thử lại nhé.`, "bad");
+            if (catalyst && !(g.inventory[catalyst] ?? 0)) catalyst = "";
             app.dirty();
             render();
           },
@@ -56,7 +62,16 @@ export function openEnhance(onChange: () => void) {
     }));
     m.body.replaceChildren(
       h("p", { class: "muted small", style: "margin-top:0" }, `Thợ rèn gia cố món đồ đang mặc. Mỗi cấp +10% chỉ số (ít nhất +1). Cấp cường hoá đi theo món đồ: tháo ra, bán hay đưa người khác đều giữ nguyên. Giá tăng theo cấp và theo độ sâu bạn đã tới. 💰 `, h("b", { class: "gold" }, g.gold.toLocaleString("vi-VN"))),
-      tabs, list);
+      catalystBar(), tabs, list);
   };
+  const catalystBar = () => h("div", { class: "catalysts" },
+    h("span", { class: "muted small" }, "Xúc tác:"),
+    Object.entries(CATALYSTS).map(([id, c]) => {
+      const n = g.inventory[id] ?? 0;
+      return itemTip(h("button", {
+        class: `btn small ${catalyst === id ? "primary" : ""}`, disabled: !n,
+        onclick: () => { catalyst = catalyst === id ? "" : id; render(); },
+      }, itemImg(id), ` ${c.short} ×${n}`), id);
+    }));
   render();
 }

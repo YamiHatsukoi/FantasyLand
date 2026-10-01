@@ -1,3 +1,4 @@
+import { openCodex } from "./codex";
 import { app } from "../app";
 import { charStats } from "../core/state";
 import { ONLINE, clearSession, errorText, logout } from "../net/api";
@@ -152,6 +153,7 @@ export function openJournal() {
     floors.push(h("div", { class: "stat" }, `Tầng ${f}: ${getFloor(f).name}`, h("b", null, fs?.cleared ? "✔ Đã chinh phục" : fs ? "Đang khám phá" : "Chưa tới")));
   }
   m.body.append(
+    h("button", { class: "btn", style: "align-self:flex-start;margin-bottom:8px", onclick: () => { m.close(); openCodex(); } }, "📖 Sổ Tay Quái Vật"),
     h("div", { class: "grid2" },
       h("div", { class: "stat" }, "Ngày", h("b", null, String(g.day))),
       h("div", { class: "stat" }, "Tầng sâu nhất", h("b", null, String(g.maxFloor))),

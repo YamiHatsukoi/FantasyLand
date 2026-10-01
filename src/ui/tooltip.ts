@@ -5,6 +5,11 @@ import { getSkill } from "../data/skills";
 import { h } from "./dom";
 import { itemImg } from "./icon";
 import { gearTags, rarityClass, scaleStats } from "./gear";
+import { droppedBy, regionSource, usesOf } from "../data/uses";
+
+/** Monsters the player has met (set by the game once loaded), so drop sources never spoil. */
+let dexSource: () => Record<string, unknown> = () => ({});
+export const setDexSource = (fn: () => Record<string, unknown>) => { dexSource = fn; };
 
 /**
  * Rich hover cards. Mouse: hover shows the card. Touch: press and hold shows it (the tap
@@ -117,7 +122,30 @@ export function itemCard(it: ItemDef, opts: { slot?: GearKey; qty?: number } = {
     it.skill ? h("div", null, h("div", { class: "muted small" }, "Dạy kỹ năng:"), skillBlock(it.skill)) : null,
     it.passive ? h("div", null, h("div", { class: "muted small" }, "Dạy nội tại:"), passiveBlock(it.passive)) : null,
     it.desc ? h("div", { class: "tip-desc muted" }, it.desc) : null,
+    eq ? null : usesBlock(it.id),
+    eq ? null : sourceBlock(it.id),
     it.value ? h("div", { class: "muted small" }, `💰 Bán: ${it.value}`) : null);
+}
+
+function usesBlock(id: string) {
+  const uses = usesOf(id);
+  if (!uses.length) return null;
+  const shown = uses.slice(0, 6);
+  return h("div", { class: "tip-sub" },
+    h("div", { class: "tip-label" }, "Dùng để làm"),
+    shown.map((u) => h("div", { class: "small" }, `${u.icon} ${u.text}`)),
+    uses.length > shown.length ? h("div", { class: "muted small" }, `…và ${uses.length - shown.length} thứ khác`) : null);
+}
+
+function sourceBlock(id: string) {
+  const { known, unknown } = droppedBy(id, dexSource());
+  const region = regionSource(id);
+  if (!known.length && !unknown && !region) return null;
+  return h("div", { class: "tip-sub" },
+    h("div", { class: "tip-label" }, "Kiếm ở đâu"),
+    known.slice(0, 4).map(({ def, ch }) => h("div", { class: "small" }, `⚔️ ${def.name} — ${Math.max(1, Math.round(ch * 100))}%`)),
+    region ? h("div", { class: "small" }, `🗺️ ${region}`) : null,
+    unknown ? h("div", { class: "muted small" }, `❔ ${unknown} loài quái chưa gặp cũng rơi ra món này`) : null);
 }
 
 function typeLabel(it: ItemDef) {

@@ -26,6 +26,7 @@ import { openSanctuaryMarket } from "./settlement";
 import { fold } from "../ui/smart";
 import { PET, petSpec } from "../data/pets";
 import { creatureSmall } from "../render/creatures";
+import { openCodex } from "./codex";
 import { openPlayers } from "./players";
 import { checkGifts, giftsWaiting, openGifts } from "./gifts";
 import type { PlayerVisit } from "../net/api";
@@ -207,6 +208,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     ]),
     dockGroup("⚙️", "Menu", [
       { icon: "📜", label: "Nhật ký", fn: () => openJournal() },
+      { icon: "📖", label: "Sổ tay quái", fn: () => openCodex() },
       { icon: "⚙️", label: "Cài đặt & lưu", fn: () => openMenu() },
     ]),
   );
