@@ -21,13 +21,19 @@ export class ApiError extends Error {
 }
 
 const SESSION_KEY = "fl.session";
+/** Browsers cap the bodies of all pending keepalive requests at 64 KB. */
+const KEEPALIVE_MAX = 60_000;
 
 async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
   const headers: Record<string, string> = { apikey: KEY, "Content-Type": "application/json" };
   if (KEY.startsWith("eyJ")) headers.Authorization = `Bearer ${KEY}`;
+  const body = JSON.stringify(args);
+  // keepalive lets a save finish while the page closes, but browsers refuse keepalive
+  // bodies over 64 KB outright ("Failed to fetch") - and a grown save is bigger than that
+  const keepalive = fn === "game_save" && new TextEncoder().encode(body).length < KEEPALIVE_MAX;
   let res: Response;
   try {
-    res = await fetch(`${URL}/rest/v1/rpc/${fn}`, { method: "POST", headers, body: JSON.stringify(args), keepalive: fn === "game_save" });
+    res = await fetch(`${URL}/rest/v1/rpc/${fn}`, { method: "POST", headers, body, keepalive });
   } catch {
     throw new ApiError("network", "Không kết nối được máy chủ.");
   }
