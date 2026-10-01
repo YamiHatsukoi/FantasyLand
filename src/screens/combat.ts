@@ -861,7 +861,21 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         // biome materials, essences and gear
         const fam = getFloor(Math.max(1, setup.floor)).family;
         const mats = BIOME_MATS[fam];
-        if (mats && rng.chance(u.boss ? 1 : 0.1)) { const id = rng.pick([mats.hide, mats.fiber, mats.herb, mats.gem]); loot[id] = (loot[id] ?? 0) + (u.boss ? 3 : 1); }
+        // regional materials: beasts mostly leave their hide, plants and spirits fibre or herbs;
+        // the region's gem is a separate, rarer find so it never crowds out the everyday stuff
+        if (mats) {
+          if (u.boss) {
+            for (const id of [mats.hide, mats.fiber]) loot[id] = (loot[id] ?? 0) + 3;
+            loot[mats.gem] = (loot[mats.gem] ?? 0) + 1;
+          } else {
+            if (rng.chance(0.45)) {
+              const pool = def.tags.includes("beast") ? [mats.hide, mats.hide, mats.hide, mats.fiber] : def.tags.includes("plant") ? [mats.fiber, mats.fiber, mats.herb, mats.hide] : [mats.hide, mats.fiber, mats.herb];
+              const id = rng.pick(pool);
+              loot[id] = (loot[id] ?? 0) + (rng.chance(0.3) ? 2 : 1);
+            }
+            if (rng.chance(0.05)) loot[mats.gem] = (loot[mats.gem] ?? 0) + 1;
+          }
+        }
         const el = ENEMY_EL[fam];
         if (el && ESSENCES[el] && rng.chance(u.boss ? 1 : 0.03)) loot[ESSENCES[el]] = (loot[ESSENCES[el]] ?? 0) + (u.boss ? 2 : 1);
         if (rng.chance(u.boss ? 1 : 0.02)) {
