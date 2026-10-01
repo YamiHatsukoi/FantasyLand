@@ -392,9 +392,17 @@ export function crate(p: Paint, x: number, y: number) {
 // ------------------------------------------------------------ the house
 export function house(p: Paint, W: number, H: number, o: HouseOpts) {
   const s = Math.floor(rng(o.seed ?? `${o.wall}${o.roof}`)() * 1000);
-  const wall = normWall(o.wallKind);
-  const roofKind = o.roofKind ?? "shingle";
-  const trim = o.trim ?? (wall === "stone" || wall === "brick" ? "#e8dcc4" : "#f0e4c8");
+  // upgrades show in the materials: better walls and roofs, shutters, dormers, gilded trim
+  const lv = o.level ?? 1;
+  let wall = normWall(o.wallKind);
+  if (lv >= 3 && (wall === "plank" || wall === "log")) wall = "timber";
+  let roofKind = o.roofKind ?? "shingle";
+  if (lv >= 3 && roofKind === "thatch") roofKind = "shingle";
+  if (lv >= 4 && roofKind === "shingle") roofKind = "tile";
+  if (lv >= 2 && !o.shutters) o = { ...o, shutters: hs(o.roof, -0.1) };
+  if (lv >= 3 && !o.chimney && W >= 32) o = { ...o, chimney: true };
+  if (lv >= 4) o = { ...o, dormer: true };
+  const trim = lv >= 5 ? "#f2d27a" : o.trim ?? (wall === "stone" || wall === "brick" ? "#e8dcc4" : "#f0e4c8");
   const floors = o.floors ?? 1;
   const foundTop = H - 5;
   const wallH = (W <= 32 ? 15 : 16) + (floors - 1) * 10;
@@ -405,7 +413,7 @@ export function house(p: Paint, W: number, H: number, o: HouseOpts) {
 
   groundShadow(p, W, H);
   wallTex(p, 1, wallTop, W - 2, wallH, o.wall, wall, s);
-  foundation(p, 0, foundTop, W);
+  foundation(p, 0, foundTop, W, lv >= 5 ? "#e8e4d8" : lv >= 3 ? "#b8b4a8" : STONE);
   const { ridgeL } = roofSlab(p, 0, W - 1, roofTop, eave, o.roof, roofKind, s);
   // the roof's shadow on the top of the wall
   p.g.fillStyle = SHADOW; p.g.fillRect(1, eave + 2, W - 2, 2);
