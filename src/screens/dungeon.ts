@@ -1,3 +1,4 @@
+import { inTransition } from "../ui/transition";
 import { app, type Screen } from "../app";
 import { Rng, hashString } from "../core/rng";
 import { XP_RATE, charStats, giveXp, logMsg, removeItem, ensureFloorState, type GameState } from "../core/state";
@@ -1327,9 +1328,9 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
     void showIntro(def).then(() => {
       busy = false;
       if (floorN % 10 === 0) showBanner(el, `⭐ Tầng Mốc ${floorN}`, `${def.name} · Chúa tể nơi đây mạnh hơn hẳn, nhưng phần thưởng xứng đáng`);
-      else showBanner(el, `Tầng ${floorN}`, def.name);
+      else if (!inTransition()) showBanner(el, `Tầng ${floorN}`, def.name);
     });
-  } else showBanner(el, `Tầng ${floorN}`, def.name);
+  } else if (!inTransition()) showBanner(el, `Tầng ${floorN}`, def.name);
 
   return {
     destroy: () => {
