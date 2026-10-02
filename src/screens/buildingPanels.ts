@@ -128,7 +128,7 @@ function genericFooter(m: ModalHandle, b: PlacedBuilding, render: () => void, wi
 
 const PRODUCTION: Record<string, string> = {
   lumber: "Mỗi ngày: 🪵 gỗ ×3/cấp; từ cấp 2 thêm gỗ quý của các tầng đã mở.",
-  quarry: "Mỗi ngày: đá ×3/cấp, cát; cấp 2 đất sét; cấp 3 đá quý của các tầng.",
+  quarry: "Mỗi ngày: đá ×3/cấp, cát; cấp 2 đất sét; cấp 3 đá các vùng và 50% ra 1 viên đá quý (cấp 4: chắc chắn 1 viên).",
   mine: "Mỗi ngày: quặng đồng và quặng quý hơn theo cấp mỏ và tầng sâu nhất đã tới. Thỉnh thoảng có Tinh Thể Ma Lực.",
   herbgarden: "Mỗi ngày: thảo mộc thường và thảo mộc các vùng đã khám phá.",
   coop: "Mỗi ngày ăn 1 hạt ngũ cốc/cấp → trứng gà (cấp 2+: trứng vịt).",
