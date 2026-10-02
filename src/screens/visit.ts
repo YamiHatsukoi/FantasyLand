@@ -27,6 +27,8 @@ export function mountVisit(root: HTMLElement, v: PlayerVisit, hooks: { leave: ()
   const el = h("div", { class: "screen" });
   root.append(el);
   const view = new MapView(el);
+  view.farOut = 2; // same overview zoom as at home
+  view.resize();
 
   // their sanctuary, shaped like a GameState so the shared map helpers work on it
   // a save last written before the sanctuary grew (v6) still uses the old, smaller grid
