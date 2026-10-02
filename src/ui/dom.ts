@@ -108,8 +108,9 @@ function keepScroll(m: ModalHandle) {
   const native = Element.prototype.replaceChildren;
   body.replaceChildren = function (...nodes: (Node | string)[]) {
     const top = body.scrollTop;
-    const inner = new Map<string, number>();
-    for (const el of body.querySelectorAll<HTMLElement>("*")) if (el.scrollTop > 0) inner.set(key(el), el.scrollTop);
+    // lists inside scroll too, some sideways (the party's member strip, category chips)
+    const inner = new Map<string, [number, number]>();
+    for (const el of body.querySelectorAll<HTMLElement>("*")) if (el.scrollTop > 0 || el.scrollLeft > 0) inner.set(key(el), [el.scrollTop, el.scrollLeft]);
     native.apply(body, nodes);
     reset = false;
     // after the caller has finished appending (and the search box has been placed)
@@ -117,9 +118,9 @@ function keepScroll(m: ModalHandle) {
       if (reset) { reset = false; return; }
       body.scrollTop = top;
       if (inner.size) for (const el of body.querySelectorAll<HTMLElement>("*")) {
-        if (el.scrollHeight <= el.clientHeight) continue;
+        if (el.scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth) continue;
         const v = inner.get(key(el));
-        if (v) el.scrollTop = v;
+        if (v) { el.scrollTop = v[0]; el.scrollLeft = v[1]; }
       }
     });
   };
