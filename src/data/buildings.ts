@@ -171,7 +171,8 @@ const list: BuildingDef[] = [
     desc: "Quản lý kho tốt giúp các công trình sản xuất làm thêm 10%/20%/30% sản lượng." }),
   B({ id: "watchtower", name: "Tháp Canh", icon: "🗼", size: [1, 1], maxLevel: 2, unique: false, rank: 3, category: "service", appeal: 1,
     desc: "Lính gác trông chừng bóng tối. Tăng sức hút khu định cư." }),
-  B({ id: "wall", name: "Tường Thành", icon: "🧱", size: [1, 1], maxLevel: 1, unique: false, rank: 4, category: "decor", appeal: 1,
+  // built by the dozen: only things the sanctuary makes itself (quarry stone; workshop bricks and mortar)
+  B({ id: "wall", name: "Tường Thành", icon: "🧱", size: [1, 1], maxLevel: 1, unique: false, rank: 4, category: "decor", appeal: 1, first: { stone: 6, brick: 3, mortar: 2 },
     desc: "Đoạn tường đá. Xếp thành vòng thành bao quanh Thánh Địa." }),
   // ------------------------------------------------------------ decor
   B({ id: "lamp", name: "Đèn Đá", icon: "🏮", size: [1, 1], maxLevel: 1, unique: false, rank: 1, category: "decor", appeal: 1, first: { stone: 3 }, desc: "Ánh sáng ấm áp giữa lòng Vực Sâu." }),

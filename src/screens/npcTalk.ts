@@ -4,8 +4,9 @@ import { getItem } from "../data/items";
 import { JOBS, PERSONAS, REPLY_TOPICS } from "../data/npcText";
 import { spriteImg } from "../render/pixel";
 import { h, openModal, toast, type ModalHandle } from "../ui/dom";
+import { giftPicker } from "../ui/giftPick";
 import { Dialogue, type DlgChoice } from "../ui/dialogue";
-import { itemImg, lootChips } from "../ui/icon";
+import { lootChips } from "../ui/icon";
 import {
   AFF_NAMES, acceptQuest, activeQuest, affTier, askAbout, canGift, chat, completeQuest, doRecruit, giftTier, giveGift, greet,
   hearts, memOf, questFor, questGoal, questProgress, questText, recruitCheck, recruitText, reply, tasteHint, type NpcDef, type Tone,
@@ -111,29 +112,26 @@ export function openNpc(npc: NpcDef, onClose?: () => void) {
   };
 
   function openGift() {
-    const gm = openModal("🎁 Chọn quà");
-    const items = Object.keys(g.inventory).map(getItem).filter((it) => it.type !== "key" && (g.inventory[it.id] ?? 0) > 0)
-      .sort((a, b) => Number(npc.loves.includes(b.id)) - Number(npc.loves.includes(a.id)) || b.value - a.value);
+    const gm = openModal("🎁 Chọn quà", { wide: true });
     const tier = affTier(memOf(g, npc.id).aff);
-    const list = h("div", { class: "list" });
-    for (const it of items.slice(0, 80)) {
-      const known = tier >= 2 ? giftTier(npc, it.id) : tier >= 1 && npc.likes.includes(it.type) ? "like" : null;
-      list.append(h("button", {
-        class: "item-row",
-        onclick: () => {
-          gm.close();
-          sfx("gift");
-          you(`(Tặng ${it.name})`);
-          const r = giveGift({ g, npc }, it.id);
-          say(r.text);
-          sys(`Thiện cảm ${r.delta > 0 ? "+" : ""}${r.delta}`);
-          render();
-        },
-      }, h("span", { class: "ico" }, itemImg(it.id)), h("div", { class: "meta" }, h("div", { class: "name" }, it.name, known === "love" ? h("span", { class: "tag" }, "💖 rất thích") : known === "like" ? h("span", { class: "tag" }, "👍 thích") : known === "hate" ? h("span", { class: "tag" }, "💢 ghét") : null)),
-      h("span", { class: "qty" }, `×${g.inventory[it.id]}`)));
-    }
-    if (!items.length) list.append(h("p", { class: "muted" }, "Túi trống."));
-    gm.body.append(list);
+    const picker = giftPicker(g, {
+      allow: (it) => it.type !== "key",
+      rank: (it) => Number(npc.loves.includes(it.id)),
+      tag: (it) => {
+        const known = tier >= 2 ? giftTier(npc, it.id) : tier >= 1 && npc.likes.includes(it.type) ? "like" : null;
+        return known === "love" ? "💖 rất thích" : known === "like" ? "👍 thích" : known === "hate" ? "💢 ghét" : null;
+      },
+      pick: (it) => {
+        gm.close();
+        sfx("gift");
+        you(`(Tặng ${it.name})`);
+        const r = giveGift({ g, npc }, it.id);
+        say(r.text);
+        sys(`Thiện cảm ${r.delta > 0 ? "+" : ""}${r.delta}`);
+        render();
+      },
+    });
+    gm.body.append(picker);
   }
 
   render();
