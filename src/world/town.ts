@@ -262,7 +262,11 @@ export function advanceDay(g: GameState): DayReport {
         gain("stone", 3 * L * prod);
         gain("sand", L * prod);
         if (L >= 2) gain("clay", L * prod);
-        if (L >= 3) gain(BIOME_MATS[rng.pick(unlockedBiomes)].stone, (L - 2) * 2 * prod);
+        if (L >= 3) {
+          gain(BIOME_MATS[rng.pick(unlockedBiomes)].stone, (L - 2) * 2 * prod);
+          // gems of the regions reached: a coin flip a day at level 3, one a day at level 4
+          if (rng.chance(Math.min(1, 0.5 * (L - 2) * prod))) gain(BIOME_MATS[rng.pick(unlockedBiomes)].gem, 1);
+        }
         break;
       case "mine": {
         const top = Math.min(L + 1, metalTierForFloor(Math.max(1, g.maxFloor)) + 1, METALS.length);

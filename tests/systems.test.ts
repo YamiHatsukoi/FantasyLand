@@ -249,3 +249,22 @@ describe("raw material buildings", () => {
     expect(g.inventory.wood).toBeLessThan(50); // the kiln burnt some
   });
 });
+
+describe("quarry", () => {
+  it("level 3 digs up gems of the regions reached, level 2 does not", async () => {
+    const { BIOME_MATS } = await import("../src/data/items");
+    const gems = new Set(Object.values(BIOME_MATS).map((m) => m.gem));
+    const run = (level: number) => {
+      const g = newGame("An", "warrior", 7);
+      g.maxFloor = 12;
+      g.settlers = 50; // fully staffed
+      g.buildings.push({ id: "q1", type: "quarry", x: 30, y: 40, level });
+      let n = 0;
+      for (let d = 0; d < 20; d++) { const rep = advanceDay(g); for (const [id, k] of Object.entries(rep.gains ?? {})) if (gems.has(id)) n += k as number; }
+      return n;
+    };
+    expect(run(2)).toBe(0);
+    expect(run(3)).toBeGreaterThan(3);
+    expect(run(4)).toBeGreaterThan(run(3) - 3);
+  });
+});
