@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SAVE_VERSION, addItem, migrate, newGame } from "../src/core/state";
-import { BUILDING_LIST, MAX_MATERIAL, TERRITORY_SIZES, costFor, expansionCost, farmLimitFor } from "../src/data/buildings";
+import { BUILDING_LIST, MAX_MATERIAL, TERRITORY_SIZES, costFor, expansionCost } from "../src/data/buildings";
 import { SZ_W, territory } from "../src/world/sanctuary";
 import { CROP_LIST, ITEMS, ITEM_LIST } from "../src/data/items";
 import { RECIPES } from "../src/data/recipes";
@@ -85,10 +85,8 @@ describe("farming & town", () => {
 });
 
 describe("bigger sanctuary", () => {
-  it("territories are twice as wide, farm limits 1.5x, and old buildings move with the centre", () => {
+  it("territories are twice as wide and old buildings move with the centre", () => {
     expect(TERRITORY_SIZES).toEqual([20, 28, 36, 44, 52, 64, 76, 88, 104, 120]);
-    expect(farmLimitFor(0)).toBe(12);
-    expect(farmLimitFor(3)).toBe(39);
     const g = newGame("A", "warrior", 7);
     // every starting building sits inside the first territory and the world
     const t = territory(0);
@@ -266,5 +264,49 @@ describe("quarry", () => {
     expect(run(2)).toBe(0);
     expect(run(3)).toBeGreaterThan(3);
     expect(run(4)).toBeGreaterThan(run(3) - 3);
+  });
+});
+
+describe("sanctuary ground cover and layout", () => {
+  it("floors and new decor cost things that exist; only water blocks the way", async () => {
+    const { BUILDINGS } = await import("../src/data/buildings");
+    const floors = BUILDING_LIST.filter((d) => d.floor);
+    expect(floors.length).toBeGreaterThanOrEqual(20);
+    for (const d of BUILDING_LIST.filter((x) => x.first)) for (const id of Object.keys(d.first!)) expect(ITEMS[id], `${d.id}: ${id}`).toBeTruthy();
+    for (const d of floors) {
+      expect(d.size).toEqual([1, 1]);
+      expect(d.category).toBe("floor");
+      expect(d.walkable, d.id).toBe(d.floor !== "water" || ["stepping_stones", "boardwalk"].includes(d.id));
+    }
+    expect(BUILDINGS.wall.first).toEqual({ stone: 6, brick: 3, mortar: 2 });
+    // farm plots have no cap: as many as the territory holds
+    const { buildLimitReason } = await import("../src/world/sanctuary");
+    const g = newGame("A", "warrior", 7);
+    for (let i = 0; i < 80; i++) g.buildings.push({ id: `f${i}`, type: "farm", x: 1000 + i, y: 0, level: 1, plot: { soil: 0, watered: false } });
+    expect(buildLimitReason(g, "farm")).toBeNull();
+  });
+
+  it("finds buildings through the tile grid, after adds, moves and removals", async () => {
+    const { buildingAt, buildingsMoved, canPlace, layoutKey, sproutAt, SPROUT } = await import("../src/world/sanctuary");
+    const g = newGame("A", "warrior", 7);
+    const t = territory(g.territory);
+    const x = t.x0 + 1, y = t.y0 + 1;
+    expect(buildingAt(g, x, y)).toBeUndefined();
+    const k0 = layoutKey(g);
+    const b = { id: "t1", type: "cobble", x, y, level: 1 };
+    g.buildings.push(b);
+    expect(buildingAt(g, x, y)).toBe(b);
+    expect(layoutKey(g)).not.toBe(k0);
+    expect(canPlace(g, "cobble", x, y)).toBeTruthy();
+    b.x += 1; buildingsMoved();
+    expect(buildingAt(g, x, y)).toBeUndefined();
+    expect(buildingAt(g, x + 1, y)).toBe(b);
+    g.buildings = g.buildings.filter((o) => o !== b);
+    expect(buildingAt(g, x + 1, y)).toBeUndefined();
+    // Sprout: her old spot until moved; nothing can be built on her
+    expect(sproutAt(g)).toEqual(SPROUT);
+    g.sprout = { x, y };
+    expect(canPlace(g, "cobble", x, y)).toBe("Mầm đang đứng ở đây");
+    expect(canPlace(g, "cobble", SPROUT.x, SPROUT.y)).toBeNull();
   });
 });

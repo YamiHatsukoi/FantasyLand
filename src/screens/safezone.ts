@@ -6,14 +6,15 @@ import { addItem, buildingCost, canAfford, count, logMsg, pay, takeLevelUps, typ
 import { BUILDINGS, BUILDING_LIST, RANK_NAMES, type BuildingCategory } from "../data/buildings";
 import { SEASON_ICONS, SEASON_NAMES, seasonOf } from "../data/items";
 import { CROP_LIFT, buildingCanvas, cropCanvas } from "../render/buildings";
+import { FloorLayer, waterGlints } from "../render/floors";
 import { MapView } from "../render/mapview";
 import { spriteCanvas } from "../render/pixel";
 import { isPerson, personCanvas, type Dir } from "../render/people";
 import { T, tileSet } from "../render/tiles";
 import { BIOMES } from "../world/biomes";
 import { findPath } from "../world/mapgen";
-import { SPROUT, SZ_H, SZ_W, blockerAt, buildLimitReason, buildingAt, canPlace, inTerritory, territory } from "../world/sanctuary";
-import { confirmBox, h, openModal, toast, topModalOpen } from "../ui/dom";
+import { SZ_H, SZ_W, blockerAt, buildLimitReason, buildingAt, buildingsMoved, canPlace, inTerritory, sproutAt, territory } from "../world/sanctuary";
+import { confirmBox, h, nn, openModal, toast, topModalOpen } from "../ui/dom";
 import { costView, openBuilding, setMoveHook, showReport } from "./buildingPanels";
 import { WEATHER, advanceDay, cropStage, ensureSlots, housing, isReady, population, rankName, rankOf, tickFarm } from "../world/town";
 import { openHelp, openJournal, openMenu, partyMini, saveDot, showBanner } from "./common";
@@ -96,6 +97,17 @@ export function treeHides(x: number, y: number, buildings: PlacedBuilding[], peo
   });
 }
 
+/** Paints one tile of the sanctuary's bare ground (grass inside the territory) into `gc`. */
+export function groundPainter(gc: CanvasRenderingContext2D, terr: ReturnType<typeof territory>) {
+  const tiles = tileSet(BIOMES.forest);
+  return (x: number, y: number) => {
+    const hsh = hashString(`${x},${y}`);
+    const inside = x >= terr.x0 && y >= terr.y0 && x < terr.x1 && y < terr.y1;
+    if (!inside) return; // the forest and its baked trees stay as they are
+    gc.drawImage(tiles.tiles[hsh % 9 === 0 ? T.DECOR : T.GROUND][hsh % 4], x * 16, y * 16);
+  };
+}
+
 /** Pre-rendered sanctuary ground: grass, forest outside the territory, darkness past the border. */
 export function sanctuaryGround(terr: ReturnType<typeof territory>): HTMLCanvasElement {
   const tiles = tileSet(BIOMES.forest);
@@ -104,17 +116,16 @@ export function sanctuaryGround(terr: ReturnType<typeof territory>): HTMLCanvasE
   cv.height = SZ_H * 16;
   const gc = cv.getContext("2d")!;
   gc.imageSmoothingEnabled = false;
+  const inner = groundPainter(gc, terr);
   for (let y = 0; y < SZ_H; y++) {
     for (let x = 0; x < SZ_W; x++) {
-      const hsh = hashString(`${x},${y}`);
       const inside = x >= terr.x0 && y >= terr.y0 && x < terr.x1 && y < terr.y1;
-      const type = inside ? (hsh % 9 === 0 ? T.DECOR : T.GROUND) : (hsh % 3 === 0 ? T.GROUND : T.OBSTACLE);
-      gc.drawImage(tiles.tiles[type === T.OBSTACLE ? T.GROUND : type][hsh % 4], x * 16, y * 16);
-      if (!inside) {
-        const d = Math.max(terr.x0 - x, x - terr.x1 + 1, terr.y0 - y, y - terr.y1 + 1);
-        gc.fillStyle = `rgba(3,6,5,${Math.min(0.92, 0.35 + d * 0.14)})`;
-        gc.fillRect(x * 16, y * 16, 16, 16);
-      }
+      if (inside) { inner(x, y); continue; }
+      const hsh = hashString(`${x},${y}`);
+      gc.drawImage(tiles.tiles[T.GROUND][hsh % 4], x * 16, y * 16);
+      const d = Math.max(terr.x0 - x, x - terr.x1 + 1, terr.y0 - y, y - terr.y1 + 1);
+      gc.fillStyle = `rgba(3,6,5,${Math.min(0.92, 0.35 + d * 0.14)})`;
+      gc.fillRect(x * 16, y * 16, 16, 16);
     }
   }
   // trees that can stand in front of something are drawn live (edgeTrees), the rest are baked in
@@ -128,19 +139,23 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   const el = h("div", { class: "screen" });
   root.append(el);
   const view = new MapView(el);
+  view.farOut = 2;
+  view.resize();
 
   // hero position
-  const hero = { x: SPROUT.x + 3, y: SPROUT.y + 2, px: SPROUT.x + 3, py: SPROUT.y + 2, path: [] as { x: number; y: number }[], t: 0, flip: false, dir: 0 as Dir };
+  const sp0 = sproutAt(g);
+  const hero = { x: sp0.x + 3, y: sp0.y + 2, px: sp0.x + 3, py: sp0.y + 2, path: [] as { x: number; y: number }[], t: 0, flip: false, dir: 0 as Dir };
   view.camX = hero.x;
   view.camY = hero.y;
   const petPos = { x: hero.x - 1, y: hero.y };
-  let placing: { type: string; moving?: PlacedBuilding; x: number; y: number; built?: number } | null = null;
+  let placing: { type: string; moving?: PlacedBuilding; x: number; y: number; built?: number; area?: boolean; corner?: { x: number; y: number } | null; sprout?: boolean } | null = null;
   /** Several buildings picked at once, to clear them or move them together. */
   let sel: { set: Set<PlacedBuilding>; corner: { x: number; y: number } | null; move: { ax: number; ay: number; dx: number; dy: number } | null } | null = null;
   const sim = new ResidentSim(g);
   let ground: HTMLCanvasElement | null = null;
   let edge: [number, number, HTMLCanvasElement][] = [];
   let groundSig = "";
+  const floors = new FloorLayer();
   let talkingTo: string | null = null;
   const marks = new Map<string, boolean>(); // "!" markers, refreshed every few seconds
   let markT = 0;
@@ -274,7 +289,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
 
   // ------------------------------------------------------------ building
   let buildCat: BuildingCategory = "farm";
-  const CAT_NAMES: Record<BuildingCategory, string> = { core: "Cốt lõi", farm: "Nông trại", production: "Sản xuất", craft: "Chế tạo", housing: "Nhà ở", service: "Dịch vụ", decor: "Trang trí" };
+  const CAT_NAMES: Record<BuildingCategory, string> = { core: "Cốt lõi", farm: "Nông trại", production: "Sản xuất", craft: "Chế tạo", housing: "Nhà ở", service: "Dịch vụ", decor: "Trang trí", floor: "Sàn & Nước" };
   let buildQ = "";
   let buildOnlyOk = false;
   function openBuildMenu() {
@@ -332,34 +347,117 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     renderPlaceBar();
   }
 
+  /** One-tile pieces (roads, ponds, fences, plots...) can be laid over a whole area at once. */
+  const areaOk = (type: string) => { const d = BUILDINGS[type]; return d.size[0] === 1 && d.size[1] === 1 && !d.unique; };
+  function areaRect(p: NonNullable<typeof placing>) {
+    const c0 = p.corner ?? { x: p.x, y: p.y };
+    return { x0: Math.min(c0.x, p.x), y0: Math.min(c0.y, p.y), x1: Math.max(c0.x, p.x), y1: Math.max(c0.y, p.y) };
+  }
+  /** The free tiles of the area, in reading order. */
+  function areaTiles(p: NonNullable<typeof placing>) {
+    const r = areaRect(p);
+    const out: [number, number][] = [];
+    for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) if (!canPlace(g, p.type, x, y)) out.push([x, y]);
+    return out;
+  }
+
   function renderPlaceBar() {
     if (!placing) { placeBar.classList.add("hidden"); return; }
     const p = placing;
-    const reason = canPlace(g, p.type, p.x, p.y, p.moving);
     placeBar.classList.remove("hidden");
+    if (p.sprout) {
+      const why = sproutSpotProblem(p.x, p.y);
+      placeBar.replaceChildren(
+        h("div", { class: "chip" }, why ? `❌ ${why}` : "🌱 Chạm chỗ mới cho Mầm"),
+        h("button", { class: "btn primary", disabled: !!why, onclick: confirmPlace }, "✓ Đặt"),
+        h("button", { class: "btn", onclick: stopPlacing }, "✕ Huỷ"));
+      return;
+    }
     const built = p.built ?? 0;
+    const areaBtn = !p.moving && areaOk(p.type)
+      ? h("button", { class: `btn ${p.area ? "primary" : ""}`, title: "Chạm 2 góc để lát kín cả vùng", onclick: () => { p.area = !p.area; p.corner = null; renderPlaceBar(); } }, "▦ Vùng")
+      : null;
+    if (p.area) {
+      const n = p.corner ? areaTiles(p).length : 0;
+      const can = Math.min(n, affordableN(p.type));
+      placeBar.replaceChildren(...nn(
+        h("div", { class: "chip" }, !p.corner ? "▦ Chạm góc đầu tiên" : `▦ ${n} ô trống · đủ cho ${can}`, built ? h("span", { class: "muted small" }, ` · đã đặt ${built}`) : null),
+        h("button", { class: "btn primary", disabled: !can, onclick: fillArea }, `✓ Lát ${can || ""}`.trim()),
+        areaBtn,
+        h("button", { class: "btn", onclick: stopPlacing }, built ? "✔ Xong" : "✕ Huỷ")));
+      return;
+    }
+    const reason = canPlace(g, p.type, p.x, p.y, p.moving);
     const label = reason ? `❌ ${reason}` : `✅ ${BUILDINGS[p.type].name} — chạm để chọn chỗ`;
-    placeBar.replaceChildren(
+    placeBar.replaceChildren(...nn(
       h("div", { class: "chip" }, label, built ? h("span", { class: "muted small" }, ` · đã đặt ${built}`) : null,
         p.moving ? null : h("span", { class: "muted small" }, ` · đủ cho ${affordable(p.type)} cái`)),
       h("button", { class: "btn primary", disabled: !!reason, onclick: confirmPlace }, "✓ Đặt"),
-      h("button", { class: "btn", onclick: stopPlacing }, built ? "✔ Xong" : "✕ Huỷ"));
+      areaBtn,
+      h("button", { class: "btn", onclick: stopPlacing }, built ? "✔ Xong" : "✕ Huỷ")));
   }
 
-  /** How many more of a building the bag can pay for (capped for display). */
-  function affordable(type: string) {
+  function fillArea() {
+    const p = placing;
+    if (!p) return;
+    let n = 0;
+    for (const [x, y] of areaTiles(p)) {
+      if (buildLimitReason(g, p.type) || !pay(g, buildingCost(p.type, 0))) break;
+      const nb: PlacedBuilding = { id: `b_${Date.now().toString(36)}${Math.floor(Math.random() * 1e6)}`, type: p.type, x, y, level: 1 };
+      if (p.type === "farm") nb.plot = { soil: 0, watered: false };
+      g.buildings.push(nb);
+      n++;
+    }
+    if (!n) return toast("Không đủ nguyên liệu.", "bad");
+    logMsg(g, `Lát ${n} ${BUILDINGS[p.type].name}.`);
+    sfx("build");
+    toast(`Đã đặt ${n} ${BUILDINGS[p.type].name}.`, "good");
+    app.dirty();
+    p.built = (p.built ?? 0) + n;
+    p.corner = null;
+    renderPlaceBar(); updateHud();
+  }
+
+  /** Why Sprout can't stand at (x, y), if she can't. */
+  function sproutSpotProblem(x: number, y: number): string | null {
+    if (!inTerritory(g, x, y)) return "Ngoài lãnh địa";
+    if (blockerAt(g, x, y)) return "Có công trình ở đây";
+    return null;
+  }
+  function startMovingSprout() {
+    const sp = sproutAt(g);
+    placing = { type: "flowers", x: sp.x, y: sp.y, sprout: true };
+    view.pannable = true;
+    dock.classList.add("hidden");
+    renderPlaceBar();
+  }
+
+  /** How many more of a building the bag can pay for. */
+  function affordableN(type: string) {
     const cost = buildingCost(type, 0);
-    const n = Math.min(99, ...Object.entries(cost).map(([id, need]) => (need > 0 ? Math.floor(count(g, id) / need) : 99)));
+    return Math.min(9999, ...Object.entries(cost).map(([id, need]) => (need > 0 ? Math.floor(count(g, id) / need) : 9999)));
+  }
+  /** The same, capped for display. */
+  function affordable(type: string) {
+    const n = affordableN(type);
     return n >= 99 ? "99+" : String(n);
   }
 
   function confirmPlace() {
     if (!placing) return;
     const p = placing;
+    if (p.sprout) {
+      if (sproutSpotProblem(p.x, p.y)) return;
+      g.sprout = { x: p.x, y: p.y };
+      app.dirty();
+      toast("🌱 Mầm đã dời tới chỗ mới!", "good");
+      return stopPlacing();
+    }
     if (canPlace(g, p.type, p.x, p.y, p.moving)) return;
     if (p.moving) {
       p.moving.x = p.x;
       p.moving.y = p.y;
+      buildingsMoved();
     } else {
       const limit = buildLimitReason(g, p.type);
       if (limit) { toast(limit, "bad"); return stopPlacing(); }
@@ -399,7 +497,8 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   }
 
   // ------------------------------------------------------------ pick several buildings: clear or move them together
-  const movable = (b: PlacedBuilding) => !BUILDINGS[b.type].fixed;
+  // everything can be moved (the main house and the gate too); only those two can't be pulled down
+  const movable = (_b: PlacedBuilding) => true;
   function startSelect() {
     closeDockMenu();
     sel = { set: new Set(), corner: null, move: null };
@@ -456,6 +555,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     if (!sel?.move || moveProblem()) return;
     const { dx, dy } = sel.move;
     for (const b of sel.set) { b.x += dx; b.y += dy; }
+    buildingsMoved();
     app.dirty();
     toast(`Đã dời ${sel.set.size} công trình.`, "good");
     sel.move = null;
@@ -463,12 +563,14 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   }
   async function clearSelected() {
     if (!sel?.set.size) return;
-    const list = [...sel.set];
+    const list = [...sel.set].filter((b) => !BUILDINGS[b.type].fixed);
+    if (!list.length) return toast("Nhà Chính và Cổng Vực Sâu chỉ dời được, không dỡ được.", "info");
     const crops = list.some((b) => b.plot?.crop || b.slots?.some((x) => x.crop));
     if (!(await confirmBox("Dỡ hàng loạt", `Dỡ ${list.length} công trình? Bạn nhận lại một nửa nguyên liệu xây dựng của mỗi cái.${crops ? " Cây trồng bên trong sẽ mất." : ""}`, "Dỡ"))) return;
     const back: Record<string, number> = {};
     for (const b of list) for (const [id, n] of Object.entries(buildingCost(b.type, 0))) back[id] = (back[id] ?? 0) + Math.floor(n / 2);
-    g.buildings = g.buildings.filter((b) => !sel!.set.has(b));
+    const gone = new Set(list);
+    g.buildings = g.buildings.filter((b) => !gone.has(b));
     sfx("demolish");
     for (const [id, n] of Object.entries(back)) if (n > 0) addItem(g, id, n);
     logMsg(g, `Dỡ ${list.length} công trình.`);
@@ -500,17 +602,18 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   }
 
   // ------------------------------------------------------------ input
-  const walkable = (x: number, y: number) => inTerritory(g, x, y) && !blockerAt(g, x, y) && !(x === SPROUT.x && y === SPROUT.y);
+  const walkable = (x: number, y: number) => { const sp = sproutAt(g); return inTerritory(g, x, y) && !blockerAt(g, x, y) && !(x === sp.x && y === sp.y); };
 
   view.onTap = (tx, ty) => {
     if (sel) return selectTap(tx, ty);
     if (placing) {
+      if (placing.area && !placing.corner) placing.corner = { x: tx, y: ty };
       placing.x = tx;
       placing.y = ty;
       renderPlaceBar();
       return;
     }
-    if (tx === SPROUT.x && ty === SPROUT.y) return talkToSprout();
+    { const sp = sproutAt(g); if (tx === sp.x && ty === sp.y) return talkToSprout(); }
     const agent = sim.agentAt(tx, ty);
     if (agent) return talkTo(agent.id);
     const b = buildingAt(g, tx, ty);
@@ -530,6 +633,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
         h("p", { style: "margin:0;line-height:1.6" }, tip)),
       h("div", { class: "row end", style: "margin-top:10px" },
         h("button", { class: "btn", onclick: () => { m.close(); openHelp(); } }, "❓ Hướng dẫn"),
+        h("button", { class: "btn", onclick: () => { m.close(); startMovingSprout(); } }, "↔️ Dời chỗ Mầm"),
         h("button", { class: "btn primary", onclick: () => m.close() }, "Cảm ơn Mầm!")));
   }
 
@@ -582,11 +686,14 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     const terr = territory(g.territory);
     // static ground (tiles, trees, darkness outside the territory) is pre-rendered once
     const gsig = `${g.territory}`;
-    if (gsig !== groundSig) { ground = sanctuaryGround(terr); edge = edgeTrees(terr); groundSig = gsig; }
+    if (gsig !== groundSig) { ground = sanctuaryGround(terr); edge = edgeTrees(terr); groundSig = gsig; floors.reset(); }
+    // roads, plazas and ponds are painted into the ground (only what changed)
+    { const gc = ground!.getContext("2d")!; floors.update(gc, g, groundPainter(gc, terr)); }
     {
       const sx0 = (view.camX + 0.5 - view.w / 2 / view.tile) * 16, sy0 = (view.camY + 0.5 - view.h / 2 / view.tile) * 16;
       c.drawImage(ground!, sx0, sy0, (view.w / view.tile) * 16, (view.h / view.tile) * 16, 0, 0, view.w, view.h);
     }
+    waterGlints(c, floors.water, t, (x) => view.sx(x), (y) => view.sy(y), view.tile, vr);
     // territory border
     c.strokeStyle = "rgba(242,197,66,0.35)";
     c.setLineDash([view.tile / 4, view.tile / 4]);
@@ -604,6 +711,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
     for (const b of g.buildings) {
       const [bw, bh] = BUILDINGS[b.type].size;
       if (placing?.moving === b || (sel?.move && sel.set.has(b))) continue;
+      if (BUILDINGS[b.type].floor) continue; // painted into the ground
       draw.push({ y: BUILDINGS[b.type].walkable ? b.y : b.y + bh, fn: () => {
         view.img(buildingCanvas(b.type, b.level), b.x, b.y - 1, { w: bw, h: bh + 1 });
         if (b.type === "farm" && b.plot?.watered) {
@@ -643,10 +751,10 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
         c.fillText("❗", view.sx(a.px) + view.tile / 2, view.sy(a.py) - view.tile * 1.05 + Math.sin(t / 200) * 2);
         c.textAlign = "left";
       });
-      else if (a.bubble && a.bubble.until > t) bubbles.push(() => speech(a.bubble!.text, view.sx(a.px) + view.tile / 2, view.sy(a.py) - view.tile * 1.1));
+      else if (a.bubble && a.bubble.until > t && view.tile >= 16) bubbles.push(() => speech(a.bubble!.text, view.sx(a.px) + view.tile / 2, view.sy(a.py) - view.tile * 1.1));
     }
     const bob = Math.sin(t / 250) * view.tile * 0.03;
-    draw.push({ y: SPROUT.y + 1, fn: () => view.img(spriteCanvas("sprout"), SPROUT.x, SPROUT.y, { dy: -0.05 + bob / view.tile }) });
+    { const sp = sproutAt(g); draw.push({ y: sp.y + 1, fn: () => view.img(spriteCanvas("sprout"), sp.x, sp.y, { dy: -0.05 + bob / view.tile }) }); }
     draw.push({ y: hero.py + 1.01, fn: () => {
       const ch = g.chars[g.heroId];
       c.fillStyle = "rgba(0,0,0,0.3)";
@@ -692,7 +800,28 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
       }
     }
     // placement ghost
-    if (placing) {
+    if (placing?.sprout) {
+      const ok = !sproutSpotProblem(placing.x, placing.y);
+      c.fillStyle = ok ? "rgba(90,220,110,0.35)" : "rgba(230,70,70,0.4)";
+      c.fillRect(view.sx(placing.x), view.sy(placing.y), view.tile, view.tile);
+      view.img(spriteCanvas("sprout"), placing.x, placing.y, { alpha: 0.75 });
+    } else if (placing?.area) {
+      if (placing.corner) {
+        const r = areaRect(placing);
+        const cv = buildingCanvas(placing.type, 1);
+        for (let y = Math.max(r.y0, vr.y0 - 1); y <= Math.min(r.y1, vr.y1 + 1); y++) for (let x = Math.max(r.x0, vr.x0 - 1); x <= Math.min(r.x1, vr.x1 + 1); x++) {
+          const free = !canPlace(g, placing.type, x, y);
+          c.fillStyle = free ? "rgba(90,220,110,0.3)" : "rgba(230,70,70,0.3)";
+          c.fillRect(view.sx(x), view.sy(y), view.tile, view.tile);
+          if (free) view.img(cv, x, y - 1, { w: 1, h: 2, alpha: 0.6 });
+        }
+        c.strokeStyle = "rgba(242,197,66,0.9)"; c.lineWidth = 2;
+        c.strokeRect(view.sx(r.x0), view.sy(r.y0), (r.x1 - r.x0 + 1) * view.tile, (r.y1 - r.y0 + 1) * view.tile);
+      } else {
+        c.strokeStyle = "rgba(242,197,66,0.9)"; c.lineWidth = 2;
+        c.strokeRect(view.sx(placing.x), view.sy(placing.y), view.tile, view.tile);
+      }
+    } else if (placing) {
       const [bw, bh] = BUILDINGS[placing.type].size;
       const ok = !canPlace(g, placing.type, placing.x, placing.y, placing.moving);
       c.fillStyle = ok ? "rgba(90,220,110,0.35)" : "rgba(230,70,70,0.4)";

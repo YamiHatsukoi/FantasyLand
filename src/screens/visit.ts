@@ -4,14 +4,15 @@ import type { CropState, GameState, PlacedBuilding } from "../core/state";
 import { BUILDINGS, RANK_NAMES } from "../data/buildings";
 import type { PlayerVisit, PublicChar } from "../net/api";
 import { CROP_LIFT, buildingCanvas, cropCanvas } from "../render/buildings";
+import { FloorLayer, waterGlints } from "../render/floors";
 import { MapView } from "../render/mapview";
 import { spriteCanvas } from "../render/pixel";
 import { isPerson, personCanvas, type Dir } from "../render/people";
 import { findPath } from "../world/mapgen";
-import { SPROUT, SZ_C, SZ_H, SZ_SHIFT, SZ_W, blockerAt, buildingAt, inTerritory, territory } from "../world/sanctuary";
+import { SZ_C, SZ_H, SZ_SHIFT, SZ_W, blockerAt, buildingAt, inTerritory, sproutAt, territory } from "../world/sanctuary";
 import { cropStage, isReady } from "../world/town";
 import { h, toast, topModalOpen } from "../ui/dom";
-import { drawTree, edgeTrees, sanctuaryGround, treeHides } from "./safezone";
+import { drawTree, edgeTrees, groundPainter, sanctuaryGround, treeHides } from "./safezone";
 import { ago, openProfile } from "./players";
 
 const KEYS: Record<string, [number, number]> = { ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1], ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] };
@@ -38,7 +39,10 @@ export function mountVisit(root: HTMLElement, v: PlayerVisit, hooks: { leave: ()
   }));
   const place = { buildings, territory: v.territory ?? 0 } as unknown as GameState;
   const terr = territory(place.territory);
+  const SPROUT = sproutAt(place);
   const ground = sanctuaryGround(terr);
+  const floors = new FloorLayer();
+  { const gc = ground.getContext("2d")!; floors.update(gc, place, groundPainter(gc, terr)); }
   const edge = edgeTrees(terr);
   const rank = buildings.find((b) => b.type === "house")?.level ?? 1;
   const party = v.party.filter((c, i, all): c is PublicChar => !!c && all.findIndex((o) => o?.id === c.id) === i);
@@ -137,7 +141,9 @@ export function mountVisit(root: HTMLElement, v: PlayerVisit, hooks: { leave: ()
       const see = treeHides(x, y, buildings, [{ x: hero.px, y: hero.py }, ...hosts]);
       draw.push({ y: y + 0.99, fn: () => drawTree(view, x, y, tall, see) });
     }
+    waterGlints(c, floors.water, t, (x) => view.sx(x), (y) => view.sy(y), view.tile, vr);
     for (const b of buildings) {
+      if (BUILDINGS[b.type].floor) continue;
       const [bw, bh] = BUILDINGS[b.type].size;
       draw.push({ y: BUILDINGS[b.type].walkable ? b.y : b.y + bh, fn: () => {
         view.img(buildingCanvas(b.type, b.level), b.x, b.y - 1, { w: bw, h: bh + 1 });

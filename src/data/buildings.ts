@@ -3,7 +3,7 @@ import type { Station } from "./items/recipeTypes";
 
 export type Cost = Record<string, number>; // item id -> amount, "gold" for gold
 
-export type BuildingCategory = "core" | "farm" | "production" | "craft" | "housing" | "service" | "decor";
+export type BuildingCategory = "core" | "farm" | "production" | "craft" | "housing" | "service" | "decor" | "floor";
 
 export interface BuildingDef {
   id: string;
@@ -21,6 +21,8 @@ export interface BuildingDef {
   workers?: number; // workers needed per level
   appeal?: number; // attractiveness per level
   walkable?: boolean; // flat decor (paths, rugs): people walk over it
+  /** Ground cover filling its whole tile; pieces of the same family join up (roads, plazas, ponds). */
+  floor?: string;
   /** Rendering style: wall/roof colours and an item-icon emblem on the facade. */
   style?: { wall: string; roof: string; emblem?: string };
   first?: Cost; // explicit build cost (otherwise generated)
@@ -89,7 +91,58 @@ const DECOR: Deco[] = [
   ["wood_bridge", "Cầu Gỗ Cong", "🌉", [2, 1], 2, 3, undefined, "Cây cầu cong kiểu vườn cảnh."],
   ["torii", "Cổng Đền", "⛩️", [2, 1], 3, 4, undefined, "Cổng đỏ đánh dấu nơi linh thiêng."],
   ["dragon_statue", "Tượng Rồng", "🐉", [2, 2], 5, 8, undefined, "Rồng đá cuộn mình canh giữ Thánh Địa."],
+  // street furniture and garden pieces, all from things the sanctuary makes
+  ["willow", "Cây Liễu Rủ", "🌳", [1, 1], 1, 2, { wood: 3, herb: 2 }, "Cành liễu rủ xuống như mành, đẹp nhất bên bờ nước."],
+  ["lantern_tree", "Cây Đèn Đom Đóm", "🌟", [1, 1], 2, 3, { wood: 3, glass: 1, herb: 1 }, "Đèn lồng nhỏ treo khắp tán cây, sáng lung linh."],
+  ["twin_lamp", "Cột Đèn Đôi", "🏮", [1, 1], 2, 2, { iron_ingot: 1, glass: 2 }, "Hai ngọn đèn kính trên cột sắt cho quảng trường."],
+  ["cafe_table", "Bàn Ô Ngoài Trời", "⛱️", [1, 1], 2, 2, { plank_forest: 2, cloth_forest: 1 }, "Bàn tròn dưới chiếc ô sọc, có cả tách trà."],
+  ["swing", "Xích Đu", "🪢", [1, 1], 1, 2, { wood: 3, rope: 1 }, "Xích đu gỗ cho lũ trẻ (và người lớn)."],
+  ["mini_windmill", "Cối Xay Gió Nhỏ", "🌬️", [1, 1], 2, 2, { plank_forest: 2, cloth_forest: 1 }, "Cối xay gió trang trí, cánh quạt kẽo kẹt."],
+  ["clock_post", "Cột Đồng Hồ", "🕰️", [1, 1], 3, 3, { iron_ingot: 1, glass: 1, gears: 1 }, "Đồng hồ phố trên cột sắt. Giờ ở Thánh Địa cuối cùng cũng đúng."],
+  ["notice_board", "Bảng Tin", "📜", [1, 1], 1, 1, { plank_forest: 2, paper: 1 }, "Đầy giấy dán: tìm mèo lạc, bán bí ngô, mời đi câu."],
+  ["flower_cart", "Xe Hoa", "🌺", [1, 1], 2, 3, { plank_forest: 2, herb: 3 }, "Xe đẩy chở đầy hoa tươi đủ màu."],
+  ["stone_well_deco", "Giếng Ước", "🪙", [1, 1], 2, 3, { stone: 6, rope: 1 }, "Ném một đồng xu, ước một điều. Mầm đã ném rất nhiều."],
+  ["topiary", "Cây Cắt Tỉa Hình Thú", "🐇", [1, 1], 2, 2, { herb: 3, stone: 1 }, "Bụi cây tỉa thành hình chú thỏ trong chậu đá."],
+  ["planter_box", "Bồn Hoa Gỗ", "🌼", [1, 1], 1, 1, { plank_forest: 1, herb: 2 }, "Bồn gỗ trồng hoa, đặt dọc đường rất đẹp."],
+  ["wisteria_arch", "Giàn Tử Đằng", "💜", [2, 1], 2, 4, { plank_forest: 3, herb: 3 }, "Hoa tử đằng tím buông thành mành. Đi xuyên qua được.", true],
+  ["market_stall", "Sạp Hoa Quả", "🍎", [2, 1], 2, 3, { plank_forest: 3, cloth_forest: 2 }, "Sạp mái vải sọc, bày táo, cam và dưa."],
+  ["round_planter", "Bồn Hoa Tròn", "💐", [2, 2], 2, 5, { stone: 8, mortar: 2, herb: 4 }, "Bồn hoa xây đá giữa quảng trường, hoa nở bốn mùa."],
+  ["bell_tower", "Tháp Chuông", "🔔", [2, 2], 4, 7, { brick: 8, mortar: 4, plank_forest: 4, copper_ingot: 2 }, "Tháp gạch với quả chuông đồng, ngân vang mỗi sáng."],
+  ["zen_garden", "Vườn Đá Thiền", "🎑", [2, 2], 3, 5, { sand: 6, stone: 4 }, "Cát cào thành sóng quanh vài tảng đá. Yên tĩnh lạ thường."],
 ];
+type Floor = [id: string, name: string, icon: string, rank: number, family: string, first: Cost, desc: string, walkable?: false];
+/**
+ * Ground cover, one tile each, laid in rows or whole areas: pieces of a family join seamlessly
+ * and draw an edge only where the family ends. The water family makes ponds, lakes and canals
+ * with banks that follow their outline (people walk round, or over the stepping stones and
+ * boardwalk).
+ */
+const FLOORS: Floor[] = [
+  ["dirt_road", "Đường Đất Nện", "🟫", 1, "dirt_road", { stone: 1 }, "Đường đất nện chặt, có vệt bánh xe."],
+  ["gravel", "Lối Sỏi", "🪨", 1, "gravel", { stone: 2 }, "Sỏi nhỏ lạo xạo dưới chân."],
+  ["cobble", "Đường Đá Cuội", "⚪", 1, "cobble", { stone: 3 }, "Đá cuội tròn lát kín, kiểu phố cổ."],
+  ["sand_path", "Đường Cát", "🏖️", 1, "sand_path", { sand: 3 }, "Cát trắng mịn, hợp với bờ ao."],
+  ["lawn", "Thảm Cỏ Xanh", "🟩", 1, "lawn", { herb: 1 }, "Cỏ xén gọn gàng, xanh mướt."],
+  ["clover", "Thảm Cỏ Hoa", "🍀", 1, "clover", { herb: 2 }, "Cỏ ba lá lấm tấm hoa trắng và vàng."],
+  ["plank_deck", "Sàn Ván Gỗ", "🪵", 1, "plank_deck", { plank_forest: 2 }, "Sàn ván gỗ ấm áp cho hiên và quán."],
+  ["flagstone", "Sàn Đá Phiến", "⬜", 2, "flagstone", { block_forest: 1, stone: 1 }, "Những phiến đá lớn ghép không đều."],
+  ["moss_stone", "Đá Rêu Cổ", "🌿", 2, "moss_stone", { stone: 2, herb: 1 }, "Đá lát cũ, rêu xanh mọc trong kẽ."],
+  ["brick_road", "Đường Gạch Đỏ", "🧱", 2, "brick_road", { brick: 2, mortar: 1 }, "Gạch nung xếp so le, đường phố đúng nghĩa."],
+  ["herringbone", "Gạch Xương Cá", "🔶", 3, "herringbone", { brick: 3, mortar: 1 }, "Gạch xếp kiểu xương cá cho quảng trường."],
+  ["checker", "Sàn Đá Hoa Cờ", "🏁", 3, "checker", { stone: 3, mortar: 2 }, "Đá trắng đen xen kẽ như bàn cờ."],
+  ["red_carpet", "Thảm Đỏ", "🟥", 3, "red_carpet", { cloth_forest: 2, dye: 1 }, "Thảm đỏ viền vàng, đón khách quý."],
+  ["mosaic", "Sàn Khảm Hoa Văn", "🔷", 4, "mosaic", { stone: 2, mortar: 1, glass: 1 }, "Đá khảm xanh lam và vàng thành hoa văn."],
+  ["starlight", "Gạch Ánh Sao", "✨", 5, "starlight", { glass: 2, mortar: 1, dye: 1 }, "Gạch thủy tinh tối lấp lánh như trời sao."],
+  // water: one family, so lotus, koi and reeds join into the same pond
+  ["pond_water", "Nước Ao", "💧", 1, "water", { clay: 2 }, "Ô nước trong. Ghép nhiều ô thành ao hồ; bờ tự uốn theo hình.", false],
+  ["lotus_water", "Nước Có Sen", "🪷", 1, "water", { clay: 2, herb: 2 }, "Lá sen và hoa sen hồng trên mặt nước.", false],
+  ["reed_water", "Nước Có Lau Sậy", "🌾", 1, "water", { clay: 2, fiber_forest: 1 }, "Lau sậy mọc ven nước.", false],
+  ["koi_water", "Nước Có Cá Koi", "🐟", 2, "water", { clay: 2, glass: 1 }, "Cá chép đỏ trắng lững lờ bơi.", false],
+  ["deep_water", "Nước Sâu", "🌊", 2, "water", { clay: 3 }, "Nước sâu xanh thẫm cho giữa hồ.", false],
+  ["stepping_stones", "Đá Bước Qua Suối", "🪨", 1, "water", { clay: 2, stone: 2 }, "Những tảng đá phẳng giữa dòng: đi qua được."],
+  ["boardwalk", "Cầu Ván Trên Nước", "🌉", 2, "water", { clay: 2, plank_forest: 2 }, "Lối ván gỗ bắc trên mặt nước: đi qua được."],
+];
+
 const list: BuildingDef[] = [
   // ------------------------------------------------------------ core
   B({ id: "house", name: "Nhà Chính", icon: "🏛️", size: [3, 3], maxLevel: 6, unique: true, fixed: true, rank: 1, category: "core", housing: 2, appeal: 2, style: { wall: "#d8c8a0", roof: "#9a3a2a" },
@@ -222,6 +275,8 @@ const list: BuildingDef[] = [
     desc: "Nhà sàn bằng trúc mát mẻ cho 4 người." }),
   // ------------------------------------------------------------ more decor
   ...DECOR.map(([id, name, icon, size, rank, appeal, first, desc, walkable]) => B({ id, name, icon, size, maxLevel: 1, unique: false, rank, category: "decor", appeal, first, desc, walkable })),
+  // ------------------------------------------------------------ ground cover
+  ...FLOORS.map(([id, name, icon, rank, family, first, desc, walkable]) => B({ id, name, icon, size: [1, 1], maxLevel: 1, unique: false, rank, category: "floor", first, desc, floor: family, walkable: walkable ?? true })),
 ];
 
 export const BUILDINGS: Record<string, BuildingDef> = Object.fromEntries(list.map((b) => [b.id, b]));
@@ -293,4 +348,3 @@ export function houseRequirement(nextLevel: number) {
 export const passiveSlotsFor = (houseLevel: number) => (houseLevel >= 4 ? 3 : 2);
 export const skillSlotsFor = (houseLevel: number) => (houseLevel >= 5 ? 6 : 5);
 export const PARTY_SIZE = 4; // hero + 3 companions
-export const farmLimitFor = (territory: number) => 12 + territory * 9;

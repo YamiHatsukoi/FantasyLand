@@ -41,8 +41,8 @@ export function openBuilding(b: PlacedBuilding, hooks: PanelHooks) {
     const keep = m.body.scrollTop;
     m.body.replaceChildren(h("p", { class: "muted", style: "margin-top:0" }, def.desc));
     switch (b.type) {
-      case "house": houseBody(m, b, hooks, render); break;
-      case "gate": gateBody(m, hooks); break;
+      case "house": houseBody(m, b, hooks, render); genericFooter(m, b, render, false); break;
+      case "gate": gateBody(m, hooks); genericFooter(m, b, render, false); break;
       case "farm": farmBody(m, b, render); break;
       case "greenhouse": greenhouseBody(m, b, render); break;
       case "library": libraryBody(m, b, render); break;
@@ -108,7 +108,12 @@ function upgradeRow(m: ModalHandle, b: PlacedBuilding, render: () => void, block
 function genericFooter(m: ModalHandle, b: PlacedBuilding, render: () => void, withUpgrade = true) {
   const def = BUILDINGS[b.type];
   if (withUpgrade && def.maxLevel > 1) upgradeRow(m, b, render);
-  if (def.fixed) return;
+  if (def.fixed) {
+    // the main house and the gate can be moved, never pulled down
+    m.body.append(h("div", { class: "row end", style: "margin-top:12px" },
+      h("button", { class: "btn small", onclick: () => { m.close(); moveHook(b); } }, "↔️ Di chuyển")));
+    return;
+  }
   const hasCrop = !!b.plot?.crop || !!b.slots?.some((s) => s.crop);
   m.body.append(h("div", { class: "row end", style: "margin-top:12px" },
     h("button", { class: "btn small", onclick: () => { m.close(); moveHook(b); } }, "↔️ Di chuyển"),
