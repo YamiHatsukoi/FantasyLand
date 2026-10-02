@@ -359,6 +359,32 @@ function bulkFarmActions(m: ModalHandle, render: () => void) {
       }, hasWell ? `💧 Tưới tất cả (${dry.length})` : "💧 Tưới tất cả (cần Giếng)") : null,
     )));
   if (empty.length > 1) bulkPlantRow(m, empty, false, render);
+  bulkFertilizeRow(m, fields, render);
+}
+
+/** Plots a fertilizer would actually do something for (better soil, or a growing crop to speed up). */
+const fertHelps = (p: PlotState, id: string) => {
+  const f = getItem(id).fert!;
+  return (f.soil > 0 && p.soil < 3) || (!!f.speed && !!p.crop && !isReady(p.crop));
+};
+
+/** "Fertilize them all": one button per fertilizer in the bag, used only where it helps. */
+function bulkFertilizeRow(m: ModalHandle, plots: PlotState[], render: () => void) {
+  const g = app.game;
+  const ferts = Object.keys(g.inventory).map(getItem).filter((it) => it.type === "fertilizer" && it.fert && (g.inventory[it.id] ?? 0) > 0);
+  const useful = ferts.map((f) => ({ f, targets: plots.filter((p) => fertHelps(p, f.id)) })).filter((x) => x.targets.length > 1);
+  if (!useful.length) return;
+  m.body.append(h("div", { class: "row", style: "margin-top:6px;flex-wrap:wrap" }, h("span", { class: "small muted" }, "Bón hàng loạt:"),
+    useful.map(({ f, targets }) => h("button", {
+      class: "btn small", title: `${f.name}: ${f.desc}`,
+      onclick: () => {
+        let n = 0;
+        for (const p of targets) { if (!fertHelps(p, f.id) || !removeItem(g, f.id, 1)) continue; applyFertilizer(p, f.id); n++; }
+        toast(`Đã bón ${f.name} cho ${n} ô.`, "good");
+        app.dirty();
+        render();
+      },
+    }, itemImg(f.id, "iicon xs"), ` ${f.name} ×${Math.min(targets.length, g.inventory[f.id] ?? 0)}`))));
 }
 
 /** "Plant them all": one button per seed in the bag fills every empty plot it can. */
@@ -407,6 +433,7 @@ function greenhouseBody(m: ModalHandle, b: PlacedBuilding, render: () => void) {
   if (ready.length > 1) m.body.append(h("button", { class: "btn good block", style: "margin-top:8px", onclick: () => { harvestMany(ready); render(); } }, `🧺 Thu hoạch cả nhà kính (${ready.length})`));
   const empty = slots.filter((p) => !p.crop);
   if (empty.length > 1) bulkPlantRow(m, empty, true, render, "luống");
+  bulkFertilizeRow(m, slots, render);
   genericFooter(m, b, render);
 }
 
