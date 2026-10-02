@@ -1121,3 +1121,32 @@ img.iicon.lg { width: 48px; height: 48px; }
 .br-table td.br-tname { text-align: left; display: flex; align-items: center; gap: 6px; position: sticky; left: 0; background: rgba(10,14,12,.95); }
 .br-table td.br-tname .br-face { width: 24px; height: 24px; }
 .br-table tbody tr:last-child td { border-bottom: 0; }
+
+/* ---------- class change ---------- */
+.cc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; margin-bottom: 10px; }
+.cc-pick { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 7px 4px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); color: inherit; font: inherit; font-size: 12px; cursor: pointer; }
+.cc-pick .cc-ico { font-size: 20px; }
+.cc-pick small { font-size: 10px; color: #a9b4ad; }
+.cc-pick.on { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
+.cc-pick.cur { opacity: .7; }
+.cc-detail { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: rgba(255,255,255,.02); }
+.cc-head { display: flex; gap: 10px; align-items: center; }
+.cc-portrait { width: 56px; height: 56px; flex: none; }
+.cc-stats { display: flex; flex-direction: column; gap: 4px; }
+.cc-stat { display: grid; grid-template-columns: 92px 1fr 44px 46px; gap: 8px; align-items: center; font-size: 13px; }
+.cc-track { height: 8px; border-radius: 999px; background: rgba(255,255,255,.07); overflow: hidden; }
+.cc-fill { height: 100%; width: 100%; transform-origin: left; transform: scaleX(var(--w)); background: linear-gradient(90deg, #8a6a20, var(--gold)); }
+.cc-sval { text-align: right; }
+.cc-diff { text-align: right; font-size: 12px; color: #a9b4ad; }
+.cc-diff.up { color: #7ee08a; }
+.cc-diff.down { color: #ff8f80; }
+.cc-road { display: flex; flex-direction: column; gap: 3px; border-left: 2px solid var(--line); margin-left: 6px; padding-left: 10px; }
+.cc-step { display: grid; grid-template-columns: 70px 1fr auto; gap: 8px; align-items: center; font-size: 13px; position: relative; padding: 3px 0; }
+.cc-step::before { content: ""; position: absolute; left: -15px; top: 50%; width: 8px; height: 8px; border-radius: 50%; transform: translateY(-50%); background: var(--line); }
+.cc-step.have::before { background: var(--gold); }
+.cc-lvl { color: #a9b4ad; font-size: 12px; }
+.cc-step.have .cc-lvl { color: var(--gold); }
+.cc-when { font-size: 11.5px; color: #a9b4ad; }
+.cc-step.have .cc-when { color: #7ee08a; }
+.cc-sname { white-space: nowrap; }
+@media (max-width: 600px) { .cc-stat { grid-template-columns: 92px 1fr 40px 40px; gap: 6px; } }

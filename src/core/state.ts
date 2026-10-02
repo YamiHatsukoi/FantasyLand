@@ -341,6 +341,61 @@ export function resetPoints(ch: Character) {
 }
 export const resetCost = (ch: Character) => 50 * ch.level;
 
+// ------------------------------------------------------------ changing the hero's class
+/** Changing class costs ten stat resets: a real decision, not a casual swap. */
+export const classChangeCost = (ch: Character) => Math.max(1000, 500 * ch.level);
+
+/** Every skill a class gives on its own (start + level-ups up to the cap). */
+const classSkillSet = (classId: string) => { const c = CLASSES[classId]; return new Set([...c.startSkills, ...Object.values(c.learnset)]); };
+
+/** Why the hero can't change class right now (or null if they can). */
+export function classChangeBlocker(g: GameState, ch: Character, to: string): string | null {
+  if (ch.id !== g.heroId) return "Chỉ nhân vật chính mới chuyển nghề được.";
+  if (!CLASSES[to]) return "Nghề không tồn tại.";
+  if (to === ch.classId) return "Đây đã là nghề hiện tại.";
+  if (g.expedition) return "Hãy về Thánh Địa trước khi chuyển nghề.";
+  if (g.gold < classChangeCost(ch)) return `Cần ${classChangeCost(ch).toLocaleString("vi-VN")} vàng.`;
+  return null;
+}
+
+/**
+ * Turns the hero into another class. Level, experience and gear stay. The old class's own skills
+ * and starting passive make way for the new class's (up to the current level); skills and passives
+ * learnt elsewhere (library, tomes, training) are kept; stat points come back to spend again.
+ */
+export function changeClass(g: GameState, ch: Character, to: string): string | null {
+  const why = classChangeBlocker(g, ch, to);
+  if (why) return why;
+  const from = ch.classId;
+  const oldSet = classSkillSet(from), newCls = CLASSES[to];
+  g.gold -= classChangeCost(ch);
+  // skills: drop what only the old class gave, add the new class's up to this level
+  const gained = [...newCls.startSkills, ...Object.entries(newCls.learnset).filter(([l]) => Number(l) <= ch.level).map(([, sk]) => sk)];
+  const kept = ch.skills.filter((sk) => !oldSet.has(sk) || gained.includes(sk));
+  ch.skills = [...new Set([...gained, ...kept])];
+  const slots = Math.max(1, ch.equipped.length);
+  // what stays equipped keeps its slot; free slots take the new class's skills, strongest last-learnt first
+  const stillEquipped = ch.equipped.filter((sk) => ch.skills.includes(sk));
+  const byStrength = [...newCls.startSkills, ...Object.entries(newCls.learnset).filter(([l]) => Number(l) <= ch.level).sort((a, b) => Number(b[0]) - Number(a[0])).map(([, sk]) => sk)];
+  ch.equipped = [...new Set([...stillEquipped, ...byStrength])].slice(0, slots);
+  // passives: the class's own starting passive changes hands, learnt ones stay
+  const oldStart = CLASSES[from].startPassives.filter((p) => !newCls.startPassives.includes(p));
+  ch.passives = [...new Set([...newCls.startPassives, ...ch.passives.filter((p) => !oldStart.includes(p))])];
+  const pslots = Math.max(1, ch.equippedPassives.length);
+  ch.equippedPassives = [...new Set([...newCls.startPassives, ...ch.equippedPassives.filter((p) => !oldStart.includes(p))])].slice(0, pslots);
+  // a new build deserves a fresh set of points
+  resetPoints(ch);
+  // the outfit follows the class; hair, skin and chosen colours stay
+  if (ch.sprite === `hero_${from}`) ch.sprite = `hero_${to}`;
+  ch.classId = to;
+  const st = charStats(ch);
+  ch.hp = Math.min(ch.hp, st.hp);
+  ch.mp = Math.min(ch.mp, st.mp);
+  syncLook(ch);
+  logMsg(g, `${ch.name} chuyển nghề: ${CLASSES[from].name} → ${newCls.name}.`);
+  return null;
+}
+
 /** Full stats of a character including gear. A weapon in the off hand counts for half. */
 export function charStats(ch: Character): Stats {
   const s = classStats(ch.classId, ch.level);
