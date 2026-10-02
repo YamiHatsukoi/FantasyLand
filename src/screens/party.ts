@@ -1,7 +1,8 @@
 import { app } from "../app";
 import { describeSkill, skillCostText, passiveText } from "../combat/describe";
 import { openClassChange } from "./classChange";
-import { GEAR_KEYS, POINTS_PER_LEVEL, POINT_CAP, POINT_VALUE, addItem, allocPoint, resetCost, resetPoints, classChangeCost, dismiss, charPassives, charStats, dualWielding, equipGear, fitsGear, isTwoHanded, syncLook, partySize, passiveSlots, removeItem, skillSlots, type Character } from "../core/state";
+import { GEAR_KEYS, POINTS_PER_LEVEL, activePets, petLimit, POINT_CAP, POINT_VALUE, addItem, allocPoint, resetCost, resetPoints, classChangeCost, dismiss, charPassives, charStats, dualWielding, equipGear, fitsGear, isTwoHanded, syncLook, partySize, passiveSlots, removeItem, skillSlots, type Character } from "../core/state";
+import { TRAITS } from "../data/classTraits";
 import { CLASSES, COMPANIONS, xpForLevel } from "../data/classes";
 import { enhLevel, getItem, type GearKey, type ItemDef } from "../data/items";
 import { getPassive } from "../data/passives";
@@ -75,7 +76,8 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
     spriteImg(ch.sprite, ch.pal, "sprite big-portrait"),
     h("div", { class: "grow col", style: "gap:3px;min-width:0" },
       h("div", { class: "row between", style: "flex-wrap:nowrap" },
-        h("div", { style: "min-width:0" }, h("b", { style: "font-size:17px" }, ch.name), h("div", { class: "muted small" }, `${cls.icon} ${cls.name} · Cấp ${ch.level}`)),
+        h("div", { style: "min-width:0" }, h("b", { style: "font-size:17px" }, ch.name), h("div", { class: "muted small" }, `${cls.icon} ${cls.name} · Cấp ${ch.level}`),
+          TRAITS[ch.classId] ? h("div", { class: "trait-chip", title: TRAITS[ch.classId].desc }, `${TRAITS[ch.classId].icon} ${TRAITS[ch.classId].name}: `, h("span", { class: "muted" }, TRAITS[ch.classId].desc)) : null),
         h("div", { class: "row", style: "flex-wrap:nowrap" }, h("button", { class: "icon-btn", title: "Ngoại hình", onclick: () => openAppearance(ch, rerender) }, "🎨"),
           ch.id === g.heroId ? h("button", { class: "icon-btn", title: inDungeon ? "Về Thánh Địa để chuyển nghề" : "Chuyển nghề", disabled: inDungeon, onclick: () => openClassChange(ch, rerender) }, "🔄") : null,
           rosterBtn, dismissBtn)),
@@ -88,8 +90,8 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
   // ---- section tabs
   const isHero = ch.id === g.heroId;
   const pts = isHero ? ch.points ?? 0 : 0;
-  const slots = skillSlots(g);
-  const pslots = passiveSlots(g);
+  const slots = skillSlots(g, ch);
+  const pslots = passiveSlots(g, ch);
   const plan = planBestGear(g, ch);
   const better = new Set(plan.map((p) => p.key));
   const tomes = Object.keys(g.inventory).map(getItem).filter((it) => it.type === "tome");
@@ -218,6 +220,15 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
 function petPanel(rerender: () => void): HTMLElement {
   const g = app.game;
   const owned = (g.pets ?? []).map((id) => PET[id]).filter(Boolean);
+  const limit = petLimit(g);
+  const active = activePets(g);
+  // bring one along (when the party is full of pets, the last one picked goes home), or leave one home
+  const togglePet = (id: string, on: boolean) => {
+    let list = on ? active.filter((x) => x !== id) : [...active, id];
+    if (list.length > limit) list = [...list.slice(0, limit - 1), id];
+    g.pet = list[0];
+    g.petsExtra = list.slice(1);
+  };
   const eggs = g.inventory[PET_EGG] ?? 0;
   const hatch = () => {
     if (!removeItem(g, PET_EGG, 1)) return;
@@ -232,14 +243,14 @@ function petPanel(rerender: () => void): HTMLElement {
   };
   return h("div", { class: "col", style: "gap:8px" },
     h("div", { class: "row between" },
-      h("span", { class: "muted small" }, `Mang theo một thú cưng để nhận món quà đặc biệt của nó. Đã có ${owned.length}/${PETS.length}.`),
+      h("span", { class: "muted small" }, `Mang theo ${limit > 1 ? `tối đa ${limit} thú cưng` : "một thú cưng"} để nhận món quà đặc biệt. Đã có ${owned.length}/${PETS.length}.${limit === 1 ? " Thuần Thú Sư, Tế Tự Rừng hay Triệu Hồi Sư trong đội cho mang thêm." : ""}`),
       h("button", { class: "btn small primary", disabled: !eggs, onclick: hatch }, `🥚 Ấp trứng (${eggs})`)),
     owned.length ? h("div", { class: "list no-search" }, owned.map((p) => {
-      const on = g.pet === p.id;
+      const on = active.includes(p.id);
       return h("div", { class: `item-row ${on ? "sel" : ""}` },
         h("img", { class: "pix", src: creatureCanvas(petSpec(p)).toDataURL(), alt: "", style: "width:48px;height:48px" }),
         h("div", { class: "meta" }, h("div", { class: "name" }, p.name, h("span", { class: "tag" }, p.gift)), h("div", { class: "desc" }, p.desc)),
-        h("button", { class: `btn small ${on ? "" : "primary"}`, onclick: () => { g.pet = on ? undefined : p.id; app.dirty(); rerender(); } }, on ? "Để ở nhà" : "Mang theo"));
+        h("button", { class: `btn small ${on ? "" : "primary"}`, onclick: () => { togglePet(p.id, on); app.dirty(); rerender(); } }, on ? "Để ở nhà" : active.length >= limit && limit > 1 ? "Đổi vào" : "Mang theo"));
     })) : h("p", { class: "muted" }, "Chưa có thú cưng nào. Trứng Thú Cưng thỉnh thoảng rơi từ quái Tinh Anh, thường rơi từ Boss Canh Cửa, và chắc chắn có ở boss mỗi 10 tầng."));
 }
 

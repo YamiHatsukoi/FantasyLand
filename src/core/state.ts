@@ -1,6 +1,7 @@
 import type { StatMods, Stats } from "../combat/types";
 import { PARTY_SIZE, costFor, type Cost, passiveSlotsFor, skillSlotsFor } from "../data/buildings";
 import { CLASSES, COMPANIONS, classStats, xpForLevel } from "../data/classes";
+import { TRAITS, partyTraits, traitPassiveId } from "../data/classTraits";
 import { decodeFog, encodeFog } from "../world/fog";
 import { hashString } from "./rng";
 import { enhLevel, enhancedId, getItem, type GearKey, type MealBuff } from "../data/items";
@@ -126,6 +127,8 @@ export interface GameState {
   party: string[];
   inventory: Record<string, number>;
   buildings: PlacedBuilding[];
+  /** Pets beyond the first travelling along (a party with a beastmaster, druid or summoner has room). */
+  petsExtra?: string[];
   /** Where Sprout stands in the sanctuary, once the player has moved her. */
   sprout?: { x: number; y: number };
   territory: number;
@@ -270,8 +273,19 @@ export function building(g: GameState, type: string) {
 }
 export const houseLevel = (g: GameState) => building(g, "house")?.level ?? 1;
 export const partySize = (_g: GameState) => PARTY_SIZE;
-export const passiveSlots = (g: GameState) => passiveSlotsFor(houseLevel(g));
-export const skillSlots = (g: GameState) => skillSlotsFor(houseLevel(g));
+/** Passive / skill slots: set by the main house, plus what the character's class adds. */
+export const passiveSlots = (g: GameState, ch?: Character) => passiveSlotsFor(houseLevel(g)) + (ch ? TRAITS[ch.classId]?.passiveSlots ?? 0 : 0);
+export const skillSlots = (g: GameState, ch?: Character) => skillSlotsFor(houseLevel(g)) + (ch ? TRAITS[ch.classId]?.skillSlots ?? 0 : 0);
+
+/** How many pets travel with the party: one, plus what its classes add. */
+export const petLimit = (g: GameState) => 1 + partyTraits(g.party.map((id) => g.chars[id]?.classId ?? "")).pets;
+/** The pets travelling with the party: the main one first, then the extra ones the party has room for. */
+export function activePets(g: GameState): string[] {
+  const list = [g.pet, ...(g.petsExtra ?? [])].filter((id, i, all): id is string => !!id && all.indexOf(id) === i && (g.pets ?? []).includes(id));
+  return list.slice(0, petLimit(g));
+}
+/** Party-wide class gifts for the party as it stands. */
+export const partyGifts = (g: GameState) => partyTraits(g.party.map((id) => g.chars[id]?.classId ?? ""));
 
 /** Party-wide buffs: meal eaten this expedition + temple blessing. */
 /** Every tenth floor is a milestone. */
@@ -375,7 +389,8 @@ export function changeClass(g: GameState, ch: Character, to: string): string | n
   const gained = [...newCls.startSkills, ...Object.entries(newCls.learnset).filter(([l]) => Number(l) <= ch.level).map(([, sk]) => sk)];
   const kept = ch.skills.filter((sk) => !oldSet.has(sk) || gained.includes(sk));
   ch.skills = [...new Set([...gained, ...kept])];
-  const slots = Math.max(1, ch.equipped.length);
+  ch.classId = to; // (set again below; the new class decides how many slots there are)
+  const slots = Math.min(skillSlots(g, ch), Math.max(1, ch.equipped.length));
   // what stays equipped keeps its slot; free slots take the new class's skills, strongest last-learnt first
   const stillEquipped = ch.equipped.filter((sk) => ch.skills.includes(sk));
   const byStrength = [...newCls.startSkills, ...Object.entries(newCls.learnset).filter(([l]) => Number(l) <= ch.level).sort((a, b) => Number(b[0]) - Number(a[0])).map(([, sk]) => sk)];
@@ -383,7 +398,7 @@ export function changeClass(g: GameState, ch: Character, to: string): string | n
   // passives: the class's own starting passive changes hands, learnt ones stay
   const oldStart = CLASSES[from].startPassives.filter((p) => !newCls.startPassives.includes(p));
   ch.passives = [...new Set([...newCls.startPassives, ...ch.passives.filter((p) => !oldStart.includes(p))])];
-  const pslots = Math.max(1, ch.equippedPassives.length);
+  const pslots = Math.min(passiveSlots(g, ch), Math.max(1, ch.equippedPassives.length));
   ch.equippedPassives = [...new Set([...newCls.startPassives, ...ch.equippedPassives.filter((p) => !oldStart.includes(p))])].slice(0, pslots);
   // a new build deserves a fresh set of points
   resetPoints(ch);
@@ -491,6 +506,7 @@ function fixGear(g: GameState, ch: Character) {
 
 export function charPassives(ch: Character): string[] {
   const out = [...ch.equippedPassives];
+  if (TRAITS[ch.classId]?.hooks) out.push(traitPassiveId(ch.classId));
   if (ch.bond === "kindred") out.push("p_kindred");
   if (ch.bond === "beloved") out.push("p_beloved");
   for (const id of Object.values(ch.gear)) {
