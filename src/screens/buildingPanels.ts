@@ -67,7 +67,8 @@ export function openBuilding(b: PlacedBuilding, hooks: PanelHooks) {
     // crops grow while you watch: refresh the timers every few seconds
     const iv = window.setInterval(() => {
       if (!m.el.isConnected) return clearInterval(iv);
-      if (m.body.querySelector("input:focus")) return;
+      // never redraw under a finger or a swipe still gliding
+      if (m.body.querySelector("input:focus") || m.busy?.()) return;
       render();
     }, 1000);
   }

@@ -125,7 +125,7 @@ export function openCodex() {
       h("div", { class: "section-title" }, "Chiêu thức"),
       h("div", { class: "row", style: "gap:6px;flex-wrap:wrap" }, def.skills.map((s) => { const sk = getSkill(s); return skillTip(h("span", { class: "tag" }, `${sk.icon} ${sk.name}`), s); })),
     );
-    m.body.scrollTop = 0;
+    m.resetScroll?.();
   };
 
   list();
