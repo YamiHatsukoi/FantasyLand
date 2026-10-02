@@ -358,22 +358,29 @@ function bulkFarmActions(m: ModalHandle, render: () => void) {
         onclick: () => { for (const p of dry) waterPlot(p); sfx("water"); app.dirty(); toast(`Đã tưới ${dry.length} ô (ẩm trong ${WATER_SEC / 60} phút).`, "good"); render(); },
       }, hasWell ? `💧 Tưới tất cả (${dry.length})` : "💧 Tưới tất cả (cần Giếng)") : null,
     )));
-  if (empty.length > 1) {
-    const season = seasonOf(g.day);
-    const seeds = Object.keys(g.inventory).map(getItem).filter((it) => (it.type === "seed" || it.type === "sapling") && it.crop && CROPS[it.crop] && CROPS[it.crop].seasons.includes(season));
-    if (seeds.length) m.body.append(h("div", { class: "row", style: "margin-top:6px" }, h("span", { class: "small muted" }, "Gieo hàng loạt:"),
-      seeds.map((s) => h("button", {
-        class: "btn small", title: s.name,
-        onclick: () => {
-          let n = 0;
-          for (const p of empty) { if (!removeItem(g, s.id, 1)) break; plant(p, s.crop!); n++; }
-          if (n) sfx("plant");
-          toast(`Đã gieo ${n} ô ${getItem(s.crop!).name}.`, "good");
-          app.dirty();
-          render();
-        },
-      }, itemImg(s.id, "iicon xs"), ` ×${Math.min(empty.length, g.inventory[s.id] ?? 0)}`))));
-  }
+  if (empty.length > 1) bulkPlantRow(m, empty, false, render);
+}
+
+/** "Plant them all": one button per seed in the bag fills every empty plot it can. */
+function bulkPlantRow(m: ModalHandle, empty: PlotState[], greenhouse: boolean, render: () => void, where = "ô") {
+  const g = app.game;
+  const season = seasonOf(g.day);
+  // under glass every season is the right one
+  const seeds = Object.keys(g.inventory).map(getItem)
+    .filter((it) => (it.type === "seed" || it.type === "sapling") && it.crop && CROPS[it.crop] && (greenhouse || CROPS[it.crop].seasons.includes(season)));
+  if (!seeds.length) return;
+  m.body.append(h("div", { class: "row", style: "margin-top:6px;flex-wrap:wrap" }, h("span", { class: "small muted" }, `Gieo hàng loạt (${empty.length} ${where} trống):`),
+    seeds.map((s) => h("button", {
+      class: "btn small", title: s.name,
+      onclick: () => {
+        let n = 0;
+        for (const p of empty) { if (p.crop) continue; if (!removeItem(g, s.id, 1)) break; plant(p, s.crop!); n++; }
+        if (n) sfx("plant");
+        toast(`Đã gieo ${n} ${where} ${getItem(s.crop!).name}.`, "good");
+        app.dirty();
+        render();
+      },
+    }, itemImg(s.id, "iicon xs"), ` ×${Math.min(empty.length, g.inventory[s.id] ?? 0)}`))));
 }
 
 const isWetNow = () => ["rain", "storm", "snow"].includes(app.game.weather);
@@ -398,6 +405,8 @@ function greenhouseBody(m: ModalHandle, b: PlacedBuilding, render: () => void) {
   plotBody(m, slots[ghSel], true, render);
   const ready = slots.filter((p) => isReady(p.crop));
   if (ready.length > 1) m.body.append(h("button", { class: "btn good block", style: "margin-top:8px", onclick: () => { harvestMany(ready); render(); } }, `🧺 Thu hoạch cả nhà kính (${ready.length})`));
+  const empty = slots.filter((p) => !p.crop);
+  if (empty.length > 1) bulkPlantRow(m, empty, true, render, "luống");
   genericFooter(m, b, render);
 }
 
