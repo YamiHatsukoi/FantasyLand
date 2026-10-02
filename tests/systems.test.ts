@@ -333,3 +333,11 @@ describe("bulk upgrade", () => {
     expect(hives.every((b) => b.level === 3 && upgradeBlock(g, b))).toBe(true);
   });
 });
+
+describe("crafting stations", () => {
+  it("every recipe asks for a station level that can be built", () => {
+    const max: Record<string, number> = {};
+    for (const b of BUILDING_LIST) if (b.station) max[b.station] = Math.max(max[b.station] ?? 0, b.maxLevel);
+    for (const r of RECIPES) expect(r.level, `${r.id} @ ${r.station}`).toBeLessThanOrEqual(max[r.station] ?? 0);
+  });
+});

@@ -180,3 +180,41 @@ describe("changing the hero's class", () => {
     expect(changeClass(g, g.chars.hero, "mage")).toMatch(/Thánh Địa/);
   });
 });
+
+describe("class gifts", () => {
+  it("every class has one, and inborn passives are real and take no slot", async () => {
+    const { CLASSES } = await import("../src/data/classes");
+    const { TRAITS, traitPassiveId } = await import("../src/data/classTraits");
+    const { getPassive } = await import("../src/data/passives");
+    const { charPassives, makeCharacter } = await import("../src/core/state");
+    for (const id of Object.keys(CLASSES)) {
+      const t = TRAITS[id];
+      expect(t, id).toBeTruthy();
+      expect(t.hooks || t.skillSlots || t.passiveSlots || t.pets || t.party, id).toBeTruthy();
+      if (t.hooks) {
+        expect(getPassive(traitPassiveId(id)).hooks).toBe(t.hooks);
+        const ch = makeCharacter("x", "X", id, "hero", 5);
+        expect(charPassives(ch)).toContain(traitPassiveId(id));
+        expect(ch.equippedPassives).not.toContain(traitPassiveId(id));
+      }
+    }
+  });
+
+  it("mages hold more skills, warriors more passives, beastmasters bring more pets", async () => {
+    const { activePets, makeCharacter, newGame, passiveSlots, petLimit, skillSlots } = await import("../src/core/state");
+    const g = newGame("A", "warrior", 7);
+    const mage = makeCharacter("m", "M", "mage", "hero", 5), war = makeCharacter("w", "W", "warrior", "hero", 5);
+    expect(skillSlots(g, mage)).toBe(skillSlots(g) + 2);
+    expect(passiveSlots(g, war)).toBe(passiveSlots(g) + 1);
+    g.pets = ["pet_cat", "pet_owl", "pet_pig", "pet_fox"];
+    g.pet = "pet_cat"; g.petsExtra = ["pet_owl", "pet_pig"];
+    expect(petLimit(g)).toBe(1);
+    expect(activePets(g)).toEqual(["pet_cat"]);
+    g.chars.b = makeCharacter("b", "B", "beastmaster", "hero", 5); g.party.push("b");
+    expect(petLimit(g)).toBe(3);
+    expect(activePets(g)).toEqual(["pet_cat", "pet_owl", "pet_pig"]);
+    // a pet the party doesn't own never travels
+    g.petsExtra = ["pet_owl", "pet_dragon_nope"];
+    expect(activePets(g)).toEqual(["pet_cat", "pet_owl"]);
+  });
+});

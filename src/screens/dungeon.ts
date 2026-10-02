@@ -4,7 +4,7 @@ import { sfx } from "../audio/sfx";
 import { showLevelUps } from "../ui/levelup";
 import { app, type Screen } from "../app";
 import { Rng, hashString } from "../core/rng";
-import { XP_RATE, charStats, giveXp, logMsg, takeLevelUps, removeItem, ensureFloorState, type GameState } from "../core/state";
+import { XP_RATE, activePets, charStats, giveXp, logMsg, partyGifts, takeLevelUps, removeItem, ensureFloorState, type GameState } from "../core/state";
 import { ENEMIES } from "../data/enemies";
 import { ITEM_LIST, gearForFloor, getItem } from "../data/items";
 import { PLAYER_SKILLS } from "../data/skills";
@@ -85,7 +85,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
   // the floor's great event (declared early: entity rules below depend on it)
   let sagaDef: SagaDef | undefined;
   // a night-eyed cat lets the party see further
-  const SIGHT = BASE_SIGHT + (g.pet && PET[g.pet]?.hook === "sight" ? 3 : 0);
+  const SIGHT = BASE_SIGHT + (activePets(g).some((id) => PET[id]?.hook === "sight") ? 3 : 0) + partyGifts(g).sight;
   const floorN = ex.floor;
   const def: FloorDef = getFloor(floorN);
   const biome = BIOMES[def.biome];
@@ -463,7 +463,7 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
         return fightMonster(e, true);
       case "node": {
         sfx("pickup");
-        const n = (rng.chance(0.3) ? 2 : 1) * (g.pet && PET[g.pet]?.hook === "dig" ? 2 : 1);
+        const n = (rng.chance(0.3) ? 2 : 1) * (activePets(g).some((id) => PET[id]?.hook === "dig") ? 2 : 1);
         const lines = giveToGame(g, { [e.ref!]: n, ...(rng.chance(0.04) ? { mana_crystal: 1 } : {}) });
         ex.done.push(e.id);
         toast(`Thu thập: ${lines.join(", ")}`, "good");
@@ -975,8 +975,8 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
       if ((next || keys.size) && bx === player.x && by === player.y) player.t = 0.2;
     }
     for (const e of ents) glide(e, e.x, e.y);
-    // companions (and the pet) glide along the trail too
-    for (let i = 0; i < 4; i++) {
+    // companions (and the pets) glide along the trail too
+    for (let i = 0; i < 6; i++) {
       const tr = trail[i] ?? { x: player.x, y: player.y };
       const f = (followers[i] ??= { px: tr.x, py: tr.y, dir: 0 as Dir, flip: false });
       if (Math.abs(tr.x - f.px) + Math.abs(tr.y - f.py) > 3) { f.px = tr.x; f.py = tr.y; }
@@ -1262,9 +1262,12 @@ export function mountDungeon(root: HTMLElement, hooks: DungeonHooks): Screen {
 
     // party (companions follow the trail, the pet trots at the back)
     const members = g.party.map((id) => g.chars[id]);
-    const pet = g.pet ? PET[g.pet] : undefined;
-    const pf = followers[members.length - 1];
-    if (pet && pf) drawables.push({ y: pf.py + 0.95, fn: () => view.img(creatureSmall(petSpec(pet)), pf.px + 0.1, pf.py + 0.15, { w: 0.8, h: 0.8, flip: pf.flip, dy: Math.sin(t / 160) * 0.04 }) });
+    // the pets trot at the back, each a step behind the last
+    activePets(g).forEach((id, k) => {
+      const pet = PET[id];
+      const pf = followers[members.length - 1 + k] ?? followers[followers.length - 1];
+      if (pet && pf) drawables.push({ y: pf.py + 0.95, fn: () => view.img(creatureSmall(petSpec(pet)), pf.px + 0.1, pf.py + 0.15, { w: 0.8, h: 0.8, flip: pf.flip, dy: Math.sin(t / 160 + k) * 0.04 }) });
+    });
     for (let i = members.length - 1; i >= 0; i--) {
       const ch = members[i];
       const f = followers[i - 1];

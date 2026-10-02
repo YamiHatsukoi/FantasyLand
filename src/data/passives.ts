@@ -1,4 +1,5 @@
 import type { Passive, PassiveHook, School } from "../combat/types";
+import { TRAITS, traitPassiveId } from "./classTraits";
 
 const list: Passive[] = [];
 function P(id: string, name: string, icon: string, school: School, tier: number, desc: string, hooks: PassiveHook[], enemy = false) {
@@ -94,6 +95,11 @@ for (const p of [
   { id: "p_kindred", name: "Tri Kỷ", icon: "🤝", school: "song" as const, tier: 3, desc: "Tình bạn mười tim: +6% công, phép, thủ và kháng.", hooks: [{ on: "stat" as const, mods: { atk: 0.06, mag: 0.06, def: 0.06, res: 0.06 } }] },
   { id: "p_beloved", name: "Người Thương", icon: "💞", school: "song" as const, tier: 3, desc: "Đã kết hôn: +10% máu, công, phép và thủ.", hooks: [{ on: "stat" as const, mods: { hp: 0.1, atk: 0.1, mag: 0.1, def: 0.1 } }] },
 ]) PASSIVES[p.id] = p;
+
+// ---- class gifts: inborn, never learned from books, take no slot (see classTraits.ts)
+for (const [cls, t] of Object.entries(TRAITS)) {
+  if (t.hooks) PASSIVES[traitPassiveId(cls)] = { id: traitPassiveId(cls), name: t.name, icon: t.icon, school: "arcane", tier: 3, desc: t.desc, hooks: t.hooks };
+}
 
 export function getPassive(id: string): Passive {
   const p = PASSIVES[id];

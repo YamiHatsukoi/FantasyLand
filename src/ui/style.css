@@ -703,7 +703,7 @@ img.iicon.lg { width: 48px; height: 48px; }
 .arena .fighter.ally .plate, .arena .fighter.enemy .plate { border: 0; }
 .cb-track { box-shadow: 0 2px 4px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.15); }
 /* pet in battle: sits at the party's feet */
-.cb-pet { position: absolute; left: 1.5%; bottom: 3%; z-index: 40; display: flex; flex-direction: column; align-items: center; pointer-events: auto; }
+.cb-pet { position: absolute; left: calc(1.5% + var(--pi, 0) * clamp(44px, 8vh, 70px)); bottom: 3%; z-index: 40; display: flex; flex-direction: column; align-items: center; pointer-events: auto; }
 .cb-pet img { width: clamp(40px, 7vh, 64px); height: auto; image-rendering: pixelated; filter: drop-shadow(0 3px 2px rgba(0,0,0,.5)); animation: idle 1.4s ease-in-out infinite; }
 .cb-pet span { font-size: 10px; font-weight: 700; text-shadow: 0 1px 0 #000, 0 0 3px #000; color: #ffe8b0; white-space: nowrap; }
 .cb-pet.act img { animation: pet-act .6s ease-out; }
@@ -1150,3 +1150,7 @@ img.iicon.lg { width: 48px; height: 48px; }
 .cc-step.have .cc-when { color: #7ee08a; }
 .cc-sname { white-space: nowrap; }
 @media (max-width: 600px) { .cc-stat { grid-template-columns: 92px 1fr 40px 40px; gap: 6px; } }
+/* class gifts */
+.trait-chip { font-size: 12px; margin-top: 3px; color: #ffe38a; line-height: 1.35; }
+.trait-box { margin: 8px 0; padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(242,197,66,.45); background: rgba(242,197,66,.08); }
+.trait-box b { color: #ffe38a; }

@@ -190,7 +190,7 @@ const list: BuildingDef[] = [
     desc: "Xẻ gỗ thành ván, đốt than, làm giấy và nhựa cây." }),
   B({ id: "workshop", name: "Xưởng Đá & Thủy Tinh", icon: "🧱", size: [2, 2], maxLevel: 5, unique: true, rank: 1, category: "craft", station: "workshop", style: { wall: "#9a9ea4", roof: "#5a5e66", emblem: "block" }, first: { stone: 14, wood: 4 },
     desc: "Đẽo khối đá, nung gạch, nấu thủy tinh, đúc đinh và bánh răng." }),
-  B({ id: "tailor", name: "Xưởng May & Thuộc Da", icon: "🧵", size: [2, 2], maxLevel: 5, unique: true, rank: 1, category: "craft", station: "tailor", style: { wall: "#c8a0c0", roof: "#7a4a6a", emblem: "cloth" }, first: { wood: 8, hide: 3 },
+  B({ id: "tailor", name: "Xưởng May & Thuộc Da", icon: "🧵", size: [2, 2], maxLevel: 6, unique: true, rank: 1, category: "craft", station: "tailor", style: { wall: "#c8a0c0", roof: "#7a4a6a", emblem: "cloth" }, first: { wood: 8, hide: 3 },
     desc: "Dệt vải, thuộc da, bện dây và may giáp vải/da, ma thư." }),
   B({ id: "alchemy", name: "Phòng Giả Kim", icon: "⚗️", size: [2, 2], maxLevel: 4, unique: true, rank: 1, category: "craft", station: "alchemy", style: { wall: "#7a8a6a", roof: "#3a6a4a", emblem: "potion" }, first: { wood: 10, herb: 5, slime_gel: 5 },
     desc: "Chưng cất tinh dầu, bào chế thuốc, thuốc tăng lực, dầu tẩm vũ khí và bom nguyên tố." }),

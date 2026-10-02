@@ -13,7 +13,7 @@ import { unitFromCharacter, unitFromEnemy } from "../combat/factory";
 import { ELEMENTS, STATUSES } from "../combat/statuses";
 import type { BattleEvent, Eff, Element, Skill, Unit } from "../combat/types";
 import { Rng } from "../core/rng";
-import { XP_RATE, isMilestone, charStats, giveXp, takeLevelUps, logMsg, partyBuffs } from "../core/state";
+import { XP_RATE, activePets, isMilestone, charStats, giveXp, takeLevelUps, logMsg, partyBuffs, partyGifts } from "../core/state";
 import { ENEMIES } from "../data/enemies";
 import { BIOME_MATS, ESSENCES, LEGENDARY_BY_BIOME, gearForFloor, getItem, type ItemDef } from "../data/items";
 import { iconURL } from "../render/icons";
@@ -146,9 +146,15 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     lord.shieldMax = (lord.shieldMax ?? 4) + 2;
     lord.shield = lord.shieldMax;
   }
-  // the pet travelling with the party lends its gift
-  const pet = g.pet ? PET[g.pet] : undefined;
-  if (pet) {
+  // the pets travelling with the party lend their gifts; the party's classes add theirs
+  const pets = activePets(g).map((id) => PET[id]).filter(Boolean);
+  const has = (hook: string) => pets.some((p) => p.hook === hook);
+  const gifts = partyGifts(g);
+  if (gifts.scan && !has("scan")) {
+    const known0 = (g.scan ??= {});
+    for (const u of enemies) if (u.enemyId) { const l = (known0[u.enemyId] ??= []); for (const [el, v] of Object.entries(u.resist)) if ((v ?? 1) > 1 && !l.includes(el)) l.push(el); }
+  }
+  for (const pet of pets) {
     if (pet.hook === "courage") for (const u of allies) u.bp = 3;
     if (pet.hook === "shell") for (const u of allies) battle.addStatus(u, "shield", 3, 1, Math.round(battle.maxHp(u) * 0.15), u);
     if (pet.hook === "thorns") for (const u of allies) battle.addStatus(u, "thorns", 3, 1, 0, u);
@@ -185,8 +191,8 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   // two teams facing each other across the field: party on the left, enemies on the right
   const sideA = h("div", { class: "side left" });
   const sideE = h("div", { class: "side right" });
-  const petEl = pet ? h("div", { class: "cb-pet", title: `${pet.name} — ${pet.gift}: ${pet.desc}` }, h("img", { class: "pix", src: creatureCanvas(petSpec(pet)).toDataURL(), alt: pet.name }), h("span", null, pet.name)) : null;
-  const stage = h("div", { class: "cb-stage arena", style: `background-image:url(${battleBackdrop(setup.biome)})` }, ...nn(sideA, sideE, petEl, banner));
+  const petEls = new Map(pets.map((pet, i) => [pet.id, h("div", { class: "cb-pet", style: i ? `--pi:${i}` : "", title: `${pet.name} — ${pet.gift}: ${pet.desc}` }, h("img", { class: "pix", src: creatureCanvas(petSpec(pet)).toDataURL(), alt: pet.name }), h("span", null, pet.name))]));
+  const stage = h("div", { class: "cb-stage arena", style: `background-image:url(${battleBackdrop(setup.biome)})` }, ...nn(sideA, sideE, ...petEls.values(), banner));
   const actorBox = h("div", { class: "cb-actor" });
   const bpBox = h("div", { class: "bp-ctl" });
   const info = h("div", { class: "cb-info" }, "…");
@@ -771,9 +777,13 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   let partyTurns = 0;
   async function petTurn() {
     partyTurns++;
-    const every = pet ? PET_EVERY[pet.hook] : undefined;
-    if (!pet || !every || partyTurns % every || battle.outcome()) return;
+    for (const pet of pets) await onePetTurn(pet);
+  }
+  async function onePetTurn(pet: (typeof pets)[number]) {
+    const every = PET_EVERY[pet.hook];
+    if (!every || partyTurns % every || battle.outcome()) return;
     await playEvents();
+    const petEl = petEls.get(pet.id);
     petEl?.classList.remove("act"); void petEl?.offsetWidth; petEl?.classList.add("act");
     const power = 12 + setup.floor * 4;
     const foes = battle.alive("enemy");
@@ -920,10 +930,11 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         const legs = LEGENDARY_BY_BIOME[fam];
         if (u.boss && legs?.length && rng.chance(0.35)) { const id = rng.pick(legs); loot[id] = (loot[id] ?? 0) + 1; }
       }
-      xp = Math.round(xp * (1 + bonus + (pet?.hook === "xp" ? 0.25 : 0)));
-      gold = Math.round(gold * (1 + bonus + (pet?.hook === "gold" ? 0.35 : 0)));
-      if (pet?.hook === "pilfer") { const d = rng.pick(ENEMIES[enemies[0].enemyId!]?.drops ?? []); if (d) loot[d.item] = (loot[d.item] ?? 0) + 1; }
-      if (pet?.hook === "forage" && rng.chance(0.3)) loot.potion_hp = (loot.potion_hp ?? 0) + 1;
+      xp = Math.round(xp * (1 + bonus + (has("xp") ? 0.25 : 0) + gifts.xp));
+      gold = Math.round(gold * (1 + bonus + (has("gold") ? 0.35 : 0) + gifts.gold));
+      if (has("pilfer")) { const d = rng.pick(ENEMIES[enemies[0].enemyId!]?.drops ?? []); if (d) loot[d.item] = (loot[d.item] ?? 0) + 1; }
+      if (has("forage") && rng.chance(0.3)) loot.potion_hp = (loot.potion_hp ?? 0) + 1;
+      if (gifts.forage && rng.chance(gifts.forage)) loot.potion_hp = (loot.potion_hp ?? 0) + 1;
       // pet eggs: sometimes from elites, often from bosses, always from every tenth floor's boss
       const bossWin = enemies.some((u) => u.boss);
       if ((bossWin && (setup.floor % 10 === 0 || rng.chance(0.25))) || (setup.elite && rng.chance(0.1))) loot[PET_EGG] = (loot[PET_EGG] ?? 0) + 1;

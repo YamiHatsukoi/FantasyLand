@@ -3,6 +3,7 @@ import { sfx } from "../audio/sfx";
 import type { Stats } from "../combat/types";
 import { changeClass, classChangeBlocker, classChangeCost, type Character } from "../core/state";
 import { CLASSES, classStats, type ClassDef } from "../data/classes";
+import { TRAITS } from "../data/classTraits";
 import { SCHOOL_NAMES, getSkill } from "../data/skills";
 import { spriteImg } from "../render/pixel";
 import { confirmBox, h, openModal, toast } from "../ui/dom";
@@ -59,6 +60,7 @@ export function openClassChange(ch: Character, onDone: () => void) {
           h("b", { style: "font-size:18px" }, `${c.icon} ${c.name}`),
           h("div", { class: "gold small" }, leaning(c)),
           h("div", { class: "muted small" }, c.desc))),
+      TRAITS[c.id] ? h("div", { class: "trait-box" }, h("b", null, `${TRAITS[c.id].icon} Năng lực riêng: ${TRAITS[c.id].name}`), h("div", { class: "small" }, TRAITS[c.id].desc)) : null,
       h("div", { class: "section-title" }, `Chỉ số ở cấp ${ch.level} (so với ${cur.name} hiện tại)`),
       h("div", { class: "cc-stats" }, STAT_ROWS.map(([k, icon, name]) => {
         const d = st[k] - mine[k];
