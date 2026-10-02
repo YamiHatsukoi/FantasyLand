@@ -6,8 +6,8 @@ import { JOBS, PERSONAS } from "../data/npcText";
 import { DATES, FLIRT_LINES, TOPICS, type FlirtStyle, type Topic } from "../data/residentText";
 import { spriteImg } from "../render/pixel";
 import { h, openModal, toast, type ModalHandle } from "../ui/dom";
+import { giftPicker } from "../ui/giftPick";
 import { Dialogue, type DlgChoice } from "../ui/dialogue";
-import { itemImg } from "../ui/icon";
 import {
   ACTS_PER_DAY, MOOD_ICONS, STAGE_NAMES, actsLeft, answerDeep, askMood, askPast, birthdayText, bondOf, canDate, canFlirt,
   canGiftRes, datePlaces, deepQuestion, flirt, friendTitle, fulfilRequest, giveResGift, goDate, gossipLine,
@@ -133,28 +133,22 @@ export function openResident(ch: Character, onClose?: () => void): ModalHandle {
 
   function openGift() {
     const gm = openModal("🎁 Chọn quà", { wide: true });
-    const items = Object.keys(g.inventory).map(getItem)
-      .filter((it) => (g.inventory[it.id] ?? 0) > 0 && (it.type !== "key" || it.tags?.includes("romance")))
-      .sort((a, b) => Number(!!b.tags?.includes("romance")) - Number(!!a.tags?.includes("romance")) || b.value - a.value);
     const kt = knownTastes(g, ch);
     const wish = wishOf(g, ch);
-    const list = h("div", { class: "list" });
-    for (const it of items.slice(0, 120)) {
-      const tag = it.id === wish?.id ? "✨ đang thèm" : kt.giftLoves.includes(it.id) ? "💖 rất thích" : kt.giftHates.includes(it.id) ? "💢 ghét" : bondOf(g, ch.id).known.includes(`i:${it.id}~`) ? "· bình thường" : "";
-      list.append(h("button", {
-        class: "item-row",
-        onclick: () => {
-          gm.close();
-          sfx("gift");
-          push([{ who: "you", text: `(Tặng ${it.name})` }]);
-          push(giveResGift(g, ch, it.id));
-          sub = "";
-          checkScene();
-        },
-      }, h("span", { class: "ico" }, itemImg(it.id)), h("div", { class: "meta" }, h("div", { class: "name" }, it.name, tag ? h("span", { class: "tag" }, tag) : null)), h("span", { class: "qty" }, `×${g.inventory[it.id]}`)));
-    }
-    if (!items.length) list.append(h("p", { class: "muted" }, "Túi trống."));
-    gm.body.append(h("p", { class: "muted small" }, `Mỗi ngày tặng được một món. Quà vào ${birthdayText(p)} (sinh nhật) được quý gấp ba.`), list);
+    const picker = giftPicker(g, {
+      allow: (it) => it.type !== "key" || !!it.tags?.includes("romance"),
+      rank: (it) => (it.tags?.includes("romance") ? 3 : 0) + (it.id === wish?.id ? 2 : 0) + (kt.giftLoves.includes(it.id) ? 1 : 0),
+      tag: (it) => it.id === wish?.id ? "✨ đang thèm" : kt.giftLoves.includes(it.id) ? "💖 rất thích" : kt.giftHates.includes(it.id) ? "💢 ghét" : bondOf(g, ch.id).known.includes(`i:${it.id}~`) ? "· bình thường" : null,
+      pick: (it) => {
+        gm.close();
+        sfx("gift");
+        push([{ who: "you", text: `(Tặng ${it.name})` }]);
+        push(giveResGift(g, ch, it.id));
+        sub = "";
+        checkScene();
+      },
+    });
+    gm.body.append(h("p", { class: "muted small" }, `Mỗi ngày tặng được một món. Quà vào ${birthdayText(p)} (sinh nhật) được quý gấp ba.`), picker);
   }
 
   push(greetResident(g, ch));
