@@ -150,7 +150,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   const petPos = { x: hero.x - 1, y: hero.y };
   let placing: { type: string; moving?: PlacedBuilding; x: number; y: number; built?: number; area?: boolean; corner?: { x: number; y: number } | null; sprout?: boolean } | null = null;
   /** Several buildings picked at once, to clear them or move them together. */
-  let sel: { set: Set<PlacedBuilding>; corner: { x: number; y: number } | null; move: { ax: number; ay: number; dx: number; dy: number } | null } | null = null;
+  let sel: { set: Set<PlacedBuilding>; corner: { x: number; y: number } | null; move: { ax: number; ay: number; dx: number; dy: number } | null; area: boolean; only: SelFilter } | null = null;
   const sim = new ResidentSim(g);
   let ground: HTMLCanvasElement | null = null;
   let edge: [number, number, HTMLCanvasElement][] = [];
@@ -499,9 +499,14 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   // ------------------------------------------------------------ pick several buildings: clear or move them together
   // everything can be moved (the main house and the gate too); only those two can't be pulled down
   const movable = (_b: PlacedBuilding) => true;
+  type SelFilter = "all" | "floor" | "nofloor";
+  const SEL_FILTERS: Record<SelFilter, string> = { all: "🔎 Tất cả", floor: "🔎 Chỉ sàn", nofloor: "🔎 Trừ sàn" };
+  /** Remembered between uses, so clearing decor off the roads twice in a row needs no extra taps. */
+  let selFilter: SelFilter = "all";
+  const selPasses = (b: PlacedBuilding, f: SelFilter) => f === "all" || (f === "floor") === !!BUILDINGS[b.type].floor;
   function startSelect() {
     closeDockMenu();
-    sel = { set: new Set(), corner: null, move: null };
+    sel = { set: new Set(), corner: null, move: null, area: true, only: selFilter };
     view.pannable = true;
     dock.classList.add("hidden");
     renderSelBar();
@@ -544,8 +549,13 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
         btn("↩ Quay lại", () => { s.move = null; renderSelBar(); }));
       return;
     }
+    const hint = s.area
+      ? (s.corner ? "▦ Chạm góc còn lại" : n ? "" : "▦ Chạm 2 góc để chọn cả vùng")
+      : (s.corner ? " · chạm góc còn lại của vùng" : n ? "" : "Chạm công trình để chọn / bỏ chọn");
     placeBar.replaceChildren(
-      h("div", { class: "chip" }, n ? `Đã chọn ${n} công trình` : "Chạm công trình để chọn / bỏ chọn", s.corner ? " · chạm góc còn lại của vùng" : n ? "" : " · hoặc chạm 2 ô trống làm 2 góc để chọn cả vùng"),
+      h("div", { class: "chip" }, n ? `Đã chọn ${n}` : "", n && hint ? " · " : "", hint),
+      btn(s.area ? "▦ Vùng" : "👆 Từng cái", () => { s.area = !s.area; s.corner = null; renderSelBar(); }, `btn ${s.area ? "primary" : ""}`),
+      btn(SEL_FILTERS[s.only], () => { s.only = selFilter = s.only === "all" ? "floor" : s.only === "floor" ? "nofloor" : "all"; renderSelBar(); }),
       btn("↔️ Dời", () => { const { x0, y0 } = selBounds(); s.move = { ax: x0, ay: y0, dx: 0, dy: 0 }; renderSelBar(); }, "btn primary", !n),
       btn("🗑️ Dỡ", () => void clearSelected(), "btn", !n),
       btn("Bỏ chọn", () => { s.set.clear(); s.corner = null; renderSelBar(); }, "btn", !n && !s.corner),
@@ -583,7 +593,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   function selectTap(tx: number, ty: number) {
     const s = sel!;
     if (s.move) { s.move.dx = tx - s.move.ax; s.move.dy = ty - s.move.ay; return renderSelBar(); }
-    const b = buildingAt(g, tx, ty);
+    const b = s.area ? undefined : buildingAt(g, tx, ty);
     if (b) {
       if (!movable(b)) toast(`${BUILDINGS[b.type].name} không dỡ hay dời được.`, "info");
       else if (s.set.has(b)) s.set.delete(b);
@@ -594,7 +604,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
       const x0 = Math.min(s.corner.x, tx), x1 = Math.max(s.corner.x, tx), y0 = Math.min(s.corner.y, ty), y1 = Math.max(s.corner.y, ty);
       for (const o of g.buildings) {
         const [w, hh] = BUILDINGS[o.type].size;
-        if (movable(o) && o.x <= x1 && o.x + w - 1 >= x0 && o.y <= y1 && o.y + hh - 1 >= y0) s.set.add(o);
+        if (movable(o) && selPasses(o, s.only) && o.x <= x1 && o.x + w - 1 >= x0 && o.y <= y1 && o.y + hh - 1 >= y0) s.set.add(o);
       }
       s.corner = null;
     }
@@ -783,6 +793,8 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
       const T = view.tile;
       for (const b of sel.set) {
         const [bw, bh] = BUILDINGS[b.type].size;
+        const ox = sel.move ? sel.move.dx : 0, oy = sel.move ? sel.move.dy : 0;
+        if (b.x + ox + bw < vr.x0 - 1 || b.x + ox > vr.x1 + 1 || b.y + oy + bh < vr.y0 - 1 || b.y + oy > vr.y1 + 2) continue;
         if (sel.move) {
           const nx = b.x + sel.move.dx, ny = b.y + sel.move.dy;
           const ok = !canPlace(g, b.type, nx, ny, sel.set);
