@@ -1,6 +1,7 @@
 import { app } from "../app";
 import { describeSkill, skillCostText, passiveText } from "../combat/describe";
-import { GEAR_KEYS, POINTS_PER_LEVEL, POINT_CAP, POINT_VALUE, addItem, allocPoint, resetCost, resetPoints, dismiss, charPassives, charStats, dualWielding, equipGear, fitsGear, isTwoHanded, syncLook, partySize, passiveSlots, removeItem, skillSlots, type Character } from "../core/state";
+import { openClassChange } from "./classChange";
+import { GEAR_KEYS, POINTS_PER_LEVEL, POINT_CAP, POINT_VALUE, addItem, allocPoint, resetCost, resetPoints, classChangeCost, dismiss, charPassives, charStats, dualWielding, equipGear, fitsGear, isTwoHanded, syncLook, partySize, passiveSlots, removeItem, skillSlots, type Character } from "../core/state";
 import { CLASSES, COMPANIONS, xpForLevel } from "../data/classes";
 import { enhLevel, getItem, type GearKey, type ItemDef } from "../data/items";
 import { getPassive } from "../data/passives";
@@ -75,7 +76,9 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
     h("div", { class: "grow col", style: "gap:3px;min-width:0" },
       h("div", { class: "row between", style: "flex-wrap:nowrap" },
         h("div", { style: "min-width:0" }, h("b", { style: "font-size:17px" }, ch.name), h("div", { class: "muted small" }, `${cls.icon} ${cls.name} · Cấp ${ch.level}`)),
-        h("div", { class: "row", style: "flex-wrap:nowrap" }, h("button", { class: "icon-btn", title: "Ngoại hình", onclick: () => openAppearance(ch, rerender) }, "🎨"), rosterBtn, dismissBtn)),
+        h("div", { class: "row", style: "flex-wrap:nowrap" }, h("button", { class: "icon-btn", title: "Ngoại hình", onclick: () => openAppearance(ch, rerender) }, "🎨"),
+          ch.id === g.heroId ? h("button", { class: "icon-btn", title: inDungeon ? "Về Thánh Địa để chuyển nghề" : "Chuyển nghề", disabled: inDungeon, onclick: () => openClassChange(ch, rerender) }, "🔄") : null,
+          rosterBtn, dismissBtn)),
       bar(ch.hp, s.hp, "hp", `${ch.hp}/${s.hp}`),
       bar(ch.mp, s.mp, "mp", `${ch.mp}/${s.mp}`),
       bar(ch.xp, xpForLevel(ch.level), "xp", `EXP ${ch.xp}/${xpForLevel(ch.level)}`),
@@ -141,7 +144,9 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
           g.gold -= cost; resetPoints(ch); clampVitals(ch); rerender();
         },
       }, `↺ Tẩy điểm (${resetCost(ch)}💰)`) : null) : null;
-    body = [pointsBar, stats, ch.bio ? h("p", { class: "muted small" }, ch.bio) : h("p", { class: "muted small" }, cls.desc)];
+    const classBtn = isHero ? h("button", { class: "btn small block", style: "margin-top:6px", disabled: inDungeon, title: inDungeon ? "Về Thánh Địa để chuyển nghề" : "", onclick: () => openClassChange(ch, rerender) },
+      `🔄 Chuyển nghề (${classChangeCost(ch).toLocaleString("vi-VN")}💰)`) : null;
+    body = [pointsBar, stats, ch.bio ? h("p", { class: "muted small" }, ch.bio) : h("p", { class: "muted small" }, cls.desc), classBtn];
   } else if (partyTab === "skills") {
     const skillList = h("div", { class: "list" }, ch.skills.map((id) => {
       const sk = getSkill(id);

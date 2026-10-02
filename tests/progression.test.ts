@@ -127,3 +127,56 @@ describe("milestone floors", () => {
     expect(g.flags.marks).toBe(1);
   });
 });
+
+describe("changing the hero's class", () => {
+  it("swaps the class's own skills and passive, keeps learnt ones, refunds points, charges gold", async () => {
+    const { changeClass, classChangeCost, allocPoint } = await import("../src/core/state");
+    const g = newGame("An", "warrior", 1);
+    const hero = g.chars.hero;
+    giveXp(hero, 1e6);
+    hero.level = 20;
+    hero.skills.push("heal"); // learnt from a tome
+    hero.equipped = ["slash", "heal", "cross_slash"];
+    hero.passives.push("p_vigor");
+    hero.equippedPassives = ["p_might", "p_vigor"];
+    allocPoint(hero, "atk", 10);
+    const points = hero.points! + 10;
+    const gear = { ...hero.gear };
+    const cost = classChangeCost(hero);
+    expect(changeClass(g, hero, "mage")).toMatch(/vàng/); // too poor
+    g.gold = cost + 5;
+    expect(changeClass(g, hero, "mage")).toBeNull();
+    expect(g.gold).toBe(5);
+    expect(hero.classId).toBe("mage");
+    expect(hero.sprite).toBe("hero_mage");
+    // warrior skills gone, mage skills up to level 20 in, the tome skill kept
+    expect(hero.skills).not.toContain("slash");
+    expect(hero.skills).toContain("fire_bolt");
+    expect(hero.skills).toContain("overload"); // mage level 18
+    expect(hero.skills).not.toContain("arcane_blast"); // mage level 24
+    expect(hero.skills).toContain("heal");
+    expect(hero.equipped).toContain("heal");
+    expect(hero.equipped.length).toBe(3);
+    expect(hero.equipped.every((sk) => hero.skills.includes(sk))).toBe(true);
+    // the starting passive changes, learnt passives stay
+    expect(hero.passives).toContain("p_wisdom");
+    expect(hero.passives).not.toContain("p_might");
+    expect(hero.equippedPassives).toEqual(["p_wisdom", "p_vigor"]);
+    expect(hero.points).toBe(points);
+    expect(hero.gear).toEqual(gear);
+    // later level-ups follow the new class
+    expect(CLASSES[hero.classId].learnset[24]).toBe("arcane_blast");
+  });
+
+  it("only the hero, only at home", async () => {
+    const { changeClass, classChangeBlocker } = await import("../src/core/state");
+    const g = newGame("An", "warrior", 1);
+    g.gold = 1e7;
+    const c = makeCharacter("lyra", "Lyra", "ranger", "lyra", 10);
+    g.chars.lyra = c;
+    expect(classChangeBlocker(g, c, "mage")).toMatch(/nhân vật chính/);
+    expect(classChangeBlocker(g, g.chars.hero, "warrior")).toMatch(/hiện tại/);
+    g.expedition = { floor: 1 } as never;
+    expect(changeClass(g, g.chars.hero, "mage")).toMatch(/Thánh Địa/);
+  });
+});
