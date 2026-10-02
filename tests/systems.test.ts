@@ -310,3 +310,26 @@ describe("sanctuary ground cover and layout", () => {
     expect(canPlace(g, "cobble", SPROUT.x, SPROUT.y)).toBeNull();
   });
 });
+
+describe("bulk upgrade", () => {
+  it("raises many at once, lowest level first, and stops when the bag runs dry", async () => {
+    const { bulkUpgrade, upgradeBlock } = await import("../src/world/sanctuary");
+    const { costFor } = await import("../src/data/buildings");
+    const g = newGame("A", "warrior", 7);
+    const house = g.buildings.find((b) => b.type === "house")!;
+    house.level = 6; // a capital, so nothing is held back by rank
+    const mk = (id: string, level: number) => ({ id, type: "beehive", x: 0, y: 0, level });
+    const hives = [mk("a", 1), mk("b", 2), mk("c", 1)];
+    expect(upgradeBlock(g, house)).toBeTruthy(); // the house goes up through its own panel
+    // enough for exactly the two level-1 hives
+    for (const [id, n] of Object.entries(costFor("beehive", 1))) addItem(g, id, n * 2);
+    const r = bulkUpgrade(g, hives, 1);
+    expect(r).toEqual({ levels: 2, buildings: 2 });
+    expect(hives.map((b) => b.level)).toEqual([2, 2, 2]);
+    // as far as it goes: everything to the top when paid for
+    for (const [id, n] of Object.entries(costFor("beehive", 2))) addItem(g, id, n * 3);
+    const r2 = bulkUpgrade(g, hives, Infinity);
+    expect(r2.levels).toBe(3);
+    expect(hives.every((b) => b.level === 3 && upgradeBlock(g, b))).toBe(true);
+  });
+});

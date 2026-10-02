@@ -13,9 +13,9 @@ import { isPerson, personCanvas, type Dir } from "../render/people";
 import { T, tileSet } from "../render/tiles";
 import { BIOMES } from "../world/biomes";
 import { findPath } from "../world/mapgen";
-import { SZ_H, SZ_W, blockerAt, buildLimitReason, buildingAt, buildingsMoved, canPlace, inTerritory, sproutAt, territory } from "../world/sanctuary";
+import { SZ_H, SZ_W, blockerAt, buildLimitReason, buildingAt, buildingsMoved, canPlace, inTerritory, sproutAt, territory, upgradeBlock } from "../world/sanctuary";
 import { confirmBox, h, nn, openModal, toast, topModalOpen } from "../ui/dom";
-import { costView, openBuilding, setMoveHook, showReport } from "./buildingPanels";
+import { costView, openBuilding, openBulkUpgrade, setMoveHook, showReport } from "./buildingPanels";
 import { WEATHER, advanceDay, cropStage, ensureSlots, housing, isReady, population, rankName, rankOf, tickFarm } from "../world/town";
 import { openHelp, openJournal, openMenu, partyMini, saveDot, showBanner } from "./common";
 import { openInventory } from "./inventory";
@@ -558,6 +558,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
       btn(SEL_FILTERS[s.only], () => { s.only = selFilter = s.only === "all" ? "floor" : s.only === "floor" ? "nofloor" : "all"; renderSelBar(); }),
       btn("↔️ Dời", () => { const { x0, y0 } = selBounds(); s.move = { ax: x0, ay: y0, dx: 0, dy: 0 }; renderSelBar(); }, "btn primary", !n),
       btn("🗑️ Dỡ", () => void clearSelected(), "btn", !n),
+      btn("⬆️ Nâng", () => openBulkUpgrade([...s.set], () => { renderSelBar(); updateHud(); }), "btn", ![...s.set].some((b) => !upgradeBlock(g, b))),
       btn("Bỏ chọn", () => { s.set.clear(); s.corner = null; renderSelBar(); }, "btn", !n && !s.corner),
       btn("✔ Xong", stopSelect));
   }
