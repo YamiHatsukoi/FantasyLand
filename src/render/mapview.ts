@@ -15,6 +15,9 @@ export class MapView {
   dpr = 1;
   tile = 48; // css px per tile
   zoomLevel = 0; // user adjustment
+  /** Extra zoom-out steps below one screen pixel per art pixel (1/2, 1/4...): for overviews of a big map. */
+  farOut = 0;
+  private base = 3;
   camX = 0; // camera centre in tile units
   camY = 0;
   onTap?: (tx: number, ty: number) => void;
@@ -69,14 +72,19 @@ export class MapView {
     this.canvas.width = Math.round(this.w * this.dpr);
     this.canvas.height = Math.round(this.h * this.dpr);
     const base = Math.max(2, Math.min(5, Math.round(Math.min(this.w, this.h) / (16 * 13))));
-    const scale = Math.max(1, Math.min(6, base + this.zoomLevel));
+    this.base = base;
+    const raw = base + Math.max(this.minZoom(), this.zoomLevel);
+    // below 1:1 each step halves the tile (8 px, then 4 px): the whole sanctuary at a glance
+    const scale = raw >= 1 ? Math.min(6, raw) : 2 ** (raw - 1);
     this.tile = 16 * scale;
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.ctx.imageSmoothingEnabled = false;
   }
 
+  private minZoom() { return Math.min(-2, 1 - this.base) - this.farOut; }
+
   zoom(dir: number) {
-    this.zoomLevel = Math.max(-2, Math.min(3, this.zoomLevel + dir));
+    this.zoomLevel = Math.max(this.minZoom(), Math.min(3, Math.max(this.minZoom(), this.zoomLevel) + dir));
     try { localStorage.setItem("fl.zoom", String(this.zoomLevel)); } catch { /* ignore */ }
     this.resize();
   }

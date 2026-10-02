@@ -1,6 +1,7 @@
 import { BUILDINGS } from "../data/buildings";
 import { CROPS, getItem } from "../data/items";
 import { DECOR_DRAW } from "./decor";
+import { floorTile } from "./floors";
 import { doorAt, foundation as baseStones, groundShadow, hangingSign, house, lantern as lanternAt, roofSlab, wallTex, windowAt as windowNew, type HouseOpts, type WallKind } from "./houses";
 import { hs, makeCanvas, mix, outline, rgba, type Paint } from "./palette";
 
@@ -370,7 +371,8 @@ export function buildingCanvas(type: string, level: number): HTMLCanvasElement {
   const [tw, th] = def?.size ?? [1, 1];
   const W = tw * 16, H = th * 16 + 16;
   const [c, p] = makeCanvas(W, H);
-  if (D[type]) D[type](p, W, H, level);
+  if (def?.floor) p.g.drawImage(floorTile(type, 0, 0, 0), 0, 16);
+  else if (D[type]) D[type](p, W, H, level);
   else {
     const o = HOUSES[type] ?? { wall: def?.style?.wall ?? "#c8945a", roof: def?.style?.roof ?? "#b84a3a", emblem: def?.style?.emblem };
     house(p, W, H, { ...o, emblem: o.emblem ?? def?.style?.emblem, floors: Math.min((o.floors ?? 1) + (level >= 3 && tw >= 3 ? 1 : 0), 3), level, seed: type });

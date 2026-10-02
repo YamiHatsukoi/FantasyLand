@@ -803,4 +803,201 @@ export const DECOR_DRAW: Record<string, Drawer> = {
     p.line(24, 9, 21, 4, "#e0c060"); p.line(27, 9, 28, 4, "#e0c060");
     p.line(30, 16, 32, 19, "#e0e0d0");
   },
+
+  // ---------------------------------------------------------- street furniture and garden pieces
+  willow: (p) => {
+    shadow(p, 8, 30, 7, 2);
+    trunk(p, 6, 14, 30, "#6a4a2a", 4);
+    canopy(p, 8, 9, 7.5, 6, "#6aa83a", 31);
+    // hanging fronds
+    for (let x = 1; x <= 15; x += 2) {
+      const len = 8 + ((x * 5) % 7);
+      for (let y = 12; y < 12 + len; y++) p.px(x + (y % 4 === 0 ? 1 : 0), y, y % 3 ? "#5a9a32" : "#8ac850");
+    }
+  },
+  lantern_tree: (p) => {
+    shadow(p, 8, 30, 7, 2);
+    trunk(p, 6, 16, 30, "#5a3a2a", 4);
+    canopy(p, 8, 10, 7.5, 7, "#2f6a3a", 17);
+    for (const [x, y] of [[3, 9], [12, 7], [8, 13], [13, 13], [5, 15], [9, 5]] as [number, number][]) {
+      glow(p, x, y + 1, 5, "255,220,120");
+      p.px(x, y, "#3a2a1a"); p.rect(x - 1, y + 1, 2, 2, "#ffd060"); p.px(x - 1, y + 1, "#fff6c8");
+    }
+    for (const [x, y] of [[2, 22], [14, 19], [11, 25]]) p.px(x, y, "#f8ffa0");
+  },
+  twin_lamp: (p) => {
+    shadow(p, 8, 30, 4, 1.5);
+    p.rect(5, 27, 6, 3, IRON); p.rect(5, 27, 6, 1, hs(IRON, 0.35));
+    post(p, 7, 8, 27, IRON, 2);
+    p.rect(2, 8, 12, 1, IRON); p.px(1, 9, IRON); p.px(14, 9, IRON);
+    for (const x of [2, 13]) {
+      glow(p, x, 12, 8);
+      p.rect(x - 2, 9, 4, 1, IRON); p.rect(x - 2, 10, 4, 4, "#ffe07a"); p.rect(x - 2, 10, 1, 4, "#fff6c8"); p.rect(x - 2, 14, 4, 1, IRON);
+    }
+    p.px(8, 6, "#f2c542");
+  },
+  cafe_table: (p) => {
+    shadow(p, 8, 30, 7, 2);
+    post(p, 7, 9, 29, "#d8d4c8", 2);
+    // striped umbrella
+    for (let y = 3; y < 10; y++) {
+      const w = Math.round((y - 2) * 1.15);
+      for (let x = 8 - w; x < 8 + w; x++) p.px(x, y, (Math.floor((x - 8) / 2) + 8) % 2 ? "#e84a5a" : "#fff4e8");
+    }
+    p.rect(0, 10, 16, 1, "#a82a3a"); p.px(7, 2, "#d8d4c8");
+    // round table and a teacup
+    ell(p, 8, 22, 6, 2, "#8a5a30"); ell(p, 8, 21.5, 6, 1.8, "#c89058"); p.rect(7, 23, 2, 6, "#6a4428");
+    p.rect(9, 19, 2, 2, "#ffffff"); p.px(11, 20, "#ffffff"); p.px(10, 18, "#d8e8f0");
+    p.rect(1, 25, 3, 1, "#6a4428"); p.rect(1, 22, 1, 6, "#6a4428"); p.rect(12, 25, 3, 1, "#6a4428"); p.rect(14, 22, 1, 6, "#6a4428");
+  },
+  swing: (p) => {
+    shadow(p, 8, 30, 7, 1.5);
+    const w = "#8a5a30";
+    p.line(1, 30, 4, 6, w, 2); p.line(15, 30, 12, 6, w, 2);
+    p.rect(2, 5, 12, 2, w); p.rect(2, 5, 12, 1, hs(w, 0.3));
+    for (const x of [5, 10]) p.rect(x, 7, 1, 15, "#c8a060");
+    p.rect(4, 22, 8, 2, "#b07a48"); p.rect(4, 22, 8, 1, "#d8a070");
+  },
+  mini_windmill: (p) => {
+    shadow(p, 8, 30, 5, 1.5);
+    for (let y = 14; y < 30; y++) { const w = 3 + (y - 14) * 0.15; p.rect(8 - w, y, w * 2, 1, y % 4 === 0 ? "#c8b898" : "#e8dcc0"); }
+    p.rect(6, 25, 4, 5, "#7a4a2a"); p.px(7, 26, "#5a3a1a");
+    p.rect(5, 12, 6, 3, "#a03a2a"); p.rect(4, 14, 8, 1, "#7a2a1a");
+    const hub = [8, 12] as const;
+    for (const [dx, dy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      for (let k = 2; k < 8; k++) {
+        const x = hub[0] + dx * k * 0.75, y = hub[1] + dy * k * 0.75;
+        p.px(x, y, "#f0e8d8"); p.px(x + dx * 0.5, y - dy * 0.5, k % 2 ? "#c8b8a0" : "#ffffff");
+      }
+    }
+    p.rect(7, 11, 2, 2, "#5a3a1a");
+  },
+  clock_post: (p) => {
+    shadow(p, 8, 30, 4, 1.5);
+    p.rect(5, 27, 6, 3, IRON); p.rect(5, 27, 6, 1, hs(IRON, 0.35));
+    post(p, 7, 12, 27, IRON, 2);
+    p.blob(8, 8, 5, 5, "#3a3840");
+    ell(p, 8, 8, 4, 4, "#f8f4e8");
+    p.px(8, 5, "#3a3840"); p.px(8, 11, "#3a3840"); p.px(5, 8, "#3a3840"); p.px(11, 8, "#3a3840");
+    p.line(8, 8, 8, 5.5, "#1a1a20"); p.line(8, 8, 10, 9, "#1a1a20");
+    p.px(8, 2, "#f2c542");
+  },
+  notice_board: (p) => {
+    shadow(p, 8, 30, 7, 1.5);
+    for (const x of [2, 13]) post(p, x, 12, 30, DARK, 2);
+    wallTex(p, 1, 12, 15, 11, "#a87444", "plank", 3);
+    p.rect(0, 11, 16, 1, "#6a4428"); p.rect(1, 23, 15, 1, "#5a3a22");
+    for (const [x, y, w, hh, c] of [[2, 13, 4, 5, "#f8f0d8"], [7, 14, 5, 4, "#ffe8a8"], [3, 19, 5, 3, "#d8e8ff"], [10, 18, 4, 4, "#ffd0d8"]] as [number, number, number, number, string][]) {
+      p.rect(x, y, w, hh, c); p.px(x + 1, y, "#c83a3a"); p.rect(x + 1, y + 2, w - 2, 1, hs(c, -0.35));
+    }
+    roofSlab(p, 0, 16, 8, 11, "#7a4a2a", "shingle", 4);
+  },
+  flower_cart: (p) => {
+    shadow(p, 8, 30, 7, 2);
+    wallTex(p, 2, 19, 12, 6, "#b07a48", "plank", 5);
+    p.rect(2, 25, 12, 1, "#5a3a22");
+    for (const x of [4, 12]) { ell(p, x, 27, 2.5, 2.5, "#5a3a22"); ell(p, x, 27, 1.5, 1.5, "#b07a48"); p.px(x, 27, "#3a2614"); }
+    p.line(14, 20, 16, 17, "#6a4428");
+    const cols = ["#e84a6a", "#f7d44c", "#ffffff", "#b88aff", "#f28a3a", "#ff8ab0"];
+    for (let i = 0; i < 11; i++) {
+      const x = 3 + ((i * 5) % 11), y = 13 + ((i * 3) % 5);
+      p.rect(x, y + 2, 1, 4, "#4f8a35");
+      flower(p, x, y, cols[i % cols.length]);
+    }
+  },
+  stone_well_deco: (p) => {
+    shadow(p, 8, 30, 7, 2);
+    wallTex(p, 2, 21, 12, 8, STONE, "stone", 6);
+    ell(p, 8, 21, 6, 2, "#6a6a72"); ell(p, 8, 21, 4.5, 1.3, "#2a5a8a"); p.px(7, 21, "#f2c542"); p.px(9, 21, "#f2c542");
+    for (const x of [2, 13]) post(p, x, 9, 21, "#8a5a30", 2);
+    roofSlab(p, 0, 16, 5, 10, "#3a6a8a", "tile", 7);
+    p.rect(7, 11, 1, 6, "#c8a060"); p.rect(6, 17, 3, 2, "#8a5a30");
+  },
+  topiary: (p) => {
+    shadow(p, 8, 30, 5, 1.5);
+    wallTex(p, 4, 24, 8, 6, "#b8b0a0", "stone", 8); p.rect(3, 23, 10, 1, "#d8d0c0");
+    const leaf = "#3f8a3a";
+    p.blob(8, 18, 4.5, 4.5, leaf);
+    p.blob(7, 11, 3, 3, leaf);
+    p.blob(5, 6, 1.3, 3.2, leaf); p.blob(9, 6, 1.3, 3.2, leaf);
+    p.px(6, 10, "#1a2a1a"); p.blob(12, 19, 1.6, 1.6, hs(leaf, 0.2));
+  },
+  planter_box: (p) => {
+    shadow(p, 8, 30, 7, 1.5);
+    wallTex(p, 1, 22, 14, 7, "#a87444", "plank", 9); p.rect(1, 21, 14, 1, "#c89058"); p.rect(1, 29, 14, 1, "#5a3a22");
+    p.rect(2, 20, 12, 2, "#5a3a22");
+    const cols = ["#f7d44c", "#e84a6a", "#ffffff", "#b88aff"];
+    for (let i = 0; i < 7; i++) { const x = 2 + i * 2; p.rect(x, 17, 1, 4, "#4f8a35"); p.px(x + 1, 18, "#6ab84a"); flower(p, x, 15 + (i % 2), cols[i % 4]); }
+  },
+  wisteria_arch: (p, W) => {
+    shadow(p, W / 2, 30, W / 2 - 2, 1.5);
+    const w = "#8a5a30";
+    for (const x of [2, W - 4]) post(p, x, 6, 30, w, 3);
+    p.rect(0, 4, W, 3, w); p.rect(0, 4, W, 1, hs(w, 0.3)); p.rect(0, 7, W, 1, outline(w));
+    for (let x = 1; x < W; x += 2) {
+      const len = 6 + ((x * 7) % 9);
+      for (let y = 7; y < 7 + len; y++) p.px(x, y, y > 7 + len - 3 ? "#d8b8ff" : (x + y) % 3 ? "#a07ae0" : "#8a5ac8");
+      p.px(x, 6, "#4f8a35");
+    }
+  },
+  market_stall: (p, W) => {
+    shadow(p, W / 2, 30, W / 2 - 1, 2);
+    wallTex(p, 2, 20, W - 4, 9, "#a87444", "plank", 10);
+    p.rect(1, 19, W - 2, 2, "#c89058"); p.rect(2, 29, W - 4, 1, "#5a3a22");
+    for (const x of [2, W - 4]) post(p, x, 7, 20, "#8a5a30", 2);
+    // striped awning with a scalloped edge
+    for (let y = 4; y < 9; y++) for (let x = 0; x < W; x++) p.px(x, y, Math.floor(x / 3) % 2 ? "#3a8a5a" : "#f8f0e0");
+    for (let x = 0; x < W; x += 3) { p.rect(x, 9, 3, 1, Math.floor(x / 3) % 2 ? "#3a8a5a" : "#f8f0e0"); p.px(x + 1, 10, Math.floor(x / 3) % 2 ? "#2a6a4a" : "#d8d0c0"); }
+    p.rect(0, 3, W, 1, "#2a6a4a");
+    // crates of fruit on the counter
+    for (const [x, col] of [[4, "#e83a3a"], [11, "#f28a2a"], [18, "#f7d44c"], [25, "#6ab84a"]] as [number, string][]) {
+      p.rect(x, 17, 5, 3, "#8a5a30");
+      for (let k = 0; k < 3; k++) p.blob(x + 1 + k * 1.5, 16, 1.2, 1.2, col, { outline: false });
+    }
+  },
+  round_planter: (p, W, H) => {
+    shadow(p, W / 2, H - 3, W / 2 - 1, 3);
+    for (let y = H - 22; y < H - 2; y++) for (let x = 0; x < W; x++) {
+      const dx = (x + 0.5 - W / 2) / (W / 2 - 1), dy = (y + 0.5 - (H - 12)) / 9;
+      const d = Math.hypot(dx, dy);
+      if (d > 1) continue;
+      if (d > 0.82) p.px(x, y, dy > 0.3 ? "#7a7468" : (Math.floor(Math.atan2(dy, dx) * 5) % 2 ? "#c8c0b0" : "#b0a898"));
+      else p.px(x, y, d > 0.74 ? "#5a3a22" : "#4f8a35");
+    }
+    const cols = ["#e84a6a", "#f7d44c", "#ffffff", "#b88aff", "#f28a3a", "#ff8ab0"];
+    for (let i = 0; i < 22; i++) {
+      const a = cell(i, 1, 4) * Math.PI * 2, r = Math.sqrt(cell(i, 2, 4)) * 0.7;
+      flower(p, W / 2 + Math.cos(a) * r * (W / 2 - 4), H - 13 + Math.sin(a) * r * 6, cols[i % cols.length]);
+    }
+    // a little tree in the middle
+    trunk(p, W / 2 - 1, H - 22, H - 12, "#6a4428", 2);
+    canopy(p, W / 2, H - 25, 5, 4.5, "#f0a0c0", 3);
+  },
+  bell_tower: (p, W, H) => {
+    shadow(p, W / 2, H - 2, W / 2 - 3, 2.5);
+    wallTex(p, 6, 14, W - 12, H - 16, "#b8503a", "brick", 11);
+    p.rect(6, 14, 1, H - 16, hs("#b8503a", 0.2)); p.rect(W - 7, 14, 1, H - 16, hs("#b8503a", -0.3));
+    foundation(p, 5, H - 5, W - 10, STONE);
+    // the belfry: an arch with the bronze bell
+    p.rect(9, 15, W - 18, 10, "#2a1a1a");
+    p.blob(W / 2, 21, 4, 4.5, "#c8903a", { hi: 0.4 }); p.rect(W / 2 - 4, 24, 8, 1, "#8a5a2a"); p.px(W / 2, 26, "#5a3a1a");
+    p.rect(8, 25, W - 16, 2, STONE); p.rect(8, 25, W - 16, 1, hs(STONE, 0.3));
+    doorAt(p, W / 2 - 3, H - 13, { w: 6, h: 9, col: "#6a4428", arch: true });
+    windowAt(p, W / 2 - 2, 29, { w: 4, h: 4, lit: true });
+    roofSlab(p, 3, W - 3, 2, 14, "#4a5a7a", "slate", 12);
+    p.rect(W / 2, 0, 1, 3, "#f2c542");
+  },
+  zen_garden: (p, W, H) => {
+    // raked sand inside a low wooden frame
+    const top = H - 30;
+    wallTex(p, 0, top, W, 28, "#8a5a30", "plank", 13);
+    for (let y = top + 2; y < H - 4; y++) for (let x = 2; x < W - 2; x++) p.px(x, y, (y + Math.round(Math.sin(x / 3) * 1.2)) % 3 === 0 ? "#c8b890" : "#ece0c0");
+    for (const [cx, cy, r] of [[10, top + 10, 4], [23, top + 18, 3], [14, top + 20, 2]] as [number, number, number][]) {
+      for (let k = 1; k <= 2; k++) { p.g.strokeStyle = "#c8b890"; p.g.lineWidth = 1; p.g.beginPath(); p.g.ellipse(cx + 0.5, cy + 1, r + k * 2, (r + k * 2) * 0.6, 0, 0, Math.PI * 2); p.g.stroke(); }
+      p.blob(cx, cy, r, r * 0.8, "#8a8a92");
+      p.px(cx - 1, cy - r * 0.8 + 1, "#c0c0c8");
+    }
+    p.rect(26, top + 5, 3, 3, "#4f8a35"); p.px(27, top + 4, "#6ab84a");
+    p.rect(0, H - 3, W, 1, "#5a3a22");
+  },
 };

@@ -126,6 +126,8 @@ export interface GameState {
   party: string[];
   inventory: Record<string, number>;
   buildings: PlacedBuilding[];
+  /** Where Sprout stands in the sanctuary, once the player has moved her. */
+  sprout?: { x: number; y: number };
   territory: number;
   flags: Record<string, number | boolean | string>;
   maxFloor: number;

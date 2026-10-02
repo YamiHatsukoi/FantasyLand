@@ -12,7 +12,7 @@ import { PAIR_TALK } from "../data/residentText";
 import { personCanvas, type Dir } from "../render/people";
 import { findPath } from "./mapgen";
 import { ambientLine, profileOf, residents } from "./residents";
-import { SPROUT, SZ_H, SZ_W, territory } from "./sanctuary";
+import { SZ_H, SZ_W, layoutKey, sproutAt, territory } from "./sanctuary";
 
 export interface Agent {
   id: string;
@@ -72,16 +72,16 @@ export class ResidentSim {
 
   // ------------------------------------------------------------ world grid
   private signature() {
-    let s = `${this.g.territory}|`;
-    for (const b of this.g.buildings) s += `${b.type}${b.x},${b.y};`;
-    return s;
+    const sp = sproutAt(this.g);
+    return `${this.g.territory}|${sp.x},${sp.y}|${layoutKey(this.g)}`;
   }
   private rebuild() {
     const g = this.g;
     this.occ.fill(0);
     const t = territory(g.territory);
     for (let y = t.y0; y < t.y1; y++) for (let x = t.x0; x < t.x1; x++) this.occ[y * SZ_W + x] = 1;
-    this.occ[SPROUT.y * SZ_W + SPROUT.x] = 0;
+    const sp = sproutAt(g);
+    this.occ[sp.y * SZ_W + sp.x] = 0;
     this.pois = [];
     for (const b of g.buildings) {
       if (BUILDINGS[b.type].walkable) continue;
@@ -93,7 +93,7 @@ export class ResidentSim {
       const door = { x: b.x + Math.floor(w / 2), y: b.y + h };
       if (this.walk(door.x, door.y)) this.pois.push({ ...door, type: b.type });
     }
-    this.pois.push({ x: SPROUT.x + 1, y: SPROUT.y, type: "sprout" });
+    this.pois.push({ x: sp.x + 1, y: sp.y, type: "sprout" });
     this.occSig = this.signature();
   }
   walk = (x: number, y: number) => x >= 0 && y >= 0 && x < SZ_W && y < SZ_H && this.occ[y * SZ_W + x] === 1;
@@ -108,7 +108,7 @@ export class ResidentSim {
     for (const ch of list) {
       if (this.byId.has(ch.id)) continue;
       const rng = new Rng(hashString(`agent:${ch.id}:${this.g.day}`));
-      const spot = this.randomSpot(rng) ?? { x: SPROUT.x + 2, y: SPROUT.y + 1 };
+      const spot = this.randomSpot(rng) ?? (({ x, y }) => ({ x: x + 2, y: y + 1 }))(sproutAt(this.g));
       const a: Agent = {
         id: ch.id, x: spot.x, y: spot.y, px: spot.x, py: spot.y, dir: 0, flip: false, path: [], state: "idle",
         timer: initial ? rng.range(0.2, 4) : 0.5, step: 0, frames: new Map(), rng,
