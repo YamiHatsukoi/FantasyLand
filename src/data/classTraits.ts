@@ -23,10 +23,13 @@ export interface ClassTrait {
 }
 
 export const TRAITS: Record<string, ClassTrait> = {
-  warrior: { name: "Bách Chiến", icon: "⚔️", desc: "Trải trăm trận: thêm 1 ô nội tại.", passiveSlots: 1 },
-  mage: { name: "Thư Viện Di Động", icon: "📚", desc: "Thuộc lòng cả kho phép: thêm 2 ô kỹ năng.", skillSlots: 2 },
+  warrior: { name: "Bách Chiến", icon: "⚔️", desc: "Trải trăm trận: thêm 1 ô nội tại; +10% máu; hạ gục kẻ địch nhận Cuồng lực.", passiveSlots: 1,
+    hooks: [{ on: "stat", mods: { hp: 0.1 } }, { on: "kill", fx: [{ s: "atkUp", t: 2, to: "self" }] }] },
+  mage: { name: "Thư Viện Di Động", icon: "📚", desc: "Thuộc lòng cả kho phép: thêm 2 ô kỹ năng; +15% phép; hồi 5% MP mỗi lượt.", skillSlots: 2,
+    hooks: [{ on: "stat", mods: { mag: 0.15 } }, { on: "turnStart", mpPct: 0.05 }] },
   ranger: { name: "Mắt Ưng", icon: "🦅", desc: "Cả đội nhìn xa thêm 2 ô dưới Vực Sâu; bản thân +5 chí mạng.", party: { sight: 2 }, hooks: [{ on: "stat", mods: { crit: 5 } }] },
-  rogue: { name: "Bàn Tay Nhanh", icon: "💰", desc: "Cả đội nhận thêm 25% vàng sau mỗi trận thắng.", party: { gold: 0.25 } },
+  rogue: { name: "Đâm Lén", icon: "🗡️", desc: "+10 chí mạng; chí mạng khiến mục tiêu Chảy máu và Dễ tổn thương; cả đội nhận thêm 25% vàng sau trận.", party: { gold: 0.25 },
+    hooks: [{ on: "stat", mods: { crit: 10 } }, { on: "crit", fx: [{ s: "bleed", t: 3 }, { s: "vulnerable", t: 2 }] }] },
   cleric: { name: "Ân Điển", icon: "🙏", desc: "Phép hồi máu mạnh hơn 25%; kháng 20% hiệu ứng bất lợi.", hooks: [{ on: "healPower", mult: 1.25 }, { on: "debuffResist", ch: 0.2 }] },
   guardian: { name: "Thành Lũy", icon: "🏰", desc: "Vào trận với Khiên chắn đòn và Khiêu khích kẻ địch về mình.", hooks: [{ on: "battleStart", fx: [{ s: "shield", t: 3, p: 0.9 }, { s: "taunt", t: 2 }] }] },
   witch: { name: "Lời Nguyền", icon: "🕯️", desc: "Đòn phép có 25% Nguyền rủa mục tiêu.", hooks: [{ on: "hitApply", kind: "magical", fx: [{ s: "curse", ch: 0.25, t: 3 }] }] },
