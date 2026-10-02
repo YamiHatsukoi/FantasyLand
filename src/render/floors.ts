@@ -254,21 +254,25 @@ function waterTile(type: string, mask: number, same: number, v: number): HTMLCan
       }
       break;
     case "boardwalk": {
-      // runs along its own line; alone, across the narrow way of the water it sits in
-      const horiz = same & (E | W) ? !(same & (N | S)) : (~mask & (E | W)) !== 0 && (~mask & (N | S)) === 0;
-      for (let k = 0; k < 16; k++) for (let w = 3; w < 13; w++) {
-        const x = horiz ? k : w, y = horiz ? w : k;
-        const seam = k % 4 === 3;
-        let col = seam ? "#6a4428" : ["#b88050", "#a87444", "#c08a58", "#b07a48"][(k >> 2) % 4];
-        if (w === 3 || w === 12) col = "#5a3a22";
-        p.px(x, y, col);
+      // one deck over the whole bridge: boards run across the way it is walked (bit 256: east-west,
+      // decided for the whole bridge), rails only along its open sides
+      const horiz = (same & 256) !== 0;
+      const at = (u: number, w: number, col: string) => p.px(horiz ? u : w, horiz ? w : u, col);
+      const sideA = horiz ? N : W, sideB = horiz ? S : E;
+      const w0 = same & sideA ? 0 : 3, w1 = same & sideB ? 16 : 13;
+      for (let u = 0; u < 16; u++) for (let w = w0; w < w1; w++) {
+        const board = (u + v * 3) >> 2;
+        let col = u % 4 === 3 ? "#6a4428" : ["#b88050", "#a87444", "#c08a58", "#b07a48"][board % 4];
+        if ((w === 5 || w === 10) && u % 4 === 1) col = "#4a2e18"; // nails
+        if (w === w0 && !(same & sideA)) col = hs(col, 0.2);
+        at(u, w, col);
       }
-      // the shadow on the water under the boards
-      if (horiz) p.rect(0, 13, 16, 1, "#2a5a8a"); else { p.rect(13, 0, 1, 16, "#2a5a8a"); }
-      for (const k of [1, 14]) {
-        if (horiz ? !(same & (k === 1 ? W : E)) : !(same & (k === 1 ? N : S))) {
-          for (const w of [3, 12]) { const x = horiz ? k : w, y = horiz ? w : k; p.rect(x - 1, y - 1, 2, 3, "#4a2e18"); }
-        }
+      if (!(same & sideB)) { for (let u = 0; u < 16; u++) { at(u, 13, "#5a3a22"); at(u, 14, "#3a2614"); at(u, 15, "#2a5a8a"); } }
+      // rails and posts on the open long sides
+      for (const [open, rw, pw] of [[!(same & sideA), 2, 0], [!(same & sideB), 12, 10]] as [boolean, number, number][]) {
+        if (!open) continue;
+        for (let u = 0; u < 16; u++) at(u, rw, "#7a4e2c");
+        for (const u of [1, 9]) for (let w = pw; w < pw + 3; w++) { at(u, w, "#5a3a22"); at(u + 1, w, "#3a2614"); }
       }
       break;
     }
@@ -282,7 +286,7 @@ export function floorTile(type: string, mask: number, same: number, v: number): 
   const water = WATERS.has(type);
   // paths only care about their four sides (inner corners matter to water alone)
   const m = water ? mask : mask & 15;
-  const key = `${type}|${m}|${water && type === "boardwalk" ? same & 15 : 0}|${v}`;
+  const key = `${type}|${m}|${type === "boardwalk" ? same & 271 : 0}|${v}`;
   let c = cache.get(key);
   if (!c) {
     c = water ? waterTile(type, m, same, v) : PATHS[type] ? pathTile(type, m, v) : makeCanvas(16, 16)[0];
@@ -313,8 +317,12 @@ export class FloorLayer {
     for (const b of g.buildings) if (BUILDINGS[b.type]?.floor) cur.set(b.y * SZ_W + b.x, b.type);
     const dirty = new Set<number>();
     const mark = (i: number) => { const x = i % SZ_W, y = (i / SZ_W) | 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) dirty.add((y + dy) * SZ_W + x + dx); };
-    for (const [i, t] of cur) if (this.prev.get(i) !== t) mark(i);
-    for (const [i, t] of this.prev) if (cur.get(i) !== t) mark(i);
+    let bridges = false;
+    for (const [i, t] of cur) if (this.prev.get(i) !== t) { mark(i); bridges ||= t === "boardwalk"; }
+    for (const [i, t] of this.prev) if (cur.get(i) !== t) { mark(i); bridges ||= t === "boardwalk"; }
+    // a bridge is drawn as one: when one changes, every bridge tile is redrawn with its bridge's direction
+    const across = bridgeDirections(cur);
+    if (bridges) for (const i of across.keys()) dirty.add(i);
     const fam = (i: number) => { const t = cur.get(i); return t ? BUILDINGS[t].floor : undefined; };
     for (const i of dirty) {
       if (i < 0) continue;
@@ -329,11 +337,44 @@ export class FloorLayer {
         if (fam(o) === f) mask |= bit;
         if (cur.get(o) === t) same |= bit;
       }
+      if (across.get(i)) same |= 256;
       gc.drawImage(floorTile(t, mask, same, Math.floor(cell(x, y, 5) * 4)), x * 16, y * 16);
     }
     this.prev = cur;
     this.water = [...cur].filter(([, t]) => WATERS.has(t)).map(([i]) => i);
   }
+}
+
+/**
+ * Which way each bridge tile runs: true for east-west. A bridge (boardwalk tiles touching side by
+ * side) runs along its longer side; a single tile spans the narrow way across the water around it.
+ */
+function bridgeDirections(cur: Map<number, string>): Map<number, boolean> {
+  const out = new Map<number, boolean>();
+  const isB = (i: number) => cur.get(i) === "boardwalk";
+  const isW = (i: number) => WATERS.has(cur.get(i) ?? "");
+  for (const [start, t] of cur) {
+    if (t !== "boardwalk" || out.has(start)) continue;
+    const part: number[] = [start];
+    out.set(start, false);
+    let x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1;
+    for (let k = 0; k < part.length; k++) {
+      const i = part[k], x = i % SZ_W, y = (i / SZ_W) | 0;
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+      for (const o of [i - SZ_W, i + SZ_W, i - 1, i + 1]) if (isB(o) && !out.has(o)) { out.set(o, false); part.push(o); }
+    }
+    let horiz = x1 - x0 > y1 - y0;
+    if (x1 - x0 === y1 - y0) {
+      // square: cross towards the land that is nearer (water on both sides of the other way)
+      const wet = (dx: number, dy: number) => part.every((i) => isW(i + dy * SZ_W + dx) || isB(i + dy * SZ_W + dx));
+      horiz = !(wet(-1, 0) && wet(1, 0)) && wet(0, -1) && wet(0, 1);
+    }
+    // each tile follows the longer of its own row and column of bridge, so the arms of a cross
+    // or an L each run their own way; a tie keeps the bridge's direction
+    const run = (i: number, step: number) => { let n = 1; for (let o = i + step; isB(o); o += step) n++; for (let o = i - step; isB(o); o -= step) n++; return n; };
+    for (const i of part) { const hr = run(i, 1), vr = run(i, SZ_W); out.set(i, hr === vr ? horiz : hr > vr); }
+  }
+  return out;
 }
 
 /** Sun glints twinkling on water in view. */
