@@ -14,6 +14,7 @@ import { bar, confirmBox, h, nn, openModal, toast, type ModalHandle } from "../u
 import { costView as costViewG, itemImg, lootChips } from "../ui/icon";
 import { GEAR_NAMES } from "../ui/gear";
 import { getFloor } from "../world/floors";
+import { bulkUpgrade, upgradeBlock } from "../world/sanctuary";
 import {
   WATER_SEC, cropSeconds, cropTarget, fmtDuration, msToRipe, tickFarm, waterPlot,
   SOIL_NAMES, WEATHER, allPlots, appeal, applyFertilizer, cropInfo, efficiency, ensureSlots, harvest, housing, isReady,
@@ -103,6 +104,49 @@ function upgradeRow(m: ModalHandle, b: PlacedBuilding, render: () => void, block
         render();
       },
     }, "Nâng cấp")));
+  // the same kind elsewhere in the sanctuary: raise them all from here
+  const same = g.buildings.filter((o) => o.type === b.type && !upgradeBlock(g, o));
+  if (same.length > 1 && b.type !== "house") {
+    m.body.append(h("div", { class: "row end", style: "margin-top:4px" },
+      h("button", { class: "btn small", onclick: () => openBulkUpgrade(same, render) }, `⬆️ Nâng tất cả ${same.length} ${def.name}`)));
+  }
+}
+
+/** Raise many buildings at once: the price of the next level for all of them, then one level or as far as the bag goes. */
+export function openBulkUpgrade(list: PlacedBuilding[], onDone: () => void) {
+  const g = app.game;
+  const m = openModal("⬆️ Nâng cấp hàng loạt");
+  const render = () => {
+    const ready = list.filter((b) => !upgradeBlock(g, b));
+    const total: Record<string, number> = {};
+    for (const b of ready) for (const [id, n] of Object.entries(costFor(b.type, b.level))) total[id] = (total[id] ?? 0) + n;
+    const kinds = new Map<string, number>();
+    for (const b of ready) kinds.set(b.type, (kinds.get(b.type) ?? 0) + 1);
+    const blocked = list.length - ready.length;
+    const go = (rounds: number) => {
+      const r = bulkUpgrade(g, ready, rounds);
+      if (!r.levels) return toast("Không đủ nguyên liệu để nâng cái nào.", "bad");
+      sfx("build");
+      logMsg(g, `Nâng cấp hàng loạt: ${r.buildings} công trình, +${r.levels} cấp.`);
+      toast(`Đã nâng ${r.buildings} công trình (+${r.levels} cấp)!`, "good");
+      app.checkpoint("Nâng cấp hàng loạt");
+      onDone();
+      render();
+    };
+    m.body.replaceChildren(...nn(
+      ready.length
+        ? h("p", { style: "margin-top:0" }, `${ready.length} công trình nâng được: `, [...kinds].map(([t, n]) => `${BUILDINGS[t].icon} ${BUILDINGS[t].name} ×${n}`).join(", "))
+        : h("p", { class: "muted", style: "margin-top:0" }, "Không còn công trình nào nâng được."),
+      blocked ? h("p", { class: "muted small" }, `${blocked} cái đã tối đa hoặc cần khu định cư hạng cao hơn.`) : null,
+      ready.length ? h("div", { class: "section-title" }, "Giá để nâng tất cả thêm 1 cấp") : null,
+      ready.length ? costView(total) : null,
+      ready.length ? h("p", { class: "muted small" }, canAfford(g, total) ? "Đủ nguyên liệu cho tất cả." : "Chưa đủ cho tất cả: sẽ nâng lần lượt, cấp thấp trước, tới khi hết nguyên liệu.") : null,
+      h("div", { class: "row end", style: "gap:6px;margin-top:10px" },
+        h("button", { class: "btn", disabled: !ready.length, onclick: () => go(Infinity) }, "⏫ Nâng hết mức"),
+        h("button", { class: "btn primary", disabled: !ready.length, onclick: () => go(1) }, "⬆️ Nâng 1 cấp")),
+    ));
+  };
+  render();
 }
 
 function genericFooter(m: ModalHandle, b: PlacedBuilding, render: () => void, withUpgrade = true) {

@@ -1,6 +1,6 @@
-import { BUILDINGS, RANK_NAMES, TERRITORY_SIZES } from "../data/buildings";
-import type { GameState, PlacedBuilding } from "../core/state";
-import { rankOf } from "./town";
+import { BUILDINGS, RANK_NAMES, TERRITORY_SIZES, costFor } from "../data/buildings";
+import { pay, type GameState, type PlacedBuilding } from "../core/state";
+import { ensureSlots, rankOf } from "./town";
 
 export const SZ_W = 136;
 export const SZ_H = 136;
@@ -91,4 +91,33 @@ export function buildLimitReason(g: GameState, type: string): string | null {
   if (def.rank > rankOf(g)) return `Cần khu định cư hạng ${RANK_NAMES[def.rank]}`;
   if (def.unique && g.buildings.some((b) => b.type === type)) return "Đã xây";
   return null;
+}
+
+/** Why a building can't go up a level right now, apart from its cost (null: it can). */
+export function upgradeBlock(g: GameState, b: PlacedBuilding): string | null {
+  const def = BUILDINGS[b.type];
+  if (b.level >= def.maxLevel) return "Đã đạt cấp tối đa";
+  if (b.type === "house") return "Nhà Chính thăng hạng riêng"; // it has its own requirements
+  if (def.rank + b.level > rankOf(g)) return `Cần khu định cư hạng ${RANK_NAMES[Math.min(6, def.rank + b.level)]}`;
+  return null;
+}
+
+/**
+ * Raises many buildings at once, one level per round, lowest level first, paying as it goes,
+ * for up to `rounds` rounds (Infinity: as far as the bag allows). Returns the levels gained.
+ */
+export function bulkUpgrade(g: GameState, list: PlacedBuilding[], rounds: number): { levels: number; buildings: number } {
+  let levels = 0;
+  const raised = new Set<PlacedBuilding>();
+  for (let r = 0; r < rounds; r++) {
+    let any = false;
+    for (const b of [...list].sort((x, y) => x.level - y.level)) {
+      if (upgradeBlock(g, b) || !pay(g, costFor(b.type, b.level))) continue;
+      b.level++;
+      if (b.type === "greenhouse") ensureSlots(b);
+      levels++; raised.add(b); any = true;
+    }
+    if (!any) break;
+  }
+  return { levels, buildings: raised.size };
 }
