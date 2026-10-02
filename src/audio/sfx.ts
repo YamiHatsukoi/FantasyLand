@@ -29,9 +29,10 @@ const MIN = (root: number, n = 8) => Array.from({ length: n }, (_, i) => root + 
 
 const RICH: Record<string, (arg?: string) => void> = {
   // ---------------------------------------------------------------- interface
-  click: () => S("marimba", 84 + Math.floor(r(0, 3)), 0, 0.32, 0.12),
-  open: () => { S("harp", 79, 0, 0.42); S("harp", 86, 0.05, 0.38); },
-  close: () => { S("harp", 86, 0, 0.32); S("harp", 79, 0.05, 0.3); },
+  // heard on every tap: a soft, low wooden "tock", never a bright ting
+  click: () => SYNTH.click(),
+  open: () => { S("harp", 67, 0, 0.26, 0.4); S("harp", 74, 0.05, 0.22, 0.4); },
+  close: () => { S("harp", 74, 0, 0.2, 0.35); S("harp", 67, 0.05, 0.18, 0.35); },
   notify: () => { S("glock", 88, 0, 0.3, 1); S("harp", 76, 0, 0.35); },
   good: () => { gliss([72, 76, 79], 0, 0.05, 0.45); S("glock", 91, 0.1, 0.25, 1); },
   error: () => { S("marimba", 52, 0, 0.55, 0.3); S("marimba", 51, 0.1, 0.5, 0.3); H("log_lo", 0, 0.35); },
@@ -131,7 +132,10 @@ function impactRich(el: El = "physical") {
 /** Synthesised versions: used until the recorded instruments have loaded. */
 const SYNTH: Record<string, (arg?: string) => void> = {
   // ---------------------------------------------------------------- interface
-  click: () => tone(r(1500, 1650), 0.035, { type: "triangle", gain: 0.06, slide: 1100 }),
+  click: () => {
+    tone(r(380, 410), 0.05, { type: "sine", gain: 0.05, slide: 240, attack: 0.002, release: 0.045, lp: 1400 });
+    noise(0.018, { gain: 0.012, filter: "lowpass", freq: 1800, attack: 0.001 });
+  },
   open: () => { tone(520, 0.07, { type: "sine", gain: 0.07 }); tone(780, 0.1, { type: "sine", gain: 0.06, at: 0.05 }); },
   close: () => tone(700, 0.09, { type: "sine", gain: 0.06, slide: 380 }),
   notify: () => { tone(880, 0.12, { type: "sine", gain: 0.08 }); tone(1320, 0.18, { type: "sine", gain: 0.07, at: 0.08 }); },
