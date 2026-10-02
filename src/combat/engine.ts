@@ -97,7 +97,12 @@ export class Battle {
     }
     for (const u of this.units) {
       if (u.hp <= 0) continue;
-      for (const h of this.hooks(u, "battleStart")) for (const e of h.fx) this.applyEff(u, u, e, "magical");
+      // a battle-start gift lands on its owner, or on the whole of one side ("allies" / "enemies")
+      for (const h of this.hooks(u, "battleStart")) for (const e of h.fx) {
+        const foes = u.side === "ally" ? "enemy" : "ally";
+        const who = e.to === "allies" ? this.alive(u.side) : e.to === "enemies" ? this.alive(foes) : [u];
+        for (const t of who) this.applyEff(u, t, e, "magical");
+      }
     }
     for (const u of this.units) if (u.side === "ally" && u.bp === undefined) u.bp = 1;
     for (const u of this.enemies) this.plan(u);
@@ -651,7 +656,7 @@ export class Battle {
       for (const h of this.hooks(actor, "hitApply")) {
         if (h.kind && h.kind !== sk.kind) continue;
         if (h.el && h.el !== el) continue;
-        for (const e of h.fx) this.applyEff(actor, target, e, sk.kind === "physical" ? "physical" : "magical");
+        for (const e of h.fx) this.applyEff(actor, e.to === "self" ? actor : target, e, sk.kind === "physical" ? "physical" : "magical");
       }
       if (imbued) {
         const es = ELEMENT_STATUS[el];
