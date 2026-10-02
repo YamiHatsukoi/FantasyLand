@@ -39,6 +39,10 @@ export interface ModalHandle {
   body: HTMLDivElement;
   close: () => void;
   setTitle: (t: string) => void;
+  /** Go back to the top on the next re-render (opening another page inside the window). */
+  resetScroll?: () => void;
+  /** True while the player is touching or has just scrolled: periodic refreshes should wait. */
+  busy?: () => boolean;
 }
 
 let modalStack: ModalHandle[] = [];
@@ -73,7 +77,52 @@ export function openModal(title: string, opts: { onClose?: () => void; wide?: bo
   };
   modalStack.push(handle);
   autoSearch(handle);
+  keepScroll(handle);
   return handle;
+}
+
+// ------------------------------------------------------------ scroll that stays put
+/**
+ * Windows redraw their content all the time (a button pressed, a timer ticking). Rebuilding the
+ * content would throw the reader back to the top, or fight a finger mid-swipe on phones. So the
+ * window remembers where it (and every scrolling list inside it) was and puts it back once the
+ * redraw is done; and it reports when the player is touching or scrolling, so timers can wait.
+ */
+function keepScroll(m: ModalHandle) {
+  const body = m.body;
+  let reset = false;
+  let touching = false;
+  let lastScroll = 0;
+  const mark = () => { lastScroll = performance.now(); };
+  body.addEventListener("scroll", mark, { passive: true, capture: true });
+  body.addEventListener("touchstart", () => { touching = true; mark(); }, { passive: true });
+  body.addEventListener("touchend", () => { touching = false; mark(); }, { passive: true });
+  body.addEventListener("touchcancel", () => { touching = false; }, { passive: true });
+  m.busy = () => touching || performance.now() - lastScroll < 1200;
+  m.resetScroll = () => { reset = true; body.scrollTop = 0; };
+
+  const key = (el: Element) => {
+    const same = [...body.querySelectorAll(el.className ? `.${[...el.classList].map((c) => CSS.escape(c)).join(".")}` : el.tagName)];
+    return `${el.className}#${same.indexOf(el)}`;
+  };
+  const native = Element.prototype.replaceChildren;
+  body.replaceChildren = function (...nodes: (Node | string)[]) {
+    const top = body.scrollTop;
+    const inner = new Map<string, number>();
+    for (const el of body.querySelectorAll<HTMLElement>("*")) if (el.scrollTop > 0) inner.set(key(el), el.scrollTop);
+    native.apply(body, nodes);
+    reset = false;
+    // after the caller has finished appending (and the search box has been placed)
+    queueMicrotask(() => {
+      if (reset) { reset = false; return; }
+      body.scrollTop = top;
+      if (inner.size) for (const el of body.querySelectorAll<HTMLElement>("*")) {
+        if (el.scrollHeight <= el.clientHeight) continue;
+        const v = inner.get(key(el));
+        if (v) el.scrollTop = v;
+      }
+    });
+  };
 }
 
 // ------------------------------------------------------------ automatic search for long lists
