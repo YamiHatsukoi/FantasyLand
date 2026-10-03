@@ -248,6 +248,30 @@ export function spriteFront(g: Pen, d: HairDef, hair: string, accent: string, di
     const b = d.bang === "none" ? 0 : d.bang === "eye" || d.bang === "curtain" ? 3 : 1;
     if (b) g.rect(10, top + 3, 3, b, k.c);
     if (shaved) g.rect(3, top + 4, 4, 4, hs(k.hd, -0.1));
+    // long hair seen from the side: it falls down the back, lit on its outer edge, and the
+    // locks by the face drop in front of the ear and over the shoulder
+    const hang = [0, 0, 3, 6, 10, 13][d.len];
+    if (hang && !shaved) {
+      for (let i = 0; i < hang; i++) {
+        const y = top + 8 + i;
+        const w = Math.max(2, 4 + big - Math.floor((i * 2) / Math.max(4, hang)));
+        g.rect(2 - big, y, w, 1, k.c);
+        g.px(2 - big, y, k.hd);
+        if (i % 4 === 1) g.px(3 - big, y, k.hl);
+        g.px(1 + w - big, y, k.hd);
+      }
+      g.rect(3 - big, top + 8 + hang - 1, 2, 1, k.hd);
+    }
+    const sideLock = d.len >= 2 ? [0, 4, 7, 10][d.side] : 0;
+    if (sideLock && !shaved) {
+      g.rect(6, top + 4, 2, sideLock, k.c);
+      g.rect(7, top + 4, 1, sideLock, k.hd);
+      g.px(6, top + 4 + sideLock - 1, k.hd);
+    }
+    // tails tied low, braids and drills: one hangs at the back of the head
+    if (has(d, "low_twintails") || has(d, "twin_braids") || has(d, "drills")) {
+      for (let y = top + 8; y < top + 16; y++) g.rect(1, y, 2, 1, y % 2 ? k.c : k.hd);
+    }
   } else {
     g.rect(4, top - big, 8, 1, k.c); g.rect(3 - big, top + 1, 10 + big * 2, 3, k.c);
     if (!shaved) { g.rect(3 - big, top + 4, 2, 3, k.c); g.rect(11, top + 4, 2 + big, 3, k.hd); }
