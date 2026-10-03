@@ -6,6 +6,7 @@ import { h } from "./dom";
 import { itemImg } from "./icon";
 import { gearTags, rarityClass, scaleStats } from "./gear";
 import { droppedBy, regionSource, usesOf } from "../data/uses";
+import { howToGet } from "../world/sources";
 
 /** Monsters the player has met (set by the game once loaded), so drop sources never spoil. */
 let dexSource: () => Record<string, unknown> = () => ({});
@@ -140,9 +141,12 @@ function usesBlock(id: string) {
 function sourceBlock(id: string) {
   const { known, unknown } = droppedBy(id, dexSource());
   const region = regionSource(id);
-  if (!known.length && !unknown && !region) return null;
+  // grown, bought or made (monster drops are listed below, with their odds)
+  const other = howToGet(id).filter((l) => /^(🌱|🛒|⚒️)/u.test(l));
+  if (!known.length && !unknown && !region && !other.length) return null;
   return h("div", { class: "tip-sub" },
     h("div", { class: "tip-label" }, "Kiếm ở đâu"),
+    other.map((l) => h("div", { class: "small" }, l)),
     known.slice(0, 4).map(({ def, ch }) => h("div", { class: "small" }, `⚔️ ${def.name} — ${Math.max(1, Math.round(ch * 100))}%`)),
     region ? h("div", { class: "small" }, `🗺️ ${region}`) : null,
     unknown ? h("div", { class: "muted small" }, `❔ ${unknown} loài quái chưa gặp cũng rơi ra món này`) : null);

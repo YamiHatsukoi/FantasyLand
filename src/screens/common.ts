@@ -1,3 +1,4 @@
+import { howToGet } from "../world/sources";
 import { openCodex } from "./codex";
 import { applySettings, settings as audio } from "../audio/engine";
 import { sfx } from "../audio/sfx";
@@ -184,7 +185,10 @@ export function openJournal() {
       return ql.length
         ? h("div", { class: "col", style: "gap:4px" }, ql.map(({ npc, q }) => {
           const pr = questProgress(g, q, npc);
-          return h("div", { class: "stat" }, `${npc.name} (${npc.town}, tầng ${npc.floor}): ${questGoal(q, npc)}`, h("b", null, pr.ok ? "✅" : `${pr.have}/${pr.need}`));
+          const hint = !pr.ok && q.item ? howToGet(q.item)[0] : undefined;
+          return h("div", { class: "col", style: "gap:1px" },
+            h("div", { class: "stat" }, `${npc.name} (${npc.town}, tầng ${npc.floor}): ${questGoal(q, npc)}`, h("b", null, pr.ok ? "✅" : `${pr.have}/${pr.need}`)),
+            hint ? h("div", { class: "muted small", style: "padding-left:6px" }, hint) : "");
         }))
         : h("p", { class: "muted small" }, "Chưa nhận việc nào. Cư dân các làng dưới Vực Sâu sẽ nhờ bạn khi đã quen biết.");
     })(),
