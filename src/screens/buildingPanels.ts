@@ -84,7 +84,7 @@ function upgradeRow(m: ModalHandle, b: PlacedBuilding, render: () => void, block
   }
   const g = app.game;
   const cost = costFor(b.type, b.level);
-  const rankBlock = b.type !== "house" && def.rank + b.level > rankOf(g) ? `Cần khu định cư hạng ${RANK_NAMES[Math.min(6, def.rank + b.level)]}` : null;
+  const rankBlock = b.type !== "house" ? upgradeBlock(g, b) : null;
   const block = blocker ?? rankBlock;
   m.body.append(h("div", { class: "item-row" },
     h("span", { class: "ico" }, "⬆️"),

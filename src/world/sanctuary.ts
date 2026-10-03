@@ -98,7 +98,9 @@ export function upgradeBlock(g: GameState, b: PlacedBuilding): string | null {
   const def = BUILDINGS[b.type];
   if (b.level >= def.maxLevel) return "Đã đạt cấp tối đa";
   if (b.type === "house") return "Nhà Chính thăng hạng riêng"; // it has its own requirements
-  if (def.rank + b.level > rankOf(g)) return `Cần khu định cư hạng ${RANK_NAMES[Math.min(6, def.rank + b.level)]}`;
+  // each level asks one rank more, but never more than the top rank (a capital can raise everything)
+  const need = Math.min(RANK_NAMES.length - 1, def.rank + b.level);
+  if (need > rankOf(g)) return `Cần khu định cư hạng ${RANK_NAMES[need]}`;
   return null;
 }
 
