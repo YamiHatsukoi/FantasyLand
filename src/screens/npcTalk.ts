@@ -1,9 +1,10 @@
 import { app } from "../app";
 import { sfx } from "../audio/sfx";
-import { getItem } from "../data/items";
+import { SEASON_NAMES, getItem, seasonOf } from "../data/items";
+import { howToGet, outOfSeason } from "../world/sources";
 import { JOBS, PERSONAS, REPLY_TOPICS } from "../data/npcText";
 import { spriteImg } from "../render/pixel";
-import { h, openModal, toast, type ModalHandle } from "../ui/dom";
+import { h, nn, openModal, toast, type ModalHandle } from "../ui/dom";
 import { giftPicker } from "../ui/giftPick";
 import { Dialogue, type DlgChoice } from "../ui/dialogue";
 import { lootChips } from "../ui/icon";
@@ -65,7 +66,10 @@ export function openNpc(npc: NpcDef, onClose?: () => void) {
           sys(`Nhận ${q.reward.gold} vàng và ${Object.entries(q.reward.items).map(([id, n]) => `${getItem(id).name} ×${n}`).join(", ")}. Thiện cảm +15`);
           toast("✅ Hoàn thành nhiệm vụ!", "good");
           app.checkpoint();
-        } else say(["Việc tôi nhờ tới đâu rồi?", "Đừng quên lời hứa nhé.", "Tôi vẫn đang chờ đây."][mem.talks % 3]);
+        } else {
+          say(["Việc tôi nhờ tới đâu rồi?", "Đừng quên lời hứa nhé.", "Tôi vẫn đang chờ đây."][mem.talks % 3]);
+          if (q.item) for (const line of whereHint(q.item)) sys(line);
+        }
         render();
       });
     } else if (affTier(mem.aff) >= 1 || mem.talks >= 3) {
@@ -74,13 +78,14 @@ export function openNpc(npc: NpcDef, onClose?: () => void) {
         you("Có việc gì tôi giúp được không?");
         say(questText(ctx, nq));
         const qm = openModal("📋 Lời nhờ vả");
-        qm.body.append(
+        qm.body.append(...nn(
           h("p", null, `Mục tiêu: ${questGoal(nq, npc)}`),
+          nq.item ? h("div", { class: "quest-where" }, whereHint(nq.item).map((l) => h("div", { class: "small" }, l))) : null,
           h("p", { class: "small" }, `Phần thưởng: 💰 ${nq.reward.gold}`),
           h("div", { class: "loot", style: "justify-content:flex-start" }, lootChips(nq.reward.items)),
           h("div", { class: "row end" },
             h("button", { class: "btn", onclick: () => { qm.close(); say("Không sao, lúc khác vậy."); memOf(g, npc.id).aff -= 1; render(); } }, "Từ chối"),
-            h("button", { class: "btn primary", onclick: () => { qm.close(); acceptQuest(g, npc); sys(`Đã nhận việc: ${questGoal(nq, npc)}`); render(); } }, "Nhận việc")));
+            h("button", { class: "btn primary", onclick: () => { qm.close(); acceptQuest(g, npc); sys(`Đã nhận việc: ${questGoal(nq, npc)}`); render(); } }, "Nhận việc"))));
       });
     }
     // recruit
@@ -110,6 +115,13 @@ export function openNpc(npc: NpcDef, onClose?: () => void) {
     add("👋 Tạm biệt", () => m.close());
     d.choices(list);
   };
+
+  /** Where the item a quest asks for can be had, and a warning when its seeds are out of season. */
+  function whereHint(item: string): string[] {
+    const lines = howToGet(item);
+    if (outOfSeason(item, seasonOf(g.day))) lines.unshift(`⚠️ Đang là mùa ${SEASON_NAMES[seasonOf(g.day)]}: tiệm chưa bán hạt này. Chờ tới mùa của nó (hạt mua sẵn thì trồng Nhà Kính được quanh năm)`);
+    return lines.length ? lines : ["❔ Chưa rõ kiếm ở đâu: hỏi thăm dân làng hoặc thám hiểm thêm"];
+  }
 
   function openGift() {
     const gm = openModal("🎁 Chọn quà", { wide: true });

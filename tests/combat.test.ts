@@ -354,3 +354,18 @@ describe("health going into and out of battle", () => {
     expect(Math.round(b.shareOf(u).hp * st.hp)).toBeCloseTo(st.hp / 2, -1);
   });
 });
+
+describe("numbers on screen", () => {
+  it("damage through a fractional shield stays a whole number", () => {
+    const a = unitFromCharacter(makeCharacter("hero", "H", "warrior", "hero", 5));
+    const e = unitFromEnemy("moss_slime", 1, 0);
+    const b = new Battle([a], [e], 7);
+    b.addStatus(a, "shield", 3, 1, 10.3333333, a);
+    b.drainEvents();
+    b.damage(a, 12.0000000001, "physical", {});
+    b.damage(a, 7.7, "physical", {});
+    const evs = b.drainEvents().filter((x) => x.t === "dmg") as { amount: number; absorbed?: number }[];
+    for (const ev of evs) { expect(Number.isInteger(ev.amount)).toBe(true); if (ev.absorbed) expect(Number.isInteger(ev.absorbed)).toBe(true); }
+    expect(Number.isInteger(a.hp)).toBe(true);
+  });
+});

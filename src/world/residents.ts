@@ -3,6 +3,7 @@
  * (derived from their id, so nothing but the relationship needs saving) and a Bond with the player
  * that grows through conversation, gifts, dates and milestone scenes.
  */
+import { howToGet } from "./sources";
 import { Rng, hashString } from "../core/rng";
 import { addItem, houseLevel, logMsg, removeItem, type Bond, type Character, type GameState } from "../core/state";
 import { SEASON_NAMES, getItem, seasonOf, type ItemDef, type ItemType } from "../data/items";
@@ -649,7 +650,7 @@ export function fulfilRequest(g: GameState, ch: Character): Line[] {
   const c = ctxOf(g, ch);
   const r = c.b.request;
   if (!r || r.done) return [];
-  if ((g.inventory[r.item] ?? 0) < r.n) return [{ who: "sys", text: `Cần ${r.n} ${getItem(r.item).name} (đang có ${g.inventory[r.item] ?? 0}).` }];
+  if ((g.inventory[r.item] ?? 0) < r.n) return [{ who: "sys", text: `Cần ${r.n} ${getItem(r.item).name} (đang có ${g.inventory[r.item] ?? 0}).` }, ...howToGet(r.item).map((text) => ({ who: "sys" as const, text }))];
   removeItem(g, r.item, r.n);
   r.done = true;
   addFp(c.b, 120);

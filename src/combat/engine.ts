@@ -874,10 +874,12 @@ export class Battle {
 
   damage(u: Unit, amount: number, el: Element, o: { crit?: boolean; dot?: boolean; noKill?: boolean }) {
     if (u.hp <= 0) return;
+    // whole numbers only: shields and status powers are fractions, and 1.00000000000001 is no number to show
+    amount = Math.max(0, Math.round(amount));
     let absorbed = 0;
     const sh = this.has(u, "shield");
     if (sh && !o.noKill) {
-      absorbed = Math.min(sh.power, amount);
+      absorbed = Math.min(Math.round(sh.power), amount);
       sh.power -= absorbed;
       amount -= absorbed;
       if (sh.power <= 0) this.removeStatus(u, "shield");

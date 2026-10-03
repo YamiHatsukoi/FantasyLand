@@ -341,3 +341,30 @@ describe("crafting stations", () => {
     for (const r of RECIPES) expect(r.level, `${r.id} @ ${r.station}`).toBeLessThanOrEqual(max[r.station] ?? 0);
   });
 });
+
+describe("dungeon layout", () => {
+  it("no scenery stands right next to the stairs or the portal (a tall brazier would hide them)", async () => {
+    const { sharedFloorSeed } = await import("../src/core/state");
+    for (let f = 1; f <= 100; f++) {
+      const m = generateFloor(getFloor(f), sharedFloorSeed(f));
+      for (const k of ["stairs", "portal"]) {
+        const s = m.entities.find((e) => e.kind === k)!;
+        const close = m.entities.filter((e) => e.kind === "deco" && Math.abs(e.x - s.x) <= 1 && Math.abs(e.y - s.y) <= 1);
+        expect(close, `floor ${f} ${k}`).toEqual([]);
+      }
+    }
+  });
+});
+
+describe("where things come from", () => {
+  it("a crop says which seed, where it is sold and in which season; a crafted good names its station", async () => {
+    const { howToGet, outOfSeason } = await import("../src/world/sources");
+    const shiitake = howToGet("forest_shiitake");
+    expect(shiitake.join("\n")).toContain("Bào Tử Nấm Hương");
+    expect(shiitake.join("\n")).toContain("Thu, Đông");
+    expect(shiitake.join("\n")).toContain("Nhà Kính");
+    expect(outOfSeason("forest_shiitake", 0)).toBe(true);
+    expect(outOfSeason("forest_shiitake", 2)).toBe(false);
+    expect(howToGet("brick").join("\n")).toContain("Xưởng Đá");
+  });
+});
