@@ -188,6 +188,18 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
     occupied.add(idx(e.x, e.y));
     return ent;
   };
+  /**
+   * Scenery, except right next to the stairs or the portal, where a tall brazier or banner would
+   * hide them. A skipped piece still takes its id and its tile, so the rest of the floor (and the
+   * ids old saves remember) stays exactly as it was.
+   */
+  const placeDeco = (x: number, y: number, sprite: string) => {
+    const hides = entities.some((e) => (e.kind === "stairs" || e.kind === "portal") && Math.abs(e.x - x) <= 1 && Math.abs(e.y - y) <= 1);
+    if (!hides) return place({ kind: "deco", x, y, sprite });
+    counter++;
+    occupied.add(idx(x, y));
+    return undefined;
+  };
   const near = (cx: number, cy: number, r: number, spacing = 2): { x: number; y: number } | null => {
     for (let tries = 0; tries < 300; tries++) {
       const rr = Math.min(r + Math.floor(tries / 20), 40);
@@ -214,7 +226,7 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
   // the lair: braziers, bones and a banner, watched over by a few strong groups
   for (const deco of ["brazier", "brazier", "bone_pile", "banner", "bone_pile"]) {
     const p = near(gpos.x, gpos.y, 2, 1);
-    if (p) place({ kind: "deco", x: p.x, y: p.y, sprite: deco });
+    if (p) placeDeco(p.x, p.y, deco);
   }
   const lairGuards = 2 + Math.min(3, Math.floor(def.n / 15)) + rng.int(0, 1);
   for (let i = 0; i < lairGuards; i++) {
@@ -319,7 +331,7 @@ export function generateFloor(def: FloorDef, seed: number): FloorMap {
     for (let k = 0; k < 12; k++) {
       const a = (k / 12) * Math.PI * 2;
       const x = Math.round(g0.x + Math.cos(a) * 4), y = Math.round(g0.y + Math.sin(a) * 3);
-      if (free(x, y, 0)) place({ kind: "deco", x, y, sprite: k % 3 === 0 ? "banner" : "brazier" });
+      if (free(x, y, 0)) placeDeco(x, y, k % 3 === 0 ? "banner" : "brazier");
     }
   }
 
