@@ -542,7 +542,11 @@ export interface SpellInput { id: string; role: Role; cost: Cost; el: Element; b
  * Hands out the spells: each of the 600 ordinary units gets one base spell of its role in one
  * of three variants (each pair used once), each boss one ultimate of its own.
  */
-export function assignSpells(units: SpellInput[], spellBase: (cost: Cost) => number): SpellDef[] {
+/**
+ * `starMult(cost)` gives the spell multiplier at ★1..★4 for a price, so descriptions can show
+ * every star's numbers like TFT ("120 / 180 / 290 / 480").
+ */
+export function assignSpells(units: SpellInput[], spellBase: (cost: Cost) => number, starMult: (cost: Cost) => number[] = () => [1]): SpellDef[] {
   const out: SpellDef[] = new Array(units.length);
   const physicalRole = (r: Role) => r === "tank" || r === "brute" || r === "assassin" || r === "marksman";
   // ------------------------------------------------ ordinary units
@@ -570,7 +574,7 @@ export function assignSpells(units: SpellInput[], spellBase: (cost: Cost) => num
       if (chosen) break;
     }
     if (!chosen) throw new Error(`no spell left for ${u.id}`);
-    out[i] = makeVariant(chosen.base, chosen.variant, u, physicalRole(u.role), spellBase(u.cost));
+    out[i] = makeVariant(chosen.base, chosen.variant, u, physicalRole(u.role), spellBase(u.cost), starMult(u.cost));
   }
   // ------------------------------------------------ bosses
   const left = new Set(ULTIMATES.map((x) => x[0]));
@@ -586,13 +590,13 @@ export function assignSpells(units: SpellInput[], spellBase: (cost: Cost) => num
     left.delete(ult[0]);
     const fx = scalePower(normalise(parseFx(ult[4]), 3), TUNE[ult[0]] ?? 1);
     const sp: SpellDef = { id: ult[0], name: ult[1], icon: ult[2], el: u.el, physical: physicalRole(u.role), fx, ult: true, base: ult[0], variant: 0, desc: "" };
-    sp.desc = describe(sp, spellBase(u.cost));
+    sp.desc = describe(sp, spellBase(u.cost), starMult(u.cost));
     out[i] = sp;
   }
   return out;
 }
 
-function makeVariant(b: Base, variant: number, u: SpellInput, physical: boolean, base: number): SpellDef {
+function makeVariant(b: Base, variant: number, u: SpellInput, physical: boolean, base: number, mults: number[]): SpellDef {
   const { passive, fx: src } = splitPassive(b[3]);
   // a passive goes off many times (or once): each time is worth a share of two casts
   const target = passive ? Math.min(3, (1.7 * 2.2) / triggerCount(passive)) : 1.7;
@@ -613,7 +617,7 @@ function makeVariant(b: Base, variant: number, u: SpellInput, physical: boolean,
     name = `${b[1]} ${w.label}`;
   }
   const sp: SpellDef = { id: `${b[0]}_${variant}`, name, icon: b[2], el: u.el, physical, fx, base: b[0], variant, desc: "", passive };
-  sp.desc = describe(sp, base);
+  sp.desc = describe(sp, base, mults);
   return sp;
 }
 
@@ -673,12 +677,13 @@ const fmt = (n: number) => String(Math.round(n));
 const secs = (n: number) => `${String(n).replace(".", ",")}s`;
 
 /** Spell text with the numbers at one star (100 AP); they grow with stars. */
-export function describe(sp: SpellDef, base: number): string {
+/** Spell text. Amounts are written "{a|b|c|d}" (one per star) when `mults` has several stars; see starValues(). */
+export function describe(sp: SpellDef, base: number, mults: number[] = [1]): string {
   const kind = sp.physical ? "sát thương vật lý" : "sát thương phép";
   const parts: string[] = [];
   for (const e of sp.fx) {
     const w = e.w ? whoText(e.w) : "";
-    const amt = e.p !== undefined ? fmt(base * e.p) : "";
+    const amt = e.p !== undefined ? (mults.length > 1 ? `{${mults.map((k) => fmt(base * e.p! * k)).join("|")}}` : fmt(base * e.p)) : "";
     const x = Number(e.o.x ?? 1);
     switch (e.k) {
       case "dmg": {
@@ -730,6 +735,13 @@ export function describe(sp: SpellDef, base: number): string {
   const head = sp.passive ? `Nội tại (không cần năng lượng) — ${TRIGGER_TEXT(sp.passive)}: ` : "";
   return head + parts.join(". ") + "." + (sp.ult ? " (Tối thượng)" : "");
 }
+
+/** Splits a description into text and per-star amounts ({a|b|c|d}) for display. */
+export function starValues(desc: string): (string | number[])[] {
+  return desc.split(/\{([^}]+)\}/).map((part, i) => (i % 2 ? part.split("|").map(Number) : part));
+}
+/** The description at one star (plain numbers). */
+export const descAt = (desc: string, star: number) => starValues(desc).map((x) => (typeof x === "string" ? x : String(x[Math.min(x.length, star) - 1]))).join("");
 
 /** Every debuff id the language knows (for the screen's names). */
 export const SPELL_DEBUFFS: Debuff[] = ["stun", "chill", "silence", "blind", "weaken", "shred", "mark", "burn", "poison", "bleed"];
