@@ -74,7 +74,8 @@ export interface Player {
   pool: Record<string, number>;
   augments: string[];
   augmentOffer: string[] | null;
-  augmentRerolled: boolean;
+  /** One reroll per offered augment: which of the three slots have been rerolled. */
+  augmentRerolled: boolean[];
   mods: TeamMods;
   income: number;
   freeRolls: number;
@@ -179,7 +180,7 @@ function newPlayer(m: MatchState, id: number, name: string, icon: string, cpu: b
   for (const d of deck) pool[d] = COPIES[arenaUnit(d)!.cost];
   return {
     id, name, icon, cpu, hp: MAX_HP, gold: 0, level: 1, xp: 0, streak: 0, units: [], items: [], shop: Array(SHOP).fill(null), locked: false,
-    deck: [...deck], pool, augments: [], augmentOffer: null, augmentRerolled: false, mods: {}, income: 0, freeRolls: 0, freeRollsLeft: 0,
+    deck: [...deck], pool, augments: [], augmentOffer: null, augmentRerolled: [], mods: {}, income: 0, freeRolls: 0, freeRollsLeft: 0,
     interestCap: 5, xpRound: 0, boardBonus: 0, place: 0, lastOpp: [],
     stats: { wins: 0, losses: 0, dealt: 0, taken: 0, rolls: 0, bought: 0, xpBought: 0, goldEarned: 0, bestStreak: 0, unitDamage: {}, roundsSurvived: 0 },
   };
@@ -191,6 +192,7 @@ export function newMatch(o: NewMatchOpts): MatchState {
     carousel: null, carouselOrder: [], fights: [], pve: null, loot: {}, log: [], rankStep: o.rankStep,
   };
   m.players.push(newPlayer(m, 0, o.name, o.icon ?? "🙂", false, o.deck));
+  m.players[0].items.push("magnet", "magnet", "magnet"); // 3 magnetic removers to start
   const names = shuffle(m, [...CPU_NAMES]);
   const maxFloor = cpuMaxFloor(o.rankStep);
   const skill = Math.min(1, 0.25 + tierOf(o.rankStep) / 40);
@@ -348,23 +350,32 @@ export function canEquip(p: Player, o: Owned, item: string): string | null {
   if (!it) return "Không có trang bị này.";
   if (o.items.includes("thief")) return "Găng Đạo Tặc chiếm cả 3 ô.";
   if (item === "thief" && o.items.length) return "Găng Đạo Tặc cần tướng chưa mang gì.";
-  const last = o.items[o.items.length - 1];
-  if (isComponent(item) && last && isComponent(last)) {
-    const made = combine(last, item);
-    if (made) return canEquip(p, { ...o, items: o.items.slice(0, -1) }, made);
-  }
+  // a component combines with any component the unit already carries (even with 3 items on)
+  const j = mergeSlot(o, item);
+  if (j >= 0) return canEquip(p, { ...o, items: o.items.filter((_, k) => k !== j) }, combine(o.items[j], item)!);
   if (o.items.length >= 3) return "Đã mang đủ 3 trang bị.";
   if (it.trait && (arenaUnit(o.unitId)!.traits.includes(it.trait) || o.items.some((i) => ITEMS[i]?.trait === it.trait))) return "Tướng đã có tộc hệ này.";
   return null;
 }
 
+/** Which carried component a new component would combine with (the first that makes a legal item), or -1. */
+function mergeSlot(o: Owned, item: string): number {
+  if (!isComponent(item)) return -1;
+  for (let k = 0; k < o.items.length; k++) {
+    const made = isComponent(o.items[k]) ? combine(o.items[k], item) : undefined;
+    if (!made) continue;
+    const rest = { ...o, items: o.items.filter((_, x) => x !== k) };
+    const t = ITEMS[made].trait;
+    if (t && (arenaUnit(o.unitId)!.traits.includes(t) || rest.items.some((i) => ITEMS[i]?.trait === t))) continue;
+    return k;
+  }
+  return -1;
+}
+
 function equip(p: Player, o: Owned, item: string): boolean {
   if (canEquip(p, o, item)) return false;
-  const last = o.items[o.items.length - 1];
-  if (isComponent(item) && last && isComponent(last)) {
-    const made = combine(last, item);
-    if (made) { o.items.pop(); o.items.push(made); return true; }
-  }
+  const j = mergeSlot(o, item);
+  if (j >= 0) { o.items[j] = combine(o.items[j], item)!; return true; }
   o.items.push(item);
   return true;
 }
@@ -374,6 +385,13 @@ export function giveItem(_m: MatchState, p: Player, index: number, uid: number):
   const item = p.items[index];
   const o = p.units.find((u) => u.uid === uid);
   if (!item || !o) return "Không hợp lệ.";
+  if (item === "magnet") {
+    if (!o.items.length) return "Tướng này không mang trang bị nào.";
+    p.items.splice(index, 1);
+    p.items.push(...o.items);
+    o.items = [];
+    return null;
+  }
   const why = canEquip(p, o, item);
   if (why) return why;
   equip(p, o, item);
@@ -423,13 +441,19 @@ function offerAugments(m: MatchState, p: Player) {
   const owned = new Set(p.augments);
   const pool = AUGMENTS.filter((a) => a.tier === m.augTier && !owned.has(a.id));
   p.augmentOffer = shuffle(m, [...pool]).slice(0, 3).map((a) => a.id);
-  p.augmentRerolled = false;
+  p.augmentRerolled = [false, false, false];
 }
 
-export function rerollAugments(m: MatchState, p: Player): string | null {
-  if (!p.augmentOffer || p.augmentRerolled) return "Đã hết lượt đổi Lõi.";
-  offerAugments(m, p);
-  p.augmentRerolled = true;
+/** Rerolls one of the three offered augments (once per slot); the other two stay. */
+export function rerollAugment(m: MatchState, p: Player, slot: number): string | null {
+  if (!p.augmentOffer || !p.augmentOffer[slot]) return "Không có Lõi để đổi.";
+  if (!Array.isArray(p.augmentRerolled)) p.augmentRerolled = [false, false, false]; // older saves
+  if (p.augmentRerolled[slot]) return "Lõi này đã đổi rồi.";
+  const taken = new Set([...p.augments, ...p.augmentOffer]);
+  const pool = AUGMENTS.filter((a) => a.tier === m.augTier && !taken.has(a.id));
+  if (!pool.length) return "Hết Lõi để đổi.";
+  p.augmentOffer[slot] = pick(m, pool).id;
+  p.augmentRerolled[slot] = true;
   return null;
 }
 
@@ -492,14 +516,15 @@ function startRound(m: MatchState) {
       const income = roundIncome(m, p);
       p.gold += income;
       p.stats.goldEarned += income;
-      if (m.stage >= 2) gainXp(p, 2 + p.xpRound);
-      else if (m.round === 2) gainXp(p, 2);
+      gainXp(p, 2 + p.xpRound); // 2 experience every round
     }
     p.freeRollsLeft = p.freeRolls + (p.bonusRolls ?? 0);
     p.bonusRolls = 0;
     if (!p.locked || p.shop.every((s) => !s)) rollShop(m, p);
     p.locked = false;
   }
+  // a new stage brings one more magnetic remover
+  if (m.round === 1 && m.stage >= 2) for (const p of alivePlayers(m)) if (!p.cpu) p.items.push("magnet");
   if (AUGMENT_ROUNDS.includes(label)) {
     m.augTier = pick(m, m.stage === 2 ? [1, 1, 2, 2, 3] : m.stage === 3 ? [1, 2, 2, 3] : [2, 2, 3, 3]) as AugTier;
     for (const p of alivePlayers(m)) offerAugments(m, p);
@@ -518,9 +543,7 @@ function startRound(m: MatchState) {
 }
 
 function roundIncome(m: MatchState, p: Player): number {
-  if (m.stage === 1) return m.round === 2 ? 2 : m.round === 3 ? 2 : 3;
-  const prevStage1End = m.stage === 2 && m.round === 1;
-  const base = prevStage1End ? 4 : 5;
+  const base = 5; // every round, before interest and streaks
   const interest = Math.min(p.interestCap, Math.floor(p.gold / 10));
   const s = Math.abs(p.streak);
   const streak = s >= 5 ? 3 : s === 4 ? 2 : s >= 2 ? 1 : 0;
@@ -767,29 +790,25 @@ function finishCarousel(m: MatchState) {
 }
 
 // ------------------------------------------------------------ monster rounds
+/**
+ * Monster rounds: a small pack of the same weak monster (like TFT's minions, krugs and wolves),
+ * a little bigger each stage; from stage 5 a single big beast.
+ */
 function pveTeam(m: MatchState): TeamSetup {
   const us = arenaUnits();
   const of = (cost: number) => us.filter((u) => u.cost === cost && u.floor <= Math.max(10, m.stage * 15));
-  const comp: [number, Star][] =
-    m.stage === 1 ? (m.round === 2 ? [[1, 1], [1, 1]] : m.round === 3 ? [[1, 1], [1, 1], [1, 1]] : [[1, 1], [1, 1], [2, 1], [1, 1]])
-    : m.stage === 2 ? [[2, 2], [2, 2], [1, 2], [1, 2], [3, 1]]
-    : m.stage === 3 ? [[5, 1], [2, 2], [2, 2], [3, 2], [3, 1], [1, 2]]
-    : m.stage === 4 ? [[5, 2], [3, 2], [3, 2], [4, 1], [4, 1], [2, 2], [2, 2]]
-    : [[5, 3], [4, 2], [4, 2], [4, 2], [3, 2], [3, 2], [5, 2], [3, 2]];
-  const units: PlacedUnit[] = [];
-  const taken = new Set<string>();
-  for (const [cost, star] of comp) {
-    const u = pick(m, of(cost));
-    const ranged = u.stats.range > 1;
-    let spot = { x: 3, y: ranged ? 7 : 4 };
-    for (const y of ranged ? [7, 6, 5, 4] : [4, 5, 6, 7]) {
-      const xs = [3, 2, 4, 1, 5, 0, 6].filter((x) => !taken.has(`${x},${y}`));
-      if (xs.length) { spot = { x: xs[0], y }; break; }
-    }
-    taken.add(`${spot.x},${spot.y}`);
-    units.push({ unitId: u.id, star, ...spot, items: [] });
-  }
-  return { units };
+  const [cost, star, n, weaken]: [number, Star, number, number] =
+    m.stage === 1 ? [1, 1, m.round === 2 ? 2 : m.round === 3 ? 3 : 4, 0.45]
+    : m.stage === 2 ? [2, 1, 4, 0.3]
+    : m.stage === 3 ? [3, 1, 4, 0.2]
+    : m.stage === 4 ? [4, 1, 3, 0.15]
+    : [5, 2, 1, 0];
+  const u = pick(m, of(cost));
+  const ranged = u.stats.range > 1;
+  const rowsOrder = ranged ? [7, 6] : [4, 5];
+  const xs = [3, 2, 4, 1, 5];
+  const units: PlacedUnit[] = Array.from({ length: n }, (_, i) => ({ unitId: u.id, star, x: xs[i % xs.length], y: rowsOrder[Math.floor(i / xs.length)], items: [] }));
+  return { units, mods: weaken ? { hp: -weaken, ad: -weaken, ap: -weaken * 100 } : undefined };
 }
 
 function pveLoot(m: MatchState, won: boolean): Loot {
@@ -930,6 +949,7 @@ function cpuItems(m: MatchState, p: Player) {
   const carriers = [...p.units].sort((a, b) => unitPower(b) - unitPower(a));
   for (let i = p.items.length - 1; i >= 0; i--) {
     const it = p.items[i];
+    if (it === "magnet") continue; // CPUs keep their items on
     if (isComponent(it) && p.items.filter(isComponent).length >= 2 && m.stage < 4) continue; // wait for a pair
     const defensive = ["vest", "cloak", "belt"].some((c) => ITEMS[it].parts?.includes(c)) && !["sword", "bow", "rod", "glove"].some((c) => ITEMS[it].parts?.includes(c));
     const order = defensive

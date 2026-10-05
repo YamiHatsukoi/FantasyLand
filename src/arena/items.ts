@@ -16,6 +16,7 @@ export type ItemFx =
   | "dragonclaw" | "zz" | "crownguard"
   | "warmog" | "redbuff"
   | "thief"
+  | "magnet"
   | "emblem" | "crown";
 
 export interface ItemStats { ad?: number; as?: number; ap?: number; mana?: number; armor?: number; mr?: number; hp?: number; crit?: number; dodge?: number; dmg?: number }
@@ -112,6 +113,8 @@ for (const t of Object.values(TRAITS)) {
     desc: `Người mang được tính thêm tộc hệ ${t.name}.`,
   };
 }
+/** Magnetic remover: dropped on a unit, it takes all of that unit's items back to the bench. */
+ITEMS.magnet = { id: "magnet", name: "Nam Châm Tháo Đồ", icon: "🧲", stats: {}, fx: "magnet", desc: "Kéo thả vào tướng để tháo hết trang bị của tướng đó về hàng đồ. Dùng 1 lần." };
 ITEMS.crown = { id: "crown", name: "Vương Miện Chiến Thuật", icon: "👑", stats: {}, parts: ["seal", "seal"], fx: "crown", desc: "+1 tướng được ra sân." };
 
 /** The finished item two components make, if any. */
@@ -125,5 +128,5 @@ export function combine(a: string, b: string): string | undefined {
 }
 
 export const isComponent = (id: string) => !!ITEMS[id]?.component;
-export const FINISHED = () => Object.values(ITEMS).filter((i) => !i.component && i.fx !== "emblem" && i.fx !== "crown");
+export const FINISHED = () => Object.values(ITEMS).filter((i) => !i.component && i.fx !== "emblem" && i.fx !== "crown" && i.fx !== "magnet");
 export const EMBLEMS = () => Object.values(ITEMS).filter((i) => i.fx === "emblem");

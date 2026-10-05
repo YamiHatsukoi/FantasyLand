@@ -187,6 +187,39 @@ export class ArenaView {
     return null;
   }
 
+  /** A unit just starred up: a pillar of light, a burst of stars and a big "★2!" (like a level up). */
+  starUp(uid: number, star: number) {
+    const u = this.plan.mine.find((x) => x.uid === uid);
+    if (!u) return;
+    const p = u.bench < 0 ? this.hexCenter(u.x, u.y) : this.benchCenter(u.bench);
+    const k = this.s / 22;
+    const col = STAR_COL[star] || "#ffd84a";
+    for (let i = 0; i < 26; i++) this.parts.push({ x: p.x + (Math.random() - 0.5) * this.s * 0.7, y: p.y + this.s * 0.3, vx: 0, vy: -this.s * (4 + Math.random() * 4), life: 0.9 + Math.random() * 0.4, max: 1.3, size: (2.5 + Math.random() * 2) * k, col: i % 3 ? col : "#ffffff", grav: 0, kind: "glow" });
+    for (let i = 0; i < 14; i++) { const a = (i / 14) * Math.PI * 2; this.parts.push({ x: p.x, y: p.y - this.s * 0.4, vx: Math.cos(a) * this.s * 3, vy: Math.sin(a) * this.s * 2.2, life: 0.9, max: 0.9, size: 3.2 * k, col, grav: this.s * 2, kind: "star" }); }
+    this.parts.push({ x: p.x, y: p.y, vx: 0, vy: 0, life: 0.7, max: 0.7, size: this.hw * 1.4, col, grav: 0, kind: "ring" });
+    this.parts.push({ x: p.x, y: p.y - this.s * 0.4, vx: 0, vy: 0, life: 0.8, max: 0.8, size: this.s * 1.6, col, grav: 0, kind: "glow" });
+    this.texts.push({ x: p.x, y: p.y - this.s * 1.3, text: `${"★".repeat(star)}!`, col, size: 20 * k, t: 0, max: 1.6, vy: -this.s * 0.8, stroke: "#2a1a00" });
+    this.shake = Math.max(this.shake, 0.18);
+  }
+
+  /** The fighter under a point during a fight (either side). */
+  fighterAt(px: number, py: number): Fighter | null {
+    if (!this.battle) return null;
+    let best: Fighter | null = null, bd = (this.s * 0.95) ** 2;
+    for (const f of this.battle.fighters) {
+      if (!f.alive) continue;
+      const p = this.fighterPt(f);
+      const d = (p.x - px) ** 2 + (p.y - this.s * 0.25 - py) ** 2;
+      if (d < bd) { bd = d; best = f; }
+    }
+    return best;
+  }
+  /** A monster shown on the far side before a monster round. */
+  enemyAt(px: number, py: number): PlacedUnit | null {
+    const h = this.hexAt(px, py);
+    return h ? this.plan.enemy.find((e) => e.x === h.x && e.y === h.y) ?? null : null;
+  }
+
   private fighterPt(f: Fighter): Pt {
     const to = this.hexCenter(f.x, f.y);
     if (!f.moveFrom) return to;

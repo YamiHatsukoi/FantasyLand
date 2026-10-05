@@ -55,8 +55,15 @@ describe("arena match", () => {
     M.pickCarousel(m, m.carousel!.findIndex((c) => c.takenBy === null));
     expect(M.roundLabel(m)).toBe("1-2");
     expect(M.human(m).units.length).toBe(1);
-    expect(M.human(m).items.length).toBe(1);
-    expect(M.human(m).gold).toBe(2);
+    expect(M.human(m).items.filter((i) => i !== "magnet").length).toBe(1);
+    expect(M.human(m).items.filter((i) => i === "magnet").length).toBe(3); // 3 magnetic removers to start
+    // every round: 5 gold before interest, and 2 experience
+    expect(M.human(m).gold).toBe(5);
+    expect(M.human(m).level).toBe(2);
+    // monster rounds are a small pack of one weak monster
+    expect(M.currentKind(m)).toBe("pve");
+    expect(new Set(m.pve!.units.map((u) => u.unitId)).size).toBe(1);
+    expect(m.pve!.mods?.hp).toBeLessThan(0);
   });
 
   it("shop, stars up to ★4, bench full, items", () => {
@@ -105,6 +112,44 @@ describe("arena match", () => {
     expect(p.units.length).toBe(1);
     expect(p.units[0].bonus).toEqual({ ap: 8 });
     expect(M.placed({ ...p, units: [{ ...p.units[0], bench: -1, x: 3, y: 4 }] })[0].bonus).toEqual({ ap: 8 });
+  });
+  it("magnetic removers: 3 to start, 1 more each stage, and they take all items off a unit", () => {
+    const m = M.newMatch({ deck: deck(), name: "Tôi", rankStep: 0, seed: 31 });
+    const p = M.human(m);
+    const magnets = () => p.items.filter((i) => i === "magnet").length;
+    expect(magnets()).toBe(3);
+    p.units = [];
+    p.gold = 50;
+    p.shop[0] = p.deck[0];
+    M.buy(m, p, 0);
+    const u = p.units[0];
+    u.items = ["deathblade", "sword"];
+    expect(M.giveItem(m, p, p.items.indexOf("magnet"), u.uid)).toBeNull();
+    expect(u.items).toEqual([]);
+    expect(p.items).toContain("deathblade");
+    expect(magnets()).toBe(2);
+    expect(M.giveItem(m, p, p.items.indexOf("magnet"), u.uid)).not.toBeNull(); // nothing to take off
+    // play on to stage 2: one more magnet
+    for (let g = 0; g < 60 && !(m.stage === 2 && m.round === 1) && m.phase !== "end"; g++) {
+      if (m.phase === "carousel") M.pickCarousel(m, m.carousel!.findIndex((c) => c.takenBy === null));
+      else if (m.phase === "plan" || m.phase === "augment") { M.ready(m); }
+      else if (m.phase === "combat") M.resolveCombat(m);
+      else M.nextRound(m);
+    }
+    expect(magnets()).toBe(3);
+  });
+  it("a component combines with any component the unit carries, even with three items", () => {
+    const m = M.newMatch({ deck: deck(), name: "Tôi", rankStep: 0, seed: 32 });
+    const p = M.human(m);
+    p.units = [];
+    p.gold = 50;
+    p.shop[0] = p.deck[0];
+    M.buy(m, p, 0);
+    const u = p.units[0];
+    u.items = ["sword", "deathblade", "warmog"];
+    p.items = ["bow"];
+    expect(M.giveItem(m, p, 0, u.uid)).toBeNull();
+    expect(u.items).toEqual(["giantslayer", "deathblade", "warmog"]);
   });
   it("board size follows the level; moving and levelling", () => {
     const m = M.newMatch({ deck: deck(), name: "Tôi", rankStep: 0, seed: 11 });

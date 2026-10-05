@@ -113,7 +113,7 @@ function all() {
     const boss = f.boss.map((id) => ENEMIES[id]).find((d) => d?.boss);
     if (boss) list.push(build(boss, n, 5, el));
   }
-  const spells = assignSpells(list.map((u) => ({ id: u.id, role: u.role, cost: u.cost, el: u.origin, boss: u.boss })), (c) => COST_SPELL[c]);
+  const spells = assignSpells(list.map((u) => ({ id: u.id, role: u.role, cost: u.cost, el: u.origin, boss: u.boss })), (c) => COST_SPELL[c], (c) => [1, 2, 3, 4].map((st) => STAR_SPELL[st] * starBoost(c, st)[2]));
   list.forEach((u, i) => { u.spell = spells[i]; });
   cache = { list, byId: Object.fromEntries(list.map((u) => [u.id, u])) };
   return cache;
