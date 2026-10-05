@@ -17,6 +17,9 @@ import type { Element } from "../combat/types";
 import { sfx } from "../audio/sfx";
 import { elColor } from "./combatFx";
 import { spriteCanvas } from "./pixel";
+import { T, tileSet } from "./tiles";
+import { BIOMES } from "../world/biomes";
+import { Rng, hashString } from "../core/rng";
 
 const SQ3 = Math.sqrt(3);
 export const STAR_COL = ["", "#d49a5a", "#d8e4f0", "#ffd84a", "#ff8af0"];
@@ -85,13 +88,13 @@ export class ArenaView {
     this.dpr = Math.min(2, window.devicePixelRatio || 1);
     const byW = (w - 8) / (7.5 * SQ3);
     // board 12.5 s tall + bench (≈ one hex) + gaps
-    const byH = (maxH - 12) / (12.5 + SQ3 * 1.25);
+    const byH = (maxH - 12) / (12.5 + 0.9 + SQ3 * 1.25);
     this.s = Math.max(12, Math.min(byW, byH, 46));
     this.hw = this.s * SQ3;
     const boardW = this.hw * 7.5;
     this.W = Math.round(w);
     this.ox = (this.W - boardW) / 2;
-    this.oy = 4;
+    this.oy = Math.round(this.s * 0.9); // room for the scenery behind the far row
     this.slot = Math.min(this.hw * 1.05, (this.W - 8) / 9);
     this.benchX = (this.W - this.slot * 9) / 2;
     this.benchY = this.oy + this.s * 12.5 + 6 + this.slot / 2;
@@ -100,6 +103,57 @@ export class ArenaView {
     this.cv.height = Math.round(this.H * this.dpr);
     this.cv.style.width = `${this.W}px`;
     this.cv.style.height = `${this.H}px`;
+    this.bg = null;
+  }
+
+  // ------------------------------------------------------------ scenery from the dungeon floors
+  private biome = "forest";
+  private bg: HTMLCanvasElement | null = null;
+  /** Paints the arena in a dungeon biome's ground, paths and trees / rocks. */
+  setTheme(biomeId: string) {
+    if (biomeId === this.biome && this.bg) return;
+    this.biome = biomeId;
+    this.bg = null;
+  }
+  private buildBg(): HTMLCanvasElement {
+    const b = BIOMES[this.biome] ?? BIOMES.forest;
+    const set = tileSet(b);
+    const c = document.createElement("canvas");
+    c.width = Math.round(this.W * this.dpr);
+    c.height = Math.round(this.H * this.dpr);
+    const g = c.getContext("2d")!;
+    g.imageSmoothingEnabled = false;
+    g.scale(this.dpr, this.dpr);
+    const rng = new Rng(hashString(`arena:${b.id}`));
+    const k = Math.max(1.5, this.s / 10);
+    const tile = 16 * k;
+    const boardTop = this.oy - this.s * 0.2, boardBot = this.oy + this.s * 12.5;
+    const midY = this.oy + this.s + 1.5 * this.s * 3.5;
+    for (let y = -tile / 2; y < this.H; y += tile) for (let x = -tile / 3; x < this.W; x += tile) {
+      const cy = y + tile / 2;
+      let kind: number = rng.chance(0.12) ? T.DECOR : T.GROUND;
+      if (Math.abs(cy - midY) < tile * 0.55) kind = T.ALT; // a worn path between the two halves
+      if (cy > boardBot + 2) kind = T.PAVE; // the bench stands on paving
+      const v = set.tiles[kind] ?? set.tiles[T.GROUND];
+      g.drawImage(v[rng.int(0, v.length - 1)], x, y, tile + 0.5, tile + 0.5);
+    }
+    // trees / rocks of the floor along the far edge and down the sides
+    const tk = Math.max(1, this.s / 22);
+    const tw = 32 * tk, th = 48 * tk;
+    const spots: [number, number][] = [];
+    for (let x = -tw * 0.3; x < this.W + tw * 0.3; x += tw * 0.7) spots.push([x + rng.range(-6, 6), boardTop + th * 0.15]);
+    if (this.ox > tw * 0.4) for (let y = boardTop + th * 0.6; y < boardBot; y += th * 0.55) { spots.push([this.ox - tw * 0.55, y]); spots.push([this.W - this.ox + tw * 0.55, y]); }
+    spots.sort((a, b) => a[1] - b[1]);
+    for (const [x, y] of spots) g.drawImage(set.tall[rng.int(0, set.tall.length - 1)], x - tw / 2, y - th, tw, th);
+    // keep the board readable: a darker wash and a vignette
+    g.fillStyle = "rgba(10,10,18,0.28)";
+    g.fillRect(0, 0, this.W, this.H);
+    const vg = g.createRadialGradient(this.W / 2, this.H / 2, Math.min(this.W, this.H) * 0.35, this.W / 2, this.H / 2, Math.max(this.W, this.H) * 0.75);
+    vg.addColorStop(0, "rgba(0,0,0,0)");
+    vg.addColorStop(1, "rgba(0,0,0,0.55)");
+    g.fillStyle = vg;
+    g.fillRect(0, 0, this.W, this.H);
+    return c;
   }
 
   // ------------------------------------------------------------ geometry
@@ -372,6 +426,7 @@ export class ArenaView {
   // ------------------------------------------------------------ frame
   frame(dt: number) {
     this.time += dt;
+    if (this.W < 10 || this.H < 10) return; // not laid out yet
     const g = this.g;
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     g.imageSmoothingEnabled = false;
@@ -406,21 +461,16 @@ export class ArenaView {
   private drawBoard() {
     const g = this.g;
     // arena floor
-    const top = this.oy - 2, bot = this.oy + this.s * 12.5 + 2;
-    const grd = g.createLinearGradient(0, top, 0, bot);
-    grd.addColorStop(0, "#2a1c26");
-    grd.addColorStop(0.5, "#1c1a24");
-    grd.addColorStop(1, "#172030");
-    g.fillStyle = grd;
-    g.fillRect(0, top, this.W, bot - top);
+    this.bg ??= this.buildBg();
+    g.drawImage(this.bg, 0, 0, this.W, this.H);
     const fighting = !!this.battle;
     for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
       const c = this.hexCenter(x, y);
       this.hexPath(c, this.s * 0.94);
       const mine = y >= HALF;
-      g.fillStyle = mine ? ((x + y) & 1 ? "rgba(90,140,220,0.16)" : "rgba(90,140,220,0.11)") : ((x + y) & 1 ? "rgba(220,90,100,0.13)" : "rgba(220,90,100,0.08)");
+      g.fillStyle = mine ? ((x + y) & 1 ? "rgba(70,120,210,0.22)" : "rgba(70,120,210,0.15)") : ((x + y) & 1 ? "rgba(200,70,80,0.2)" : "rgba(200,70,80,0.13)");
       g.fill();
-      g.strokeStyle = mine && !fighting ? "rgba(160,200,255,0.22)" : "rgba(255,255,255,0.08)";
+      g.strokeStyle = mine && !fighting ? "rgba(190,220,255,0.38)" : "rgba(255,255,255,0.16)";
       g.lineWidth = 1;
       g.stroke();
     }
@@ -445,7 +495,7 @@ export class ArenaView {
     for (let i = 0; i < 9; i++) {
       const c = this.benchCenter(i);
       const r = this.slot * 0.46;
-      g.fillStyle = this.dropBench === i ? "rgba(255,230,140,0.25)" : "rgba(255,255,255,0.05)";
+      g.fillStyle = this.dropBench === i ? "rgba(255,230,140,0.25)" : "rgba(0,0,0,0.28)";
       g.strokeStyle = this.dropBench === i ? "#ffe08a" : "rgba(255,255,255,0.12)";
       g.lineWidth = this.dropBench === i ? 2 : 1;
       roundRect(g, c.x - r, c.y - r, r * 2, r * 2, 6);

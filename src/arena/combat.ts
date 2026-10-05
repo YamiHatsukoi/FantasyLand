@@ -56,7 +56,8 @@ export interface Fighter {
   critV: number; ampT: number; ampV: number; vampT: number; vampV: number; dodgeT: number; dodgeV: number; mirrorV: number;
   dots: Dot[]; shields: Shield[];
   flags: Set<string>; stacks: number; revived: boolean;
-  dealt: number; taken: number; healed: number;
+  /** Fight stats: damage dealt and taken, damage stopped by own armor / resist / shields, healing and shields given, armor buffs given. */
+  dealt: number; taken: number; healed: number; blocked: number; shielded: number; guarded: number;
 }
 
 export type CombatEvent =
@@ -142,7 +143,7 @@ export class ArenaBattle {
       frenzy: 0, haste: 0, hasteV: 0, critUp: 0, rally: 0, rallyV: 0, guard: 0, guardV: 0,
       perm: {}, struck: 0,
       critV: 0, ampT: 0, ampV: 0, vampT: 0, vampV: 0, dodgeT: 0, dodgeV: 0, mirrorV: 0.6,
-      dots: [], shields: [], flags: new Set(), stacks: 0, revived: false, dealt: 0, taken: 0, healed: 0,
+      dots: [], shields: [], flags: new Set(), stacks: 0, revived: false, dealt: 0, taken: 0, healed: 0, blocked: 0, shielded: 0, guarded: 0,
     };
     f.ad = f.baseAd;
     // items: flat stats
@@ -213,7 +214,7 @@ export class ArenaBattle {
     if (f.fxs.has("quicksilver")) f.ccImmune = Math.max(f.ccImmune, 15);
     if (f.unit.cost === 5 && f.star >= 3) f.ccImmune = 999; // a 5-gold ★3 cannot be stopped
     if (f.fxs.has("crownguard")) this.addShield(f, f.maxHp * 0.3, 99, "crownguard");
-    if (f.fxs.has("locket")) for (const a of this.allies(f)) if (dist(a, f) <= 1) this.addShield(a, 300, 10);
+    if (f.fxs.has("locket")) for (const a of this.allies(f)) if (dist(a, f) <= 1) this.addShield(a, 300, 10, undefined, f);
     if (f.fxs.has("zz")) this.spawnDecoy(f);
     // assassins leap behind the enemy line
     if (f.traits.c_assassin && !f.summoned) {
@@ -419,6 +420,7 @@ export class ArenaBattle {
     if (src.fxs.has("titans")) dmg *= 1 + src.stacks * 0.02;
     if (src.flags.has("steraks")) dmg *= 1.35;
     if (o.spell && src.fxs.has("rabadon")) dmg *= 1.2;
+    const raw0 = dmg;
     if (kind !== "true") {
       let res = kind === "phys" ? tg.armor : tg.mr;
       res += (tg.guard > t ? tg.guardV : 0) + (tg.mirror > t ? 40 : 0) + (tg.fxs.has("titans") && tg.stacks >= 25 ? 25 : 0) + (tg.flags.has("protector") ? 20 : 0);
@@ -428,6 +430,7 @@ export class ArenaBattle {
     }
     dmg *= 1 - tg.reduce;
     dmg = Math.max(1, Math.round(dmg));
+    tg.blocked += Math.max(0, Math.round(raw0 - dmg)); // stopped by armor / resist
     // shields first
     let left = dmg;
     for (const s of tg.shields) {
@@ -436,6 +439,7 @@ export class ArenaBattle {
       s.amt -= use; left -= use;
       if (s.amt <= 0 && s.tag === "crownguard") tg.ap += 25;
     }
+    tg.blocked += dmg - left;
     tg.shields = tg.shields.filter((s) => s.amt > 0);
     tg.hp -= left;
     tg.taken += dmg;
@@ -495,8 +499,9 @@ export class ArenaBattle {
     if (got > 0) { by.healed += got; this.events.push({ t: "heal", uid: f.uid, amount: got }); }
   }
 
-  addShield(f: Fighter, amount: number, secs: number, tag?: string) {
+  addShield(f: Fighter, amount: number, secs: number, tag?: string, by: Fighter = f) {
     if (!f.alive || amount <= 0) return;
+    by.shielded += Math.round(amount);
     f.shields.push({ amt: Math.round(amount), until: this.time + secs, tag });
     this.events.push({ t: "shield", uid: f.uid, amount: Math.round(amount) });
   }
@@ -718,12 +723,12 @@ export class ArenaBattle {
       case "shield": {
         const { list, at } = this.pick(f, e.w!, cache);
         const amt = this.spellPower(f, e.p!).amt;
-        for (const a of list) { targets.add(a.uid); this.addShield(a, amt, e.dur!); }
+        for (const a of list) { targets.add(a.uid); this.addShield(a, amt, e.dur!, undefined, f); }
         return at;
       }
       case "buff": {
         const { list, at } = this.pick(f, e.w!, cache);
-        for (const a of list) { targets.add(a.uid); this.buff(a, e.id!, e.v!, e.dur ?? 4); }
+        for (const a of list) { targets.add(a.uid); this.buff(a, e.id!, e.v!, e.dur ?? 4, f); }
         return at;
       }
       case "stack": {
@@ -908,12 +913,12 @@ export class ArenaBattle {
   }
 
   /** A timed boost (ap and ad last the fight). */
-  private buff(a: Fighter, stat: string, v: number, dur: number) {
+  private buff(a: Fighter, stat: string, v: number, dur: number, by?: Fighter) {
     const t = this.time;
     switch (stat) {
       case "as": a.haste = t + dur; a.hasteV = v; break;
       case "amp": a.ampT = t + dur; a.ampV = Math.max(a.ampT > t ? a.ampV : 0, v); break;
-      case "armor": a.guard = t + dur; a.guardV = Math.max(a.guard > t ? a.guardV : 0, v); break;
+      case "armor": a.guard = t + dur; a.guardV = Math.max(a.guard > t ? a.guardV : 0, v); if (by) by.guarded += v; break;
       case "dodge": a.dodgeT = t + dur; a.dodgeV = v; break;
       case "crit": a.critUp = t + dur; a.critV = v; break;
       case "vamp": a.vampT = t + dur; a.vampV = v; break;
