@@ -67,3 +67,81 @@ describe("arena items, augments and ranks", () => {
     for (let t = 0; t < 40; t++) for (const id of Object.keys(tierReward(t).items)) expect(getItem(id).name, id).not.toBe("???");
   });
 });
+
+describe("arena spells", () => {
+  it("every unit's spell has its own name; bosses have ultimates no other unit has", () => {
+    const us = arenaUnits();
+    expect(new Set(us.map((u) => u.spell.name)).size).toBe(700);
+    const bosses = us.filter((u) => u.cost === 5);
+    expect(bosses.every((u) => u.spell.ult)).toBe(true);
+    expect(new Set(bosses.map((u) => `${u.spell.shape}|${u.spell.el}`)).size).toBe(100);
+    expect(new Set(bosses.map((u) => u.spell.shape)).size).toBe(20);
+    expect(us.filter((u) => u.cost < 5).every((u) => !u.spell.ult && u.spell.bonus !== "none")).toBe(true);
+    const sig = (u: (typeof us)[number]) => [u.spell.shape, u.spell.el, u.spell.debuff?.id, u.spell.bonus, u.spell.hits, u.spell.radius, u.spell.physical, u.spell.power].join("|");
+    expect(new Set(us.filter((u) => u.cost < 5).map(sig)).size).toBeGreaterThan(560);
+  });
+});
+
+describe("arena combat", async () => {
+  const { ArenaBattle } = await import("../src/arena/combat");
+  const { Rng } = await import("../src/core/rng");
+  const us = arenaUnits();
+  type P = import("../src/arena/combat").PlacedUnit;
+  const team = (cost: number, star: 1 | 2 | 3 | 4, n: number, r: InstanceType<typeof Rng>, items: string[] = []): P[] =>
+    Array.from({ length: n }, (_, i) => {
+      const u = r.pick(us.filter((x) => x.cost === cost));
+      return { unitId: u.id, star, x: i % 7, y: u.stats.range > 1 ? 7 : 4, items };
+    });
+  const rate = (a: [number, 1 | 2 | 3 | 4], b: [number, 1 | 2 | 3 | 4], runs = 60, n = 5) => {
+    const r = new Rng(7);
+    let w = 0;
+    for (let i = 0; i < runs; i++) if (new ArenaBattle({ units: team(a[0], a[1], n, r) }, { units: team(b[0], b[1], n, r) }, i).run() === 0) w++;
+    return w / runs;
+  };
+
+  it("the same seed plays out the same, and fights end in time", () => {
+    const r = new Rng(3);
+    const a = team(2, 1, 5, r), b = team(2, 1, 5, r);
+    const x = new ArenaBattle({ units: a }, { units: b }, 99), y = new ArenaBattle({ units: a }, { units: b }, 99);
+    expect(x.run()).toBe(y.run());
+    expect(x.time).toBe(y.time);
+    expect(x.events.length).toBe(y.events.length);
+    expect(x.time).toBeLessThanOrEqual(45.01);
+  });
+  it("stars and price matter", () => {
+    expect(rate([1, 2], [1, 1])).toBeGreaterThan(0.85);
+    expect(rate([2, 1], [1, 1])).toBeGreaterThan(0.65);
+    expect(rate([5, 1], [3, 1])).toBeGreaterThan(0.75);
+    expect(rate([5, 2], [5, 1])).toBeGreaterThan(0.75);
+    const even = rate([2, 1], [2, 1], 80);
+    expect(even).toBeGreaterThan(0.25);
+    expect(even).toBeLessThan(0.75);
+  });
+  it("items make a unit stronger", () => {
+    const r = new Rng(5);
+    let w = 0;
+    for (let i = 0; i < 60; i++) {
+      const a = team(2, 1, 4, r), b = a.map((p) => ({ ...p, items: [] }));
+      a.forEach((p) => (p.items = ["warmog", "bloodthirster"].map((id) => FINISHED().find((it) => it.fx === id)!.id)));
+      if (new ArenaBattle({ units: a }, { units: b }, i).run() === 0) w++;
+    }
+    expect(w / 60).toBeGreaterThan(0.8);
+  });
+  it("every boss ultimate and every item can be used in a fight without breaking", () => {
+    const bosses = us.filter((u) => u.boss);
+    const fin = FINISHED();
+    for (let i = 0; i < bosses.length; i++) {
+      const b = bosses[i];
+      const items = [fin[i % fin.length].id, fin[(i + 7) % fin.length].id, EMBLEMS()[i % EMBLEMS().length].id];
+      const bt = new ArenaBattle(
+        { units: [{ unitId: b.id, star: 2, x: 3, y: 5, items }, ...team(1, 1, 3, new Rng(i))] },
+        { units: team(2, 2, 5, new Rng(i + 100)) },
+        i,
+      );
+      bt.run();
+      expect(bt.winner).not.toBeNull();
+      for (const f of bt.fighters) expect(Number.isFinite(f.hp), `${b.id} ${f.unit.id}`).toBe(true);
+      expect(bt.events.some((e) => e.t === "cast" && e.spell.ult), b.id).toBe(true);
+    }
+  });
+});
