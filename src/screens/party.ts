@@ -1,7 +1,8 @@
 import { app } from "../app";
 import { describeSkill, skillCostText, passiveText } from "../combat/describe";
 import { openClassChange } from "./classChange";
-import { GEAR_KEYS, POINTS_PER_LEVEL, activePets, petLimit, POINT_CAP, POINT_VALUE, addItem, allocPoint, resetCost, resetPoints, classChangeCost, dismiss, charPassives, charStats, dualWielding, equipGear, fitsGear, isTwoHanded, syncLook, partySize, passiveSlots, removeItem, skillSlots, type Character } from "../core/state";
+import { GEAR_KEYS, POINTS_PER_LEVEL, activePets, petLimit, POINT_CAP, POINT_VALUE, addItem, allocPoint, resetCost, resetPoints, classChangeCost, dismiss, charPassives, charStats, partyBuffs, dualWielding, equipGear, fitsGear, isTwoHanded, syncLook, partySize, passiveSlots, removeItem, skillSlots, type Character } from "../core/state";
+import { battleStats } from "../combat/factory";
 import { TRAITS } from "../data/classTraits";
 import { CLASSES, COMPANIONS, xpForLevel } from "../data/classes";
 import { enhLevel, getItem, type GearKey, type ItemDef } from "../data/items";
@@ -40,7 +41,13 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
   const ids = [g.heroId, ...g.party.filter((id) => id !== g.heroId), ...Object.keys(g.chars).filter((id) => id !== g.heroId && !g.party.includes(id)).sort((a, b) => g.chars[b].level - g.chars[a].level)];
   const ch = g.chars[currentId] ?? g.chars[g.heroId];
   const cls = CLASSES[ch.classId];
-  const s = charStats(ch);
+  // what the character really has in a fight: passives, class gift, marks, meal and blessing included
+  const base = charStats(ch);
+  const s = battleStats(ch, partyBuffs(g));
+  const extra = (k: keyof typeof s) => s[k] - base[k];
+  // health and mana carry over as a share of the maximum (see Battle.enterAtSameShare)
+  const share = (cur: number, max: number, to: number) => (cur <= 0 ? 0 : Math.max(1, Math.round((cur / Math.max(1, max)) * to)));
+  const hpNow = share(ch.hp, base.hp, s.hp), mpNow = share(ch.mp, base.mp, s.mp);
   const rerender = () => { app.dirty(); select(ch.id); };
 
   const tabs = h("div", { class: "char-tabs" }, ids.map((id) => {
@@ -81,8 +88,8 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
         h("div", { class: "row", style: "flex-wrap:nowrap" }, h("button", { class: "icon-btn", title: "Ngoại hình", onclick: () => openAppearance(ch, rerender) }, "🎨"),
           ch.id === g.heroId ? h("button", { class: "icon-btn", title: inDungeon ? "Về Thánh Địa để chuyển nghề" : "Chuyển nghề", disabled: inDungeon, onclick: () => openClassChange(ch, rerender) }, "🔄") : null,
           rosterBtn, dismissBtn)),
-      bar(ch.hp, s.hp, "hp", `${ch.hp}/${s.hp}`),
-      bar(ch.mp, s.mp, "mp", `${ch.mp}/${s.mp}`),
+      bar(hpNow, s.hp, "hp", `${hpNow}/${s.hp}`),
+      bar(mpNow, s.mp, "mp", `${mpNow}/${s.mp}`),
       bar(ch.xp, xpForLevel(ch.level), "xp", `EXP ${ch.xp}/${xpForLevel(ch.level)}`),
     ),
   );
@@ -108,7 +115,7 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
 
   let body: (HTMLElement | null)[] = [];
   if (partyTab === "gear") {
-    const key = (k: keyof typeof s, label: string) => h("span", { class: "stat-chip" }, label, " ", h("b", null, String(s[k])));
+    const key = (k: keyof typeof s, label: string) => h("span", { class: "stat-chip", title: extra(k) ? `Gốc ${base[k]}, +${extra(k)} từ nội tại, năng lực class và hiệu ứng cả đội` : "" }, label, " ", h("b", null, String(s[k])));
     const summary = h("div", { class: "row", style: "gap:6px;margin-bottom:8px" }, key("atk", "⚔️"), key("mag", "🔮"), key("def", "🛡️"), key("res", "✨"), key("spd", "💨"));
     const gear = h("div", { class: "gear-tiles" }, GEAR_KEYS.map((key) => {
       const id = ch.gear[key];
@@ -132,6 +139,7 @@ function renderParty(m: ModalHandle, currentId: string, inDungeon: boolean, sele
       return h("div", { class: "stat", title: tip }, STAT_NAMES[k],
         h("span", { class: "row", style: "gap:6px;flex-wrap:nowrap" },
           spent ? h("span", { class: "small good" }, `+${Math.floor(spent * POINT_VALUE[k])}`) : null,
+          extra(k) ? h("span", { class: "small bonus", title: "Từ nội tại, năng lực class, Dấu Ấn tầng mốc, món ăn và chúc phúc" }, `✦${extra(k) > 0 ? "+" : ""}${extra(k)}`) : null,
           h("b", null, k === "crit" ? `${s[k]} (${pctLabel(critChance(s[k]))})` : k === "eva" ? `${s[k]} (${pctLabel(dodgeChance(s[k]))})` : String(s[k])),
           isHero && pts > 0 ? h("button", { class: "btn small primary pt-btn", disabled: capped, title: POINT_VALUE[k] < 1 ? `2 điểm = +1 (tối đa ${POINT_CAP[k]} điểm)` : `1 điểm = +${POINT_VALUE[k]}`, onclick: () => { if (allocPoint(ch, k)) { clampVitals(ch); rerender(); } } }, "+") : null));
     }));
@@ -298,7 +306,7 @@ function pickGear(ch: Character, key: GearKey, done: () => void) {
 }
 
 function clampVitals(ch: Character) {
-  const s = charStats(ch);
+  const s = charStats(ch); // vitals are kept against map stats; battle bonuses scale them on entry
   ch.hp = Math.min(ch.hp, s.hp);
   ch.mp = Math.min(ch.mp, s.mp);
 }

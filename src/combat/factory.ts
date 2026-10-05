@@ -1,4 +1,5 @@
 import { charPassives, charStats, dualWielding, type Character } from "../core/state";
+import { getPassive } from "../data/passives";
 import type { Element, StatMods } from "./types";
 import { hashString } from "../core/rng";
 import { ENEMIES, type EnemyDef } from "../data/enemies";
@@ -113,4 +114,27 @@ export function unitFromEnemy(id: string, level: number, index: number): Unit {
     enemyId: id,
     ai: def.ai ?? (def.boss ? "smart" : "random"),
   };
+}
+
+/**
+ * A character's stats as they stand in battle, before statuses: map stats, then party-wide
+ * buffs (milestone marks, meal, blessing), then always-on passives (learnt, from gear, bonds and
+ * the class gift). Same arithmetic as Battle.stat: crit and evasion add, the rest multiply.
+ */
+export function battleStats(ch: Character, buffs: StatMods = {}): Stats {
+  const base = unitFromCharacter(ch, buffs).base;
+  const pct: Partial<Record<keyof Stats, number>> = {}, add: Partial<Record<keyof Stats, number>> = {};
+  for (const id of charPassives(ch)) {
+    for (const hk of getPassive(id).hooks) {
+      if (hk.on !== "stat") continue;
+      for (const [k, v] of Object.entries(hk.mods) as [keyof Stats, number][]) {
+        if (k === "crit" || k === "eva") add[k] = (add[k] ?? 0) + v; else pct[k] = (pct[k] ?? 0) + v;
+      }
+    }
+  }
+  const out = { ...base };
+  for (const k of Object.keys(out) as (keyof Stats)[]) {
+    out[k] = k === "crit" || k === "eva" ? Math.max(0, base[k] + (add[k] ?? 0)) : Math.max(1, Math.round(base[k] * (1 + (pct[k] ?? 0))));
+  }
+  return out;
 }

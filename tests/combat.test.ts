@@ -369,3 +369,22 @@ describe("numbers on screen", () => {
     expect(Number.isInteger(a.hp)).toBe(true);
   });
 });
+
+describe("party screen stats", () => {
+  it("match what the battle engine uses (passives, class gift and party buffs included)", async () => {
+    const { battleStats } = await import("../src/combat/factory");
+    const { CLASSES } = await import("../src/data/classes");
+    const buffs = { atk: 0.05, hp: 0.1, crit: 2 };
+    for (const cls of Object.keys(CLASSES)) {
+      const ch = makeCharacter("hero", "H", cls, "hero", 20);
+      ch.equippedPassives = ["p_vigor", "p_keen"];
+      const u = unitFromCharacter(ch, buffs);
+      const b = new Battle([u], [unitFromEnemy("moss_slime", 1, 0)], 3);
+      u.statuses = []; // battle-start statuses (a bard's cheer...) are temporary, not shown on the party screen
+      const shown = battleStats(ch, buffs);
+      for (const k of ["hp", "mp", "atk", "mag", "def", "res", "spd", "crit", "eva"] as const) {
+        expect(shown[k], `${cls} ${k}`).toBe(k === "crit" || k === "eva" ? b.stat(u, k) : Math.round(b.stat(u, k)));
+      }
+    }
+  });
+});
