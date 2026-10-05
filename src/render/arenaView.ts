@@ -29,7 +29,7 @@ interface Particle { x: number; y: number; vx: number; vy: number; life: number;
 interface Shot { a: Pt; b: Pt; t: number; dur: number; col: string; el: Element; big: boolean; arc: number; to?: number }
 interface FloatText { x: number; y: number; text: string; col: string; size: number; t: number; max: number; vy: number; stroke?: string }
 interface Banner { uid: number; text: string; col: string; t: number; max: number; ult: boolean }
-interface Bolt { pts: Pt[]; t: number; max: number; col: string }
+interface Bolt { pts: Pt[]; t: number; max: number; col: string; wide?: boolean }
 interface Fall { at: Pt; t: number; dur: number; col: string; r: number; el: Element }
 
 export class ArenaView {
@@ -231,25 +231,6 @@ export class ArenaView {
         this.parts.push({ x: p.x, y: p.y - this.s * 0.4, vx: 0, vy: 0, life: 0.5, max: 0.5, size: this.s * 1.4, col, grav: 0, kind: "glow" });
         if (sp.ult) { this.screenFlash = { col, t: 0.35 }; this.shake = Math.max(this.shake, 0.3); sfx("charge"); }
         sfx("cast", sp.el);
-        const areaShapes = ["nova", "quake", "blackhole", "prison", "miasma", "blizzard", "cataclysm", "aegis", "shield", "rally", "heal", "timestop"];
-        if (e.at && areaShapes.includes(sp.shape)) {
-          const c = this.hexCenter(e.at.x, e.at.y);
-          const r = (sp.shape === "cataclysm" || sp.shape === "timestop" || sp.shape === "blizzard" ? 4 : Math.max(1, sp.radius)) * this.hw;
-          this.parts.push({ x: c.x, y: c.y, vx: 0, vy: 0, life: 0.55, max: 0.55, size: r, col, grav: 0, kind: "ring" });
-          this.parts.push({ x: c.x, y: c.y, vx: 0, vy: 0, life: 0.45, max: 0.45, size: r * 0.9, col, grav: 0, kind: "glow" });
-          this.burst(c, col, sp.ult ? 26 : 14, r / this.s);
-        }
-        for (const uid of e.targets) {
-          const t = this.byUid(b, uid);
-          if (!t) continue;
-          const q = this.fighterPt(t);
-          if (sp.shape === "line" || sp.shape === "bolt" || sp.shape === "strike" || sp.shape === "devour" || sp.shape === "manaburn" || sp.shape === "drainall") {
-            if (sp.shape === "bolt" || sp.shape === "line") this.shots.push({ a: { x: p.x, y: p.y - this.s * 0.5 }, b: { x: q.x, y: q.y - this.s * 0.5 }, t: 0, dur: 0.18, col, el: sp.el, big: true, arc: 0 });
-            this.burst(q, col, 8, 1);
-          } else if (["heal", "shield", "aegis", "rally", "revive"].includes(sp.shape)) {
-            for (let i = 0; i < 5; i++) this.parts.push({ x: q.x + (Math.random() - 0.5) * this.s, y: q.y, vx: 0, vy: -this.s * (1.2 + Math.random()), life: 0.8, max: 0.8, size: 2.4 * k, col, grav: 0, kind: "star" });
-          } else this.burst(q, col, 6, 0.8);
-        }
         break;
       }
       case "vfx": {
@@ -277,6 +258,26 @@ export class ArenaView {
             this.parts.push({ x: x - this.s * 0.6, y: y - this.s * 3, vx: this.s * 1.6, vy: this.s * 8, life: 0.35 + Math.random() * 0.25, max: 0.6, size: 6 * k, col, grav: 0, kind: "arrow" });
           }
           sfx("bow");
+        } else if (e.kind === "ring") {
+          const r = Math.max(1, e.radius) * this.hw;
+          this.parts.push({ x: at.x, y: at.y, vx: 0, vy: 0, life: 0.55, max: 0.55, size: r, col, grav: 0, kind: "ring" });
+          this.parts.push({ x: at.x, y: at.y, vx: 0, vy: 0, life: 0.4, max: 0.4, size: r * 0.85, col, grav: 0, kind: "glow" });
+          this.burst(at, col, Math.min(22, 8 + e.radius * 4), Math.max(1, e.radius) * 0.9);
+        } else if (e.kind === "beam" && from) {
+          const a = { x: from.x, y: from.y - this.s * 0.5 }, dx = at.x - from.x, dy = at.y - from.y, n = Math.hypot(dx, dy) || 1;
+          const end = { x: from.x + (dx / n) * this.hw * 7, y: from.y - this.s * 0.5 + (dy / n) * this.hw * 7 };
+          this.bolts.push({ pts: [a, end], t: 0, max: 0.35, col, wide: true });
+          for (let i = 0; i < 10; i++) { const k = i / 10; this.parts.push({ x: a.x + (end.x - a.x) * k, y: a.y + (end.y - a.y) * k, vx: 0, vy: -this.s * 0.5, life: 0.4, max: 0.4, size: 2.5 * (this.s / 22), col, grav: 0, kind: "glow" }); }
+        } else if (e.kind === "slash") {
+          const ang = from ? Math.atan2(at.y - from.y, at.x - from.x) : 0;
+          this.slash(at, ang + 0.6, col);
+          this.slash(at, ang - 0.6, "#ffffff");
+        } else if (e.kind === "pillar") {
+          for (let i = 0; i < 6; i++) this.parts.push({ x: at.x + (Math.random() - 0.5) * this.s * 0.7, y: at.y, vx: 0, vy: -this.s * (1.5 + Math.random() * 1.5), life: 0.7, max: 0.7, size: 2.4 * (this.s / 22), col, grav: 0, kind: "star" });
+        } else if (e.kind === "zone") {
+          const r = Math.max(1, Math.min(4, e.radius)) * this.hw;
+          this.parts.push({ x: at.x, y: at.y, vx: 0, vy: 0, life: 1, max: 1, size: r, col, grav: 0, kind: "ring" });
+          for (let i = 0; i < 4; i++) { const a = Math.random() * Math.PI * 2, rr = Math.random() * r; this.parts.push({ x: at.x + Math.cos(a) * rr, y: at.y + Math.sin(a) * rr * 0.62, vx: 0, vy: -this.s * 0.6, life: 0.8, max: 0.8, size: 3 * (this.s / 22), col, grav: 0, kind: "glow" }); }
         } else if (e.kind === "swap" && from) {
           this.burst(from, col, 12, 1);
           this.burst(at, col, 12, 1);
@@ -678,8 +679,8 @@ export class ArenaView {
     for (const b of this.bolts) {
       b.t += dt;
       const a = 1 - b.t / b.max;
-      g.strokeStyle = hexA(b.col, a);
-      g.lineWidth = 3 * (this.s / 22);
+      g.strokeStyle = hexA(b.col, a * (b.wide ? 0.7 : 1));
+      g.lineWidth = (b.wide ? 9 * a + 2 : 3) * (this.s / 22);
       g.beginPath();
       b.pts.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)));
       g.stroke();

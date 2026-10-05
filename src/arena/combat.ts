@@ -10,6 +10,7 @@ import type { Element } from "../combat/types";
 import { COLS, HALF, ROWS, around, dist, inBoard, key, mirror, neighbors, stepToward, type Hex } from "./hex";
 import { ITEMS, type ItemFx } from "./items";
 import { TRAITS, traitTier } from "./traits";
+import { parseWho, type Fx } from "./spells";
 import type { ArenaUnit, Debuff, SpellDef, Star } from "./types";
 import { STAR_MULT, STAR_SPELL, arenaUnit, arenaUnits, spellBase, starBoost } from "./units";
 
@@ -28,7 +29,7 @@ export interface TeamSetup { units: PlacedUnit[]; mods?: TeamMods }
 
 interface Dot { kind: "burn" | "poison" | "bleed"; dps: number; until: number; src: number }
 interface Shield { amt: number; until: number; tag?: string }
-interface Zone { side: 0 | 1; at: Hex; radius: number; dps: number; until: number; next: number; src: number; el: Element; physical: boolean; slow?: number }
+interface Zone { side: 0 | 1; at: Hex; radius: number; dps: number; until: number; src: number; el: Element; physical: boolean; slow?: number; heal?: boolean }
 
 export interface Fighter {
   uid: number;
@@ -50,6 +51,7 @@ export interface Fighter {
   stun: number; chill: number; chillV: number; shred: number; weaken: number; blind: number; silence: number; mark: number; griev: number;
   ccImmune: number; taunt: number; stealth: number; mirror: number; frenzy: number; haste: number; hasteV: number; critUp: number; rally: number; rallyV: number;
   guard: number; guardV: number;
+  critV: number; ampT: number; ampV: number; vampT: number; vampV: number; dodgeT: number; dodgeV: number; mirrorV: number;
   dots: Dot[]; shields: Shield[];
   flags: Set<string>; stacks: number; revived: boolean;
   dealt: number; taken: number; healed: number;
@@ -131,6 +133,7 @@ export class ArenaBattle {
       traits: {}, target: null, atkTimer: 0.2 + this.rng.next() * 0.3, castLock: 0, attacks: 0, alive: true, summoned, decoy: false,
       stun: 0, chill: 0, chillV: 0, shred: 0, weaken: 0, blind: 0, silence: 0, mark: 0, griev: 0, ccImmune: 0, taunt: 0, stealth: 0, mirror: 0,
       frenzy: 0, haste: 0, hasteV: 0, critUp: 0, rally: 0, rallyV: 0, guard: 0, guardV: 0,
+      critV: 0, ampT: 0, ampV: 0, vampT: 0, vampV: 0, dodgeT: 0, dodgeV: 0, mirrorV: 0.6,
       dots: [], shields: [], flags: new Set(), stacks: 0, revived: false, dealt: 0, taken: 0, healed: 0,
     };
     f.ad = f.baseAd;
@@ -237,7 +240,7 @@ export class ArenaBattle {
   byUid(uid: number | null) { return uid === null ? undefined : this.fighters.find((f) => f.uid === uid); }
 
   private effAs(f: Fighter) {
-    let as = f.as * (1 + (f.haste > this.time ? f.hasteV : 0) + (f.rally > this.time ? f.rallyV : 0) + (f.frenzy > this.time ? 0.8 : 0) + (f.fxs.has("guinsoo") ? f.stacks * 0.05 : 0));
+    let as = f.as * (1 + (f.haste > this.time ? f.hasteV : 0) + (f.rally > this.time ? f.rallyV : 0) + (f.fxs.has("guinsoo") ? f.stacks * 0.05 : 0));
     if (f.fxs.has("quicksilver")) as *= 1 + 0.05 * Math.min(10, Math.floor(this.time / 2));
     if (f.flags.has("edge")) as *= 1.3;
     if (f.chill > this.time) as *= 1 - f.chillV;
@@ -308,6 +311,8 @@ export class ArenaBattle {
     for (const z of this.zones) {
       if (z.until < t) continue;
       const src = this.byUid(z.src);
+      if (z.heal) { for (const a of this.fighters) if (a.alive && a.side === z.side && dist(a, z.at) <= z.radius) this.heal(a, z.dps, src ?? a); continue; }
+      this.events.push({ t: "vfx", kind: "zone", at: z.at, el: z.el, radius: z.radius });
       for (const e of this.fighters) if (e.alive && e.side !== z.side && dist(e, z.at) <= z.radius) {
         this.damage(src ?? e, e, z.dps, z.physical ? "phys" : "magic", { spell: true });
         if (z.slow) { e.chill = t + 1.2; e.chillV = Math.max(e.chillV, z.slow); }
@@ -350,8 +355,8 @@ export class ArenaBattle {
     f.attacks++;
     const land = () => {
       if (!f.alive || !tg.alive) return;
-      if (f.blind > this.time || this.rng.next() < tg.dodge) { this.events.push({ t: "miss", uid: tg.uid }); return; }
-      const crit = this.rng.next() < f.crit + (f.critUp > this.time ? 0.25 : 0);
+      if (f.blind > this.time || this.rng.next() < tg.dodge + (tg.dodgeT > this.time ? tg.dodgeV : 0)) { this.events.push({ t: "miss", uid: tg.uid }); return; }
+      const crit = this.rng.next() < f.crit + (f.critUp > this.time ? f.critV : 0);
       let dmg = f.ad * (crit ? f.critDmg : 1);
       if (f.fxs.has("giantslayer") && tg.maxHp > 1600) dmg *= 1.25;
       const dealt = this.damage(f, tg, dmg, "phys", { crit, attack: true });
@@ -396,7 +401,7 @@ export class ArenaBattle {
   damage(src: Fighter, tg: Fighter, raw: number, kind: "phys" | "magic" | "true", o: { crit?: boolean; attack?: boolean; spell?: boolean; dot?: boolean; pierce?: boolean } = {}): number {
     if (!tg.alive || raw <= 0) return 0;
     const t = this.time;
-    let dmg = raw * src.amp * (src.weaken > t ? 0.75 : 1) * (tg.mark > t ? 1.2 : 1);
+    let dmg = raw * src.amp * (src.ampT > t ? 1 + src.ampV : 1) * (src.weaken > t ? 0.75 : 1) * (tg.mark > t ? 1.2 : 1);
     if (src.fxs.has("titans")) dmg *= 1 + src.stacks * 0.02;
     if (src.flags.has("steraks")) dmg *= 1.35;
     if (o.spell && src.fxs.has("rabadon")) dmg *= 1.2;
@@ -425,8 +430,9 @@ export class ArenaBattle {
     // mana from being hit
     if (!o.dot) tg.mana = Math.min(tg.maxMana, tg.mana + Math.min(15, 1 + dmg * 0.03));
     // vamp
-    if (src.omnivamp && !o.dot && src.alive) this.heal(src, dmg * src.omnivamp, src);
-    if (tg.mirror > t && src !== tg && !o.dot && src.alive) this.damage(tg, src, dmg * 0.6, "true", { dot: true });
+    const vamp = src.omnivamp + (src.vampT > t ? src.vampV : 0);
+    if (vamp && !o.dot && src.alive) this.heal(src, dmg * vamp, src);
+    if (tg.mirror > t && src !== tg && !o.dot && src.alive) this.damage(tg, src, dmg * tg.mirrorV, "true", { dot: true });
     this.thresholds(tg);
     if (tg.hp <= 0) this.kill(tg, src);
     return dmg;
@@ -499,6 +505,7 @@ export class ArenaBattle {
   }
 
   // ------------------------------------------------------------ spells
+  /** A share `mult` of the caster's spell power (stars, cost boost, AP or AD), maybe a crit. */
   private spellPower(f: Fighter, mult = 1): { amt: number; crit: boolean } {
     const sp = f.unit.spell;
     let amt = spellBase(f.unit) * STAR_SPELL[f.star] * starBoost(f.unit.cost, f.star)[2] * mult;
@@ -509,258 +516,356 @@ export class ArenaBattle {
     return { amt, crit };
   }
 
-  private hitSpell(f: Fighter, tg: Fighter, mult: number, o: { debuff?: boolean } = {}) {
+  /** One spell hit: damage, then the caster's on-hit traits and items. */
+  private spellHit(f: Fighter, tg: Fighter, mult: number, o: { type?: string; pierce?: boolean; ls?: number } = {}) {
+    if (!tg.alive || !f.alive) return 0;
     const sp = f.unit.spell;
     const { amt, crit } = this.spellPower(f, mult);
-    let a = amt;
-    if (sp.execute && tg.hp / tg.maxHp < 0.4) a *= 1.5;
-    const dealt = this.damage(f, tg, a, sp.physical ? "phys" : "magic", { crit, spell: true, pierce: sp.bonus === "pierce" });
-    if (sp.lifesteal) this.heal(f, dealt * sp.lifesteal, f);
-    if (o.debuff !== false && sp.debuff) this.debuff(tg, sp.debuff.id, sp.debuff.dur, f);
-    if (sp.bonus === "stunChance" && this.rng.next() < 0.3) this.debuff(tg, "stun", 1, f);
+    const kind = o.type === "t" ? "true" : o.type === "m" ? "magic" : o.type === "p" ? "phys" : sp.physical ? "phys" : "magic";
+    const dealt = this.damage(f, tg, amt, kind, { crit, spell: true, pierce: o.pierce });
+    if (o.ls) this.heal(f, dealt * o.ls, f);
     if (f.traits.o_fire) this.addDot(tg, "burn", tg.maxHp * f.traits.o_fire, 3, f);
     if (f.traits.o_poison) { this.addDot(tg, "poison", tg.maxHp * f.traits.o_poison, 3, f); tg.griev = this.time + 3; }
     if (f.fxs.has("morello")) { this.addDot(tg, "burn", tg.maxHp * 0.01, 3, f); tg.griev = this.time + 3; }
     return dealt;
   }
 
+  /**
+   * Who an effect reaches (see src/arena/spells.ts): fighters plus the hex it centres on.
+   * Random picks are kept for the whole cast so "dmg rand3 | dot rand3" hit the same three.
+   */
+  private pick(f: Fighter, w: string, cache: Map<string, Fighter[]>): { list: Fighter[]; at: Hex | null } {
+    const p = parseWho(w);
+    const t = this.time;
+    const hexOf = (u: Fighter): Hex => ({ x: u.x, y: u.y });
+    if (p.ally) {
+      const al = this.allies(f).filter((a) => !a.decoy);
+      let list: Fighter[];
+      switch (p.base) {
+        case "me": list = p.r >= 0 ? al.filter((a) => dist(a, f) <= p.r) : [f]; break;
+        case "low": list = [...al].sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp).slice(0, p.n); break;
+        case "carry": list = [...al].sort((a, b) => b.dealt - a.dealt || b.ad - a.ad).slice(0, p.n); break;
+        case "all": list = al; break;
+        default: list = [f];
+      }
+      return { list, at: hexOf(list[0] ?? f) };
+    }
+    const all = this.enemies(f).filter((e) => !e.decoy || e.taunt > t);
+    const seen = all.filter((e) => e.stealth <= t);
+    const pool = seen.length ? seen : all;
+    const cur = this.byUid(f.target);
+    const tgt = cur && cur.alive && cur.side !== f.side ? cur : [...pool].sort((a, b) => dist(a, f) - dist(b, f))[0];
+    let base: Fighter[] = [];
+    let at: Hex | null = null;
+    switch (p.base) {
+      case "t": base = tgt ? [tgt] : []; break;
+      case "near": base = [...pool].sort((a, b) => dist(a, f) - dist(b, f)).slice(0, p.n); break;
+      case "far": base = [...pool].sort((a, b) => dist(b, f) - dist(a, f)).slice(0, p.n); break;
+      case "low": base = [...pool].sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp).slice(0, p.n); break;
+      case "high": base = [...pool].sort((a, b) => b.maxHp - a.maxHp).slice(0, p.n); break;
+      case "carry": base = [...pool].sort((a, b) => b.dealt - a.dealt || b.ad + b.ap - a.ad - a.ap).slice(0, p.n); break;
+      case "back": base = [...pool].sort((a, b) => (f.side === 0 ? a.y - b.y : b.y - a.y) || dist(b, f) - dist(a, f)).slice(0, p.n); break;
+      case "rand": {
+        const k = `rand${p.n}`;
+        let c = cache.get(k)?.filter((e) => e.alive);
+        if (!c || !c.length) { c = [...pool].sort(() => this.rng.next() - 0.5).slice(0, p.n); cache.set(k, c); }
+        base = c;
+        break;
+      }
+      case "dense": {
+        let best: Fighter | undefined, bn = -1;
+        for (const e of pool) { const n = all.filter((o) => dist(o, e) <= 1).length; if (n > bn) { bn = n; best = e; } }
+        base = best ? [best] : [];
+        break;
+      }
+      case "all": return { list: all, at: { x: 3, y: f.side === 0 ? 1 : ROWS - 2 } };
+      case "line": return { list: tgt ? this.lineFrom(f, tgt) : [], at: tgt ? hexOf(tgt) : null };
+      case "me": base = []; at = hexOf(f); break;
+    }
+    if (!at && base[0]) at = hexOf(base[0]);
+    if (p.r >= 0) {
+      const centres: Hex[] = p.base === "me" ? [hexOf(f)] : base.map(hexOf);
+      return { list: all.filter((e) => centres.some((c) => dist(e, c) <= p.r)), at };
+    }
+    return { list: base, at };
+  }
+
   private cast(f: Fighter) {
     const sp = f.unit.spell;
-    const t = this.time;
     f.mana = f.fxs.has("blue") ? 10 : 0;
     f.castLock = 0.45;
-    const es = this.enemies(f).filter((e) => e.stealth <= t);
-    const tg = this.byUid(f.target) ?? es.sort((a, b) => dist(a, f) - dist(b, f))[0];
-    const hexOf = (u: Fighter): Hex => ({ x: u.x, y: u.y });
-    const targets: number[] = [];
-    let at: Hex | undefined;
-    const base = this.spellPower(f).amt;
     // ionic spark: enemies near an ionic carrier get struck when they cast
     for (const e of this.enemies(f)) if (e.fxs.has("ionic") && dist(e, f) <= 2) this.damage(e, f, 60, "magic", {});
     if (!f.alive) return;
-    switch (sp.shape) {
-      case "strike": case "bolt": {
-        if (!tg) break;
-        targets.push(tg.uid); at = hexOf(tg);
-        const go = () => tg.alive && f.alive && this.hitSpell(f, tg, sp.shape === "strike" ? 1.1 : 1);
-        if (sp.shape === "bolt") this.pending.push({ at: t + 0.12 + dist(f, tg) * 0.05, fn: go }); else go();
-        if (sp.bonus === "spread" && sp.debuff) for (const e of es) if (e !== tg && dist(e, tg) <= 1) this.debuff(e, sp.debuff.id, sp.debuff.dur * 0.6, f);
-        break;
+    const cache = new Map<string, Fighter[]>();
+    const targets = new Set<number>();
+    let at: Hex | undefined;
+    for (const e of sp.fx) {
+      const r = this.runFx(f, e, cache, targets);
+      at ??= r ?? undefined;
+    }
+    if (f.fxs.has("blue")) f.mana = Math.min(f.maxMana, f.mana + 10);
+    this.events.push({ t: "cast", uid: f.uid, spell: sp, targets: [...targets], at });
+  }
+
+  /** Runs one effect of a spell (now, or later for delayed and repeated ones). */
+  private runFx(f: Fighter, e: Fx, cache: Map<string, Fighter[]>, targets: Set<number>): Hex | null {
+    const t = this.time;
+    const sp = f.unit.spell;
+    const hexOf = (u: Fighter): Hex => ({ x: u.x, y: u.y });
+    const x = Math.max(1, Number(e.o.x ?? 1));
+    const gap = Number(e.o.gap ?? 0.25);
+    const delay = Number(e.o.delay ?? 0);
+    const later = (i: number, fn: () => void) => { const d = delay + i * gap; if (d <= 0) fn(); else this.pending.push({ at: t + d, fn: () => { if (f.alive) fn(); } }); };
+    const vfx = (kind: string, to: Hex, radius = 0, from?: Hex) => this.events.push({ t: "vfx", kind, at: to, el: sp.el, radius, from });
+    const radiusOf = (w: string) => { const p = parseWho(w); return p.base === "all" ? 9 : Math.max(0, p.r); };
+    switch (e.k) {
+      case "dmg": {
+        let first: Hex | null = null;
+        for (let i = 0; i < x; i++) later(i, () => {
+          const { list, at } = this.pick(f, e.w!, cache);
+          if (at) {
+            const fx = e.o.fx ?? "bolt";
+            if (fx === "ring" || fx === "meteor" || fx === "volley") vfx(fx, at, Math.max(1, radiusOf(e.w!)));
+            else if (fx === "beam") vfx("beam", at, 0, hexOf(f));
+          }
+          for (const tg of list) {
+            targets.add(tg.uid);
+            if (e.o.fx === "bolt" || !e.o.fx) vfx("bolt", hexOf(tg), 0, hexOf(f));
+            else if (e.o.fx === "slash") vfx("slash", hexOf(tg), 0, hexOf(f));
+            this.spellHit(f, tg, e.p!, { type: e.o.type, pierce: !!e.o.pierce, ls: e.o.ls ? Number(e.o.ls) : undefined });
+          }
+          first ??= at;
+        });
+        return first ?? this.pick(f, e.w!, cache).at;
       }
-      case "multi": {
-        for (let i = 0; i < sp.hits; i++) {
-          this.pending.push({ at: t + 0.1 + i * 0.12, fn: () => {
-            const pool = this.enemies(f);
-            const e = pool[Math.floor(this.rng.next() * pool.length)];
-            if (e && f.alive) { this.events.push({ t: "vfx", kind: "bolt", at: hexOf(e), from: hexOf(f), el: sp.el, radius: 0 }); this.hitSpell(f, e, 0.45); }
-          } });
-        }
-        break;
+      case "dot": {
+        const { list, at } = this.pick(f, e.w!, cache);
+        const total = this.spellPower(f, e.p!).amt;
+        for (const tg of list) { targets.add(tg.uid); this.addDot(tg, e.id as Dot["kind"], total / e.dur!, e.dur!, f); this.events.push({ t: "status", uid: tg.uid, s: e.id as Debuff }); if (e.id === "poison") tg.griev = t + e.dur!; }
+        return at;
       }
-      case "nova": {
-        if (!tg) break;
-        at = hexOf(tg);
-        for (const e of this.enemies(f)) if (dist(e, at) <= sp.radius) { targets.push(e.uid); this.hitSpell(f, e, 0.8); }
-        break;
-      }
-      case "line": {
-        if (!tg) break;
-        at = hexOf(tg);
-        for (const e of this.lineFrom(f, tg)) { targets.push(e.uid); this.hitSpell(f, e, 0.75); }
-        break;
-      }
-      case "dash": {
-        const far = es.sort((a, b) => dist(b, f) - dist(a, f))[0];
-        if (!far) break;
-        const spot = this.freeNear(far, 2);
-        if (spot) { this.events.push({ t: "vfx", kind: "leap", at: spot, from: hexOf(f), el: sp.el, radius: 0 }); f.x = spot.x; f.y = spot.y; f.fx = spot.x; f.fy = spot.y; f.moveFrom = null; }
-        f.target = far.uid; targets.push(far.uid); at = hexOf(far);
-        this.hitSpell(f, far, 1.1);
-        break;
+      case "cc": {
+        const { list, at } = this.pick(f, e.w!, cache);
+        for (const tg of list) { targets.add(tg.uid); this.debuff(tg, e.id as Debuff, e.dur!, f); }
+        return at;
       }
       case "heal": {
-        const pals = this.allies(f).filter((a) => dist(a, f) <= sp.radius).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp).slice(0, 2);
-        for (const a of new Set([f, ...pals])) { targets.push(a.uid); this.heal(a, base * 0.8, f); if (sp.bonus === "armorUp") this.buffGuard(a); }
-        at = hexOf(f);
-        break;
+        let first: Hex | null = null;
+        for (let i = 0; i < x; i++) later(i, () => {
+          const { list, at } = this.pick(f, e.w!, cache);
+          const amt = this.spellPower(f, e.p!).amt;
+          for (const a of list) { targets.add(a.uid); this.heal(a, amt, f); vfx("pillar", hexOf(a)); }
+          first ??= at;
+        });
+        return first;
+      }
+      case "hpct": {
+        const { list, at } = this.pick(f, e.w!, cache);
+        for (const a of list) { targets.add(a.uid); this.heal(a, a.maxHp * e.v!, f); vfx("pillar", hexOf(a)); }
+        return at;
       }
       case "shield": {
-        const pals = this.allies(f).filter((a) => dist(a, f) <= sp.radius).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp).slice(0, 3);
-        for (const a of new Set([f, ...pals])) { targets.push(a.uid); this.addShield(a, base * 0.9, 4); if (sp.bonus === "armorUp") this.buffGuard(a); }
-        at = hexOf(f);
-        break;
+        const { list, at } = this.pick(f, e.w!, cache);
+        const amt = this.spellPower(f, e.p!).amt;
+        for (const a of list) { targets.add(a.uid); this.addShield(a, amt, e.dur!); }
+        return at;
       }
-      case "rally": {
-        for (const a of this.allies(f)) if (dist(a, f) <= sp.radius) {
-          targets.push(a.uid); a.rally = t + 4; a.rallyV = 0.3 + sp.power * 0.05; a.amp += 0; a.flags.add("rallied");
-          this.heal(a, base * 0.15, f);
-          if (sp.bonus === "armorUp") this.buffGuard(a);
-          this.events.push({ t: "status", uid: a.uid, s: "buff" });
+      case "buff": {
+        const { list, at } = this.pick(f, e.w!, cache);
+        for (const a of list) { targets.add(a.uid); this.buff(a, e.id!, e.v!, e.dur ?? 4); }
+        return at;
+      }
+      case "stack": {
+        const v = e.v!;
+        if (e.id === "ad") f.ad += f.baseAd * v;
+        else if (e.id === "ap") f.ap += v;
+        else if (e.id === "armor") { f.armor += v; f.mr += v; }
+        else if (e.id === "as") f.as *= 1 + v;
+        else if (e.id === "hp") { const add = f.maxHp * v; f.maxHp += add; f.hp += add; }
+        this.events.push({ t: "status", uid: f.uid, s: "buff" });
+        return hexOf(f);
+      }
+      case "dash": case "blink": {
+        const tg = this.pick(f, e.w!, cache).list[0];
+        if (!tg) return null;
+        let spot: Hex | null = null;
+        if (e.k === "blink") {
+          // the free hex next to the target that is farthest from where we stand
+          const opts = neighbors(tg.x, tg.y).filter((h) => !this.occupied(h.x, h.y)).sort((a, b) => dist(b, f) - dist(a, f));
+          spot = opts[0] ?? this.freeNear(tg, 2);
+        } else spot = dist(f, tg) <= 1 ? null : this.freeNear(tg, 2);
+        if (spot) { vfx("leap", spot, 0, hexOf(f)); this.place(f, spot, false); }
+        f.target = tg.uid;
+        targets.add(tg.uid);
+        return hexOf(tg);
+      }
+      case "knock": {
+        const { list, at } = this.pick(f, e.w!, cache);
+        for (const tg of list) {
+          if (tg.ccImmune > t) continue;
+          let cur: Hex = hexOf(tg);
+          for (let i = 0; i < (e.n ?? 1); i++) {
+            const next = neighbors(cur.x, cur.y).filter((h) => !this.occupied(h.x, h.y) && dist(h, f) > dist(cur, f)).sort((a, b) => dist(b, f) - dist(a, f))[0];
+            if (!next) break;
+            cur = next;
+          }
+          if (cur.x !== tg.x || cur.y !== tg.y) this.place(tg, cur, true);
+          targets.add(tg.uid);
         }
-        at = hexOf(f);
-        break;
+        return at;
       }
-      case "fortify": {
-        this.addShield(f, base * 1.5, 4); f.guard = t + 4; f.guardV = 30; f.taunt = t + 3;
-        this.events.push({ t: "status", uid: f.uid, s: "taunt" });
-        targets.push(f.uid); at = hexOf(f);
-        break;
+      case "pull": {
+        const { list, at } = this.pick(f, e.w!, cache);
+        const centre = parseWho(e.w!).base === "dense" || parseWho(e.w!).r >= 0 && parseWho(e.w!).base !== "me" ? at : hexOf(f);
+        for (const tg of [...list].sort((a, b) => dist(a, centre ?? f) - dist(b, centre ?? f))) {
+          if (tg.ccImmune > t || !centre || dist(tg, centre) <= 1) continue;
+          const spot = this.freeNear(centre, 2);
+          if (spot && dist(spot, centre) < dist(tg, centre)) this.place(tg, spot, true);
+          targets.add(tg.uid);
+        }
+        if (centre) vfx("ring", centre, 1);
+        return centre;
       }
-      // ------------------------------------------------------- ultimates
-      case "meteor": {
-        const picks = [...es].sort(() => this.rng.next() - 0.5).slice(0, sp.hits);
-        picks.forEach((p, i) => {
-          const spot = hexOf(p);
-          this.pending.push({ at: t + 0.25 + i * 0.22, fn: () => {
-            this.events.push({ t: "vfx", kind: "meteor", at: spot, el: sp.el, radius: sp.radius });
-            for (const e of this.enemies(f)) if (dist(e, spot) <= sp.radius && f.alive) this.hitSpell(f, e, 0.7);
-          } });
-        });
-        break;
+      case "swap": {
+        const tg = this.pick(f, e.w!, cache).list[0];
+        if (!tg) return null;
+        const a = hexOf(f), b = hexOf(tg);
+        vfx("swap", b, 0, a);
+        this.place(f, b, false);
+        this.place(tg, a, false);
+        f.target = tg.uid;
+        targets.add(tg.uid);
+        return a;
       }
-      case "cataclysm": for (const e of this.enemies(f)) { targets.push(e.uid); this.hitSpell(f, e, 0.75); } break;
-      case "devour": {
-        const weak = [...es].sort((a, b) => a.hp - b.hp)[0];
-        if (!weak) break;
-        targets.push(weak.uid); at = hexOf(weak);
-        this.hitSpell(f, weak, 1.6);
-        if (!weak.alive) this.heal(f, f.maxHp * 0.4, f);
-        break;
+      case "mana": {
+        const { list, at } = this.pick(f, e.w!, cache);
+        for (const u of list) { targets.add(u.uid); u.mana = Math.max(0, Math.min(u.maxMana - (u === f ? 1 : 0), u.mana + e.v!)); }
+        return at;
+      }
+      case "zone": {
+        const ally = e.w!.startsWith("a:");
+        const { at } = ally ? { at: hexOf(f) } : this.pick(f, e.w!, cache);
+        const centre = e.w === "all" ? { x: 3, y: 3 } : at ?? hexOf(f);
+        this.zones.push({ side: f.side, at: centre, radius: e.w === "all" ? 9 : e.r!, dps: this.spellPower(f, e.p!).amt, until: t + e.dur!, src: f.uid, el: sp.el, physical: sp.physical, slow: e.o.slow ? Number(e.o.slow) : undefined, heal: !!e.o.heal || ally });
+        vfx(e.o.heal || ally ? "pillar" : "ring", centre, e.w === "all" ? 4 : e.r!);
+        return centre;
+      }
+      case "chain": {
+        let cur: Fighter | undefined = this.pick(f, e.w!, cache).list[0];
+        if (!cur) return null;
+        const start = hexOf(cur);
+        const hit = new Set<number>();
+        let from: Hex = hexOf(f);
+        for (let i = 0; i < e.n! && cur; i++) {
+          const c: Fighter = cur, src = from;
+          this.pending.push({ at: t + 0.08 * i + 0.001, fn: () => { if (c.alive && f.alive) { vfx("chain", hexOf(c), 0, src); this.spellHit(f, c, e.p!); } } });
+          targets.add(c.uid);
+          hit.add(c.uid);
+          from = hexOf(c);
+          const es = this.enemies(f);
+          cur = es.filter((o) => !hit.has(o.uid)).sort((a, b) => dist(a, c) - dist(b, c))[0];
+          if (!cur && es.length > 1) { hit.clear(); hit.add(c.uid); cur = es.filter((o) => o !== c).sort((a, b) => dist(a, c) - dist(b, c))[0]; }
+        }
+        return start;
+      }
+      case "multi": {
+        for (let i = 0; i < e.n!; i++) this.pending.push({ at: t + 0.08 + i * 0.1, fn: () => {
+          const pool = this.enemies(f);
+          const tg = pool[Math.floor(this.rng.next() * pool.length)];
+          if (tg && f.alive) { vfx("bolt", hexOf(tg), 0, hexOf(f)); this.spellHit(f, tg, e.p!); }
+        } });
+        return null;
       }
       case "summon": {
-        const kin = arenaUnits().filter((u) => u.floor === f.unit.floor && u.cost === 1);
-        for (let i = 0; i < sp.hits && kin.length; i++) {
+        const kin = arenaUnits().filter((u) => u.floor === f.unit.floor && u.cost <= (sp.ult ? 2 : 1));
+        for (let i = 0; i < e.n! && kin.length; i++) {
           const spot = this.freeNear(f, 3);
           if (!spot) break;
-          const m = this.addFighter(kin[i % kin.length], f.star, spot, f.side, [], undefined, {}, true);
+          // ordinary units call weaker kin; a boss's horde comes at its own star
+          const star = (sp.ult ? f.star : Math.max(1, f.star - 1)) as Star;
+          const m = this.addFighter(kin[i % kin.length], star, spot, f.side, [], undefined, {}, true);
           m.atkTimer = 0.5;
           this.events.push({ t: "spawn", uid: m.uid });
         }
-        at = hexOf(f);
-        break;
-      }
-      case "blackhole": {
-        let best: Hex = tg ? hexOf(tg) : hexOf(f), n = -1;
-        for (const e of es) { const c = es.filter((o) => dist(o, e) <= 2).length; if (c > n) { n = c; best = hexOf(e); } }
-        at = best;
-        for (const e of this.enemies(f)) if (dist(e, best) <= 2) {
-          const spot = dist(e, best) > 1 ? this.freeNear(best, 1) : null;
-          if (spot) { e.x = spot.x; e.y = spot.y; e.fx = spot.x; e.fy = spot.y; e.moveFrom = null; }
-          targets.push(e.uid); this.hitSpell(f, e, 0.8, { debuff: false }); this.debuff(e, "stun", 2, f);
-        }
-        break;
-      }
-      case "chain": {
-        let cur: Fighter | undefined = tg;
-        const hit = new Set<number>();
-        for (let i = 0; i < sp.hits && cur; i++) {
-          const from = i === 0 ? hexOf(f) : undefined;
-          const c: Fighter = cur;
-          this.pending.push({ at: t + 0.08 * i, fn: () => { if (c.alive && f.alive) { this.events.push({ t: "vfx", kind: "chain", at: hexOf(c), from, el: sp.el, radius: 0 }); this.hitSpell(f, c, 0.5); } } });
-          hit.add(c.uid);
-          cur = this.enemies(f).filter((e) => !hit.has(e.uid)).sort((a, b) => dist(a, c) - dist(b, c))[0] ?? this.enemies(f).filter((e) => e !== c)[0];
-          if (cur && hit.size >= es.length) hit.clear();
-        }
-        break;
+        return hexOf(f);
       }
       case "revive": {
-        const dead = this.fighters.filter((o) => !o.alive && o.side === f.side && !o.summoned).sort((a, b) => dist(a, f) - dist(b, f))[0];
-        if (dead) {
-          const spot = this.occupied(dead.x, dead.y) ? this.freeNear(dead, 2) : { x: dead.x, y: dead.y };
-          if (spot) { dead.alive = true; dead.hp = Math.round(dead.maxHp * 0.6); dead.x = spot.x; dead.y = spot.y; dead.fx = spot.x; dead.fy = spot.y; dead.dots = []; this.events.push({ t: "revive", uid: dead.uid }); targets.push(dead.uid); }
+        const dead = this.fighters.filter((o) => !o.alive && o.side === f.side && !o.summoned && !o.decoy).sort((a, b) => dist(a, f) - dist(b, f))[0];
+        if (!dead) return null;
+        const spot = this.occupied(dead.x, dead.y) ? this.freeNear(dead, 2) : { x: dead.x, y: dead.y };
+        if (!spot) return null;
+        dead.alive = true; dead.hp = Math.round(dead.maxHp * e.v!); dead.dots = []; dead.stun = 0; dead.mana = 0;
+        this.place(dead, spot, false);
+        this.events.push({ t: "revive", uid: dead.uid });
+        targets.add(dead.uid);
+        return spot;
+      }
+      case "cleanse": {
+        const { list, at } = this.pick(f, e.w!, cache);
+        for (const a of list) { a.stun = 0; a.chill = 0; a.shred = 0; a.weaken = 0; a.blind = 0; a.silence = 0; a.mark = 0; a.dots = []; a.griev = 0; targets.add(a.uid); }
+        return at;
+      }
+      case "taunt": {
+        f.taunt = t + e.dur!;
+        for (const o of this.enemies(f)) if (dist(o, f) <= e.r!) o.target = f.uid;
+        this.events.push({ t: "status", uid: f.uid, s: "taunt" });
+        return hexOf(f);
+      }
+      case "stealth": f.stealth = t + e.dur!; this.events.push({ t: "status", uid: f.uid, s: "stealth" }); return hexOf(f);
+      case "reflect": f.mirror = t + e.dur!; f.mirrorV = e.v!; this.events.push({ t: "status", uid: f.uid, s: "mirror" }); return hexOf(f);
+      case "steal": {
+        const { list, at } = this.pick(f, e.w!, cache);
+        for (const tg of list) {
+          targets.add(tg.uid);
+          if (e.id === "armor") { const v = Math.min(tg.armor, e.v!); tg.armor -= v; f.armor += v; }
+          else if (e.id === "ad") { const v = Math.min(tg.ad * 0.5, e.v!); tg.ad -= v; f.ad += v; }
+          else { const v = Math.min(tg.mana, e.v!); tg.mana -= v; f.mana = Math.min(f.maxMana - 1, f.mana + v); }
         }
-        for (const a of this.allies(f)) this.heal(a, base * 0.3, f);
-        at = hexOf(f);
-        break;
+        return at;
       }
-      case "timestop": for (const e of this.enemies(f)) { targets.push(e.uid); this.debuff(e, "stun", 1.5, f); this.hitSpell(f, e, 0.4, { debuff: false }); } break;
-      case "frenzy": f.frenzy = t + 6; f.amp += 0; f.flags.add("frenzy"); this.events.push({ t: "status", uid: f.uid, s: "frenzy" }); targets.push(f.uid); at = hexOf(f); break;
-      case "prison": {
-        if (!tg) break;
-        at = hexOf(tg);
-        for (const e of this.enemies(f)) if (dist(e, at) <= sp.radius) { targets.push(e.uid); this.hitSpell(f, e, 0.6, { debuff: false }); this.debuff(e, "stun", 2.5, f); }
-        break;
+      case "exec": {
+        const { list, at } = this.pick(f, e.w!, cache);
+        for (const tg of list) if (tg.alive && tg.hp / tg.maxHp < e.v!) { targets.add(tg.uid); vfx("slash", hexOf(tg), 0, hexOf(f)); this.damage(f, tg, tg.hp + tg.shields.reduce((s, x) => s + x.amt, 0) + 1, "true", { spell: true }); }
+        return at;
       }
-      case "miasma": case "blizzard": {
-        at = sp.shape === "blizzard" ? { x: 3, y: f.side === 0 ? 1 : 6 } : tg ? hexOf(tg) : hexOf(f);
-        this.zones.push({ side: f.side, at, radius: sp.shape === "blizzard" ? 9 : sp.radius, dps: base * (sp.shape === "blizzard" ? 0.18 : 0.3), until: t + sp.hits, next: t + 1, src: f.uid, el: sp.el, physical: false, slow: sp.shape === "blizzard" ? 0.35 : undefined });
-        break;
-      }
-      case "drainall": {
-        let total = 0;
-        for (const e of this.enemies(f)) { targets.push(e.uid); total += this.hitSpell(f, e, 0.5); }
-        this.heal(f, total, f);
-        break;
-      }
-      case "aegis": {
-        for (const a of this.allies(f)) {
-          targets.push(a.uid); this.addShield(a, base * 0.7, 5);
-          a.stun = 0; a.chill = 0; a.shred = 0; a.weaken = 0; a.blind = 0; a.silence = 0; a.mark = 0; a.dots = []; a.griev = 0;
-        }
-        at = hexOf(f);
-        break;
-      }
-      case "rampage": {
-        if (!tg) break;
-        at = hexOf(tg);
-        const line = this.lineFrom(f, tg);
-        for (const e of line) { targets.push(e.uid); this.hitSpell(f, e, 1, { debuff: false }); this.debuff(e, "stun", 1, f); }
-        const last = line[line.length - 1];
-        const spot = last ? this.freeNear(last, 1) : null;
-        if (spot) { this.events.push({ t: "vfx", kind: "leap", at: spot, from: hexOf(f), el: sp.el, radius: 0 }); f.x = spot.x; f.y = spot.y; f.fx = spot.x; f.fy = spot.y; f.moveFrom = null; }
-        break;
-      }
-      case "mirror": f.mirror = t + 5; this.events.push({ t: "status", uid: f.uid, s: "mirror" }); targets.push(f.uid); at = hexOf(f); break;
-      case "volley": {
-        if (!tg) break;
-        const spot = hexOf(tg);
-        at = spot;
-        for (let i = 0; i < sp.hits; i++) this.pending.push({ at: t + 0.2 + i * 0.45, fn: () => {
-          this.events.push({ t: "vfx", kind: "volley", at: spot, el: sp.el, radius: sp.radius });
-          for (const e of this.enemies(f)) if (dist(e, spot) <= sp.radius && f.alive) this.hitSpell(f, e, 0.45);
-        } });
-        break;
-      }
-      case "manaburn": {
-        for (const e of this.enemies(f)) {
-          const burnt = Math.min(e.mana, 40);
-          e.mana -= burnt;
-          targets.push(e.uid);
-          this.hitSpell(f, e, 0.5 + burnt / 80);
-        }
-        break;
-      }
-      case "quake": {
-        at = hexOf(f);
-        for (const e of this.enemies(f)) if (dist(e, f) <= sp.radius) { targets.push(e.uid); this.hitSpell(f, e, 0.9, { debuff: false }); this.debuff(e, "stun", 2, f); }
-        break;
-      }
-      case "swap": {
-        const far = [...es].sort((a, b) => dist(b, f) - dist(a, f))[0];
-        if (!far) break;
-        const a = hexOf(f), b = hexOf(far);
-        this.events.push({ t: "vfx", kind: "swap", at: b, from: a, el: sp.el, radius: 0 });
-        f.x = b.x; f.y = b.y; f.fx = b.x; f.fy = b.y; f.moveFrom = null;
-        far.x = a.x; far.y = a.y; far.fx = a.x; far.fy = a.y; far.moveFrom = null;
-        targets.push(far.uid); at = a;
-        this.hitSpell(f, far, 1, { debuff: false }); this.debuff(far, "stun", 2, f);
-        break;
+      case "hurt": f.hp = Math.max(1, f.hp - f.maxHp * e.v!); return null;
+      case "transform": {
+        const d = e.dur!;
+        f.frenzy = t + d;
+        if (e.o.as) this.buff(f, "as", Number(e.o.as), d);
+        if (e.o.amp) this.buff(f, "amp", Number(e.o.amp), d);
+        if (e.o.vamp) this.buff(f, "vamp", Number(e.o.vamp), d);
+        this.events.push({ t: "status", uid: f.uid, s: "frenzy" });
+        return hexOf(f);
       }
     }
-    // a spell's second effect
-    switch (sp.bonus) {
-      case "selfShield": this.addShield(f, base * 0.4, 4); break;
-      case "selfHeal": this.heal(f, base * 0.3, f); break;
-      case "manaBack": f.mana = Math.min(f.maxMana, f.mana + 20); break;
-      case "haste": f.haste = t + 4; f.hasteV = 0.3; break;
-      case "critUp": f.critUp = t + 4; break;
-      default: break;
-    }
-    if (f.fxs.has("blue")) f.mana = Math.min(f.maxMana, f.mana + 10);
-    this.events.push({ t: "cast", uid: f.uid, spell: sp, targets, at });
+    return null;
   }
 
-  private buffGuard(a: Fighter) { a.guard = this.time + 4; a.guardV = Math.max(a.guardV, 20); }
+  /** A timed boost (ap and ad last the fight). */
+  private buff(a: Fighter, stat: string, v: number, dur: number) {
+    const t = this.time;
+    switch (stat) {
+      case "as": a.haste = t + dur; a.hasteV = v; break;
+      case "amp": a.ampT = t + dur; a.ampV = Math.max(a.ampT > t ? a.ampV : 0, v); break;
+      case "armor": a.guard = t + dur; a.guardV = Math.max(a.guard > t ? a.guardV : 0, v); break;
+      case "dodge": a.dodgeT = t + dur; a.dodgeV = v; break;
+      case "crit": a.critUp = t + dur; a.critV = v; break;
+      case "vamp": a.vampT = t + dur; a.vampV = v; break;
+      case "ap": a.ap += v; break;
+      case "ad": a.ad += a.baseAd * v; break;
+    }
+    if (v > 0) this.events.push({ t: "status", uid: a.uid, s: "buff" });
+  }
+
+  /** Moves a fighter to a hex (gliding when `glide`). */
+  private place(u: Fighter, h: Hex, glide: boolean) {
+    if (glide) { u.moveFrom = { x: u.x, y: u.y }; u.moveT = 0; }
+    else { u.moveFrom = null; u.fx = h.x; u.fy = h.y; }
+    u.x = h.x; u.y = h.y;
+  }
+
 
   /** Enemies along the line from `f` through `tg` and beyond. */
   private lineFrom(f: Fighter, tg: Fighter): Fighter[] {
