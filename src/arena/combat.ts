@@ -11,7 +11,7 @@ import { COLS, HALF, ROWS, around, dist, inBoard, key, mirror, neighbors, stepTo
 import { ITEMS, type ItemFx } from "./items";
 import { TRAITS, traitTier } from "./traits";
 import type { ArenaUnit, Debuff, SpellDef, Star } from "./types";
-import { STAR_MULT, STAR_SPELL, arenaUnit, arenaUnits, spellBase } from "./units";
+import { STAR_MULT, STAR_SPELL, arenaUnit, arenaUnits, spellBase, starBoost } from "./units";
 
 export const DT = 0.05;
 export const OVERTIME = 30;
@@ -124,8 +124,8 @@ export class ArenaBattle {
     const s = u.stats;
     const f: Fighter = {
       uid: this.nextUid++, unit: u, side, star, x: pos.x, y: pos.y, fx: pos.x, fy: pos.y, moveFrom: null, moveT: 0,
-      hp: 0, maxHp: Math.round(s.hp * STAR_MULT[star]), mana: s.startMana, maxMana: s.mana,
-      baseAd: Math.round(s.ad * AD_STAR[star]), ad: 0, ap: s.ap, armor: s.armor, mr: s.mr, as: s.as, range: s.range,
+      hp: 0, maxHp: Math.round(s.hp * STAR_MULT[star] * starBoost(u.cost, star)[0]), mana: s.startMana, maxMana: s.mana,
+      baseAd: Math.round(s.ad * AD_STAR[star] * starBoost(u.cost, star)[1]), ad: 0, ap: s.ap, armor: s.armor, mr: s.mr, as: s.as, range: s.range,
       crit: s.crit, critDmg: 1.4, dodge: 0, omnivamp: 0, amp: 1, reduce: 0,
       items: [...items], fxs: new Set(items.map((i) => ITEMS[i]?.fx).filter((x): x is ItemFx => !!x)),
       traits: {}, target: null, atkTimer: 0.2 + this.rng.next() * 0.3, castLock: 0, attacks: 0, alive: true, summoned, decoy: false,
@@ -495,7 +495,7 @@ export class ArenaBattle {
   // ------------------------------------------------------------ spells
   private spellPower(f: Fighter, mult = 1): { amt: number; crit: boolean } {
     const sp = f.unit.spell;
-    let amt = spellBase(f.unit) * STAR_SPELL[f.star] * mult;
+    let amt = spellBase(f.unit) * STAR_SPELL[f.star] * starBoost(f.unit.cost, f.star)[2] * mult;
     amt *= sp.physical ? f.ad / Math.max(1, f.baseAd) : f.ap / 100;
     const canCrit = f.fxs.has("infinity") || f.fxs.has("jeweled");
     const crit = canCrit && this.rng.next() < f.crit;

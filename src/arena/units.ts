@@ -315,5 +315,14 @@ export const arenaUnit = (id: string): ArenaUnit | undefined => all().byId[id];
 export const STAR_MULT = [0, 1, 1.8, 3.24, 5.5];
 /** Spell multiplier per star; at three and four stars spells grow faster than bodies. */
 export const STAR_SPELL = [0, 1, 1.5, 2.4, 4];
+/**
+ * Extra power of dear units at three and four stars, as in TFT: a 4-gold ★3 is very strong
+ * and a 5-gold ★3 is close to winning the fight alone. [cost][star] → health, attack, spell.
+ */
+const BOOST: Record<number, Record<number, [number, number, number]>> = {
+  4: { 3: [1.35, 1.4, 1.8], 4: [1.6, 1.7, 2.5] },
+  5: { 3: [2, 2.2, 4], 4: [2.6, 3, 6] },
+};
+export const starBoost = (cost: number, star: number): [number, number, number] => BOOST[cost]?.[star] ?? [1, 1, 1];
 /** Spell value at one star for a unit (before AP and star). */
 export const spellBase = (u: ArenaUnit) => COST_SPELL[u.cost] * u.spell.power;
