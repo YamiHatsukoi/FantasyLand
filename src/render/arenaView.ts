@@ -324,6 +324,15 @@ export class ArenaView {
         sfx("revive");
         break;
       }
+      case "loot": {
+        const t = this.byUid(b, e.uid);
+        if (!t) return;
+        const p = this.fighterPt(t);
+        const label = e.kind === "gold" ? `+${e.n} 💰` : e.kind === "xp" ? `+${e.n} KN` : `+${e.n} 🔄`;
+        this.texts.push({ x: p.x, y: p.y - this.s * 1.7, text: label, col: e.kind === "gold" ? "#ffd84a" : e.kind === "xp" ? "#c99bff" : "#8ae0ff", size: 13 * (this.s / 22), t: 0, max: 1.3, vy: -this.s * 0.6, stroke: "#1a1000" });
+        sfx("coin");
+        break;
+      }
       case "spawn": {
         const t = this.byUid(b, e.uid);
         if (!t) return;
@@ -590,8 +599,11 @@ export class ArenaView {
       // ticks every 300 hp
       g.fillStyle = "rgba(0,0,0,0.45)";
       for (let v = 300; v < total; v += 300) g.fillRect(bx + (bw * v) / total, by, 1, bh);
-      g.fillStyle = f.mana >= f.maxMana - 0.5 ? "#c8e8ff" : "#4a9aff";
-      g.fillRect(bx, by + bh + 1, (bw * Math.min(1, f.mana / f.maxMana)), bh * 0.6);
+      if (f.unit.spell.passive) { g.fillStyle = "#b08aff"; g.fillRect(bx, by + bh + 1, bw, bh * 0.6); } // passives need no mana
+      else {
+        g.fillStyle = f.mana >= f.maxMana - 0.5 ? "#c8e8ff" : "#4a9aff";
+        g.fillRect(bx, by + bh + 1, (bw * Math.min(1, f.mana / f.maxMana)), bh * 0.6);
+      }
     }
     // banners over casters
     for (const bn of this.banners) {

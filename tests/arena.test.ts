@@ -164,6 +164,36 @@ describe("arena combat", async () => {
     }
     expect(castBy.size).toBeGreaterThan(195);
   });
+  it("passives go off without mana; Veigar-style stacks are kept; spells pick up loot", () => {
+    const by = (base: string) => us.find((u) => u.spell.base === base && u.spell.variant === 1)!;
+    // a passive: every third attack deals true damage, never a mana cast
+    const twin = by("a_twin");
+    const bt = new ArenaBattle({ units: [{ unitId: twin.id, star: 2, x: 3, y: 5, items: [] }] }, { units: team(twin.cost, 1, 2, new Rng(4)) }, 4);
+    bt.run();
+    const casts = bt.events.filter((e) => e.t === "cast" && e.spell.base === "a_twin").length;
+    expect(casts).toBeGreaterThan(0);
+    // attack-speed ramp: Cơn Giận Tích Tụ grows with every attack
+    const rage = by("b_rage");
+    const rb = new ArenaBattle({ units: [{ unitId: rage.id, star: 2, x: 3, y: 4, items: [] }] }, { units: team(1, 3, 2, new Rng(5)) }, 5);
+    const as0 = rb.fighters[0].as;
+    for (let i = 0; i < 200; i++) rb.step();
+    expect(rb.fighters[0].as).toBeGreaterThan(as0 * 1.15);
+    // permanent stacks on a kill, kept by the player's copy (ref)
+    const soul = by("g_soulfire");
+    let gained = 0, coins = 0;
+    for (let i = 0; i < 20; i++) {
+      const b = new ArenaBattle({ units: [{ unitId: soul.id, star: 3, x: 3, y: 6, items: ["tear"], ref: 77, bonus: { ap: 9 } }] }, { units: team(1, 1, 3, new Rng(i)) }, i);
+      expect(b.fighters[0].ap).toBeGreaterThanOrEqual(109);
+      b.run();
+      gained += b.gains(0).filter((g) => g.ref === 77 && g.stat === "ap").length;
+      const coin = by("m_charge");
+      const c = new ArenaBattle({ units: [{ unitId: coin.id, star: 3, x: 3, y: 7, items: ["tear", "tear"] }] }, { units: team(1, 1, 2, new Rng(i)) }, i);
+      c.run();
+      coins += c.loot[0].gold;
+    }
+    expect(gained).toBeGreaterThan(0);
+    expect(coins).toBeGreaterThan(0);
+  });
   it("every boss ultimate and every item can be used in a fight without breaking", () => {
     const bosses = us.filter((u) => u.boss);
     const fin = FINISHED();

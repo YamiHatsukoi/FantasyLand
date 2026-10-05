@@ -32,7 +32,7 @@ export function parseFx(src: string): Fx[] {
     const k = toks[0];
     const o: Record<string, string> = {};
     const pos: string[] = [];
-    for (const t of toks.slice(1)) { const m = t.match(/^([a-z]+)=(.+)$/); if (m) o[m[1]] = m[2]; else if (/^[a-z]+$/.test(t) && ["pierce", "heal"].includes(t)) o[t] = "1"; else pos.push(t); }
+    for (const t of toks.slice(1)) { const m = t.match(/^([a-z]+)=(.+)$/); if (m) o[m[1]] = m[2]; else if (/^[a-z]+$/.test(t) && ["pierce", "heal", "kill"].includes(t)) o[t] = "1"; else pos.push(t); }
     const num = (i: number) => Number(pos[i]);
     switch (k) {
       case "dmg": case "heal": return { k, w: pos[0], p: num(1), o };
@@ -56,9 +56,26 @@ export function parseFx(src: string): Fx[] {
       case "steal": return { k, w: pos[0], id: pos[1], v: num(2), o };
       case "exec": return { k, w: pos[0], v: num(1), o };
       case "transform": return { k, dur: num(0), o };
+      case "perm": return { k, id: pos[0], v: num(1), o };
+      case "loot": return { k, id: pos[0], v: num(1), n: num(2), o };
       default: throw new Error(`unknown spell effect "${k}" in "${src}"`);
     }
   });
+}
+
+/** "passive:attack3 | ..." → the trigger and the effects. */
+export function splitPassive(src: string): { passive?: string; fx: string } {
+  const m = src.match(/^passive:([a-z]+\d*)\s*\|\s*(.*)$/);
+  return m ? { passive: m[1], fx: m[2] } : { fx: src };
+}
+/** About how often a passive goes off in a fight. */
+export function triggerCount(trig: string): number {
+  const n = Number(trig.match(/\d+$/)?.[0] ?? 1);
+  if (trig.startsWith("attack")) return 14 / n;
+  if (trig.startsWith("second")) return 20 / n;
+  if (trig.startsWith("struck")) return 25 / n;
+  if (trig === "start") return 1;
+  return 0.8; // kill, hurt50
 }
 
 /** A picker: base name, count, area radius, ally or not. */
@@ -77,14 +94,14 @@ const TANK: Base[] = [
   ["t_roar", "Gầm Thét Rung Trời", "🦁", "cc me@2 stun 1.25 | dmg me@2 0.5 fx=ring"],
   ["t_shell", "Mai Rùa Phản Kích", "🐢", "reflect 0.5 4 | buff a:me armor 40 4"],
   ["t_stomp", "Dậm Đất Chấn Động", "🦶", "dmg me@1 1 fx=ring | cc me@1 chill 3"],
-  ["t_thorns", "Giáp Gai Tua Tủa", "🌵", "shield a:me 1.2 4 | dot me@1 bleed 0.6 4"],
+  ["t_thorns", "Giáp Gai Tua Tủa", "🌵", "passive:struck5 | dmg me@1 0.6 fx=ring | dot me@1 bleed 0.3 3"],
   ["t_hook", "Móc Xích Kéo Hồn", "⛓️", "pull far | cc far stun 1 | dmg far 0.8 fx=beam"],
   ["t_iron", "Thân Thép Bất Hoại", "🗿", "buff a:me armor 60 5 | hpct a:me 0.15"],
   ["t_soul", "Hút Hồn Hộ Thể", "👻", "dmg me@1 0.7 ls=1 fx=ring"],
   ["t_guard", "Lá Chắn Đồng Đội", "🤝", "shield a:low2 1 4 | shield a:me 0.8 4"],
   ["t_ram", "Va Húc Như Trâu", "🐂", "dmg t 1.2 fx=slash | knock t 2 | cc t stun 1"],
   ["t_root", "Bám Rễ Cổ Thụ", "🌳", "heal a:me 1.2 | buff a:me armor 30 4 | cc me@1 chill 2"],
-  ["t_halo", "Hào Quang Bảo Hộ", "✨", "buff a:me@1 armor 30 5 | shield a:me@1 0.5 5"],
+  ["t_halo", "Hào Quang Bảo Hộ", "✨", "passive:start | buff a:me@1 armor 35 30 | shield a:me@1 0.6 6"],
   ["t_duel", "Lời Thách Đấu", "📣", "taunt 3 3 | buff a:me dodge 0.3 3 | shield a:me 1 3"],
   ["t_quake", "Phản Chấn Ngược", "💢", "dmg me@1 0.8 fx=ring | cc me@1 weaken 4"],
   ["t_petrify", "Hóa Đá", "🪨", "shield a:me 2.8 2 | cc me@1 stun 0.75"],
@@ -98,7 +115,7 @@ const TANK: Base[] = [
   ["t_regen", "Cơ Thể Tái Sinh", "💚", "heal a:me 2 | cleanse a:me"],
   ["t_mirror", "Giáp Phản Thương", "🪞", "reflect 0.35 5 | shield a:me 0.8 5"],
   ["t_aegis", "Thánh Giáp Che Chở", "🛐", "shield a:all 0.45 4"],
-  ["t_rockeat", "Nuốt Đá Cứng Mình", "🍖", "heal a:me 1 | stack armor 12"],
+  ["t_rockeat", "Ăn Thịt Lớn Mạnh", "🍖", "dmg t 1.4 type=t fx=slash | perm hp 0.03 kill"],
   ["t_mud", "Bãi Bùn Lầy", "🟫", "zone me 1 0.25 4 slow=0.35"],
   ["t_snare", "Cắm Rễ Giữ Chân", "🌱", "cc me@1 stun 1 | dmg me@1 0.5 fx=ring | heal a:me 0.6"],
   ["t_pack", "Gọi Bầy Hộ Giá", "🐾", "summon 1 | shield a:me 0.8 4"],
@@ -106,7 +123,7 @@ const TANK: Base[] = [
   ["t_cocoon", "Kén Tơ Bọc Thân", "🕸️", "shield a:me 1.6 5 | mana a:me@1 15"],
   ["t_anchor", "Mỏ Neo Đáy Biển", "⚓", "pull t | dmg t 1 fx=slash | cc t chill 3"],
   ["t_saw", "Lưỡi Cưa Xoay Tròn", "🪚", "dmg me@1 0.35 x=3 gap=0.4 fx=ring"],
-  ["t_heart", "Tim Sắt", "❤️", "hpct a:me 0.12 | buff a:me vamp 0.25 5"],
+  ["t_heart", "Trái Tim Bất Khuất", "❤️", "passive:hurt50 | shield a:me 2 5 | buff a:me armor 40 5"],
   ["t_bodyguard", "Hộ Vệ Liều Mình", "🛡️", "shield a:carry 1.4 4 | taunt 2 2"],
 ];
 const BRUTE: Base[] = [
@@ -115,13 +132,13 @@ const BRUTE: Base[] = [
   ["b_whirl", "Xoáy Rìu", "🌀", "dmg me@1 1 fx=ring | buff a:me as 0.2 3"],
   ["b_blood", "Cuồng Huyết", "🩸", "buff a:me as 0.5 5 | buff a:me vamp 0.3 5"],
   ["b_punch", "Đấm Thủng Giáp", "👊", "dmg t 1.4 pierce fx=slash | knock t 1"],
-  ["b_crush", "Nghiền Nát", "🔨", "dmg t 1.3 fx=slash | exec t 0.3"],
+  ["b_crush", "Nghiền Nát", "🔨", "dmg t 1.3 fx=slash | exec t 0.3 | loot gold 0.5 1 kill"],
   ["b_horn", "Húc Sừng Xuyên Trận", "🦏", "dmg line 1 fx=beam | cc line stun 0.75"],
   ["b_trample", "Giẫm Đạp", "🐘", "dmg me@1 0.9 fx=ring | cc me@1 stun 1"],
   ["b_claws", "Nanh Vuốt Liên Hoàn", "🐯", "dmg t 0.6 x=3 gap=0.25 fx=slash"],
-  ["b_gnaw", "Gặm Xương", "🦴", "dmg t 1.2 fx=slash | heal a:me 0.8"],
+  ["b_gnaw", "Gặm Xương Hút Hồn", "🦴", "dmg t 1.3 fx=slash | heal a:me 0.5 | perm ad 0.03 kill"],
   ["b_rift", "Bổ Đất Nứt Toác", "⛏️", "dmg line 1.1 fx=beam | dot line bleed 0.4 3"],
-  ["b_rage", "Bùng Nổ Thịnh Nộ", "😡", "transform 5 as=0.6 amp=0.25"],
+  ["b_rage", "Cơn Giận Tích Tụ", "😡", "passive:attack | stack as 0.04"],
   ["b_boulder", "Ném Tảng Đá", "🪨", "dmg far 1.5 fx=bolt | cc far stun 1"],
   ["b_rend", "Cắn Xé Thịt Da", "🦷", "dmg t 1.2 fx=slash | dot t bleed 0.8 4"],
   ["b_mace", "Vung Chùy Gai", "🏏", "dmg t@1 1 fx=ring | cc t@1 weaken 3"],
@@ -134,21 +151,21 @@ const BRUTE: Base[] = [
   ["b_reckless", "Đòn Liều Mạng", "💀", "dmg t 2.4 fx=slash | hurt 0.08"],
   ["b_pounce", "Vồ Ngã Kẻ Yếu", "🐆", "dash low | dmg low 1.4 fx=slash | cc low stun 1"],
   ["b_bladestorm", "Bão Kiếm", "⚔️", "dmg me@1 0.3 x=4 gap=0.3 fx=ring"],
-  ["b_counter", "Chịu Đòn Phản Đòn", "🥊", "shield a:me 1 4 | buff a:me amp 0.3 4"],
+  ["b_counter", "Bản Năng Sinh Tồn", "🥊", "passive:hurt50 | transform 5 as=0.5 amp=0.3 vamp=0.3"],
   ["b_tear", "Xé Xác", "🩻", "dmg t 1.1 fx=slash | exec t 0.2 | heal a:me 0.5"],
 ];
 const ASSASSIN: Base[] = [
   ["a_backstab", "Ám Sát Sau Lưng", "🔪", "blink back | dmg back 2 fx=slash"],
   ["a_sneak", "Đâm Lén", "🗡️", "stealth 1.5 | buff a:me crit 0.3 4 | dmg t 1.4 fx=slash"],
-  ["a_twin", "Song Đao Liên Kích", "⚔️", "dmg t 0.45 x=4 gap=0.15 fx=slash"],
-  ["a_finish", "Kết Liễu", "☠️", "dmg low 1.4 fx=bolt | exec low 0.25"],
+  ["a_twin", "Song Đao Ba Nhịp", "⚔️", "passive:attack3 | dmg t 0.9 type=t fx=slash"],
+  ["a_finish", "Kết Liễu", "☠️", "dmg low 1.4 fx=bolt | exec low 0.25 | loot roll 1 1 kill"],
   ["a_darts", "Phi Tiêu Tẩm Độc", "🎯", "dmg rand3 0.6 fx=bolt | dot rand3 poison 0.4 4"],
   ["a_dive", "Nhảy Chém Bổ Nhào", "🦅", "dash far | dmg far@1 1 fx=ring"],
   ["a_dance", "Vũ Điệu Lưỡi Dao", "💃", "dmg me@1 0.5 x=3 gap=0.2 fx=ring | buff a:me dodge 0.4 3"],
   ["a_hamstring", "Cắt Gân", "🩸", "dmg t 1 fx=slash | cc t chill 4 | dot t bleed 0.5 4"],
-  ["a_ghost", "Bóng Ma Tàng Hình", "🌫️", "stealth 2 | buff a:me as 0.5 4 | dmg t 0.8 fx=slash"],
+  ["a_ghost", "Bóng Ma Rình Rập", "🌫️", "passive:start | stealth 2.5 | buff a:me as 0.5 5 | buff a:me crit 0.3 5"],
   ["a_throat", "Móc Họng", "🪝", "dmg carry 1.5 fx=bolt | cc carry silence 3"],
-  ["a_scythe", "Lưỡi Hái Tử Thần", "⚰️", "dmg t@1 1 fx=ring | exec t@1 0.15"],
+  ["a_scythe", "Lưỡi Hái Tử Thần", "⚰️", "dmg t@1 0.9 type=t fx=ring | exec t@1 0.15"],
   ["a_heart", "Xuyên Tim", "💘", "dmg t 1.8 pierce fx=slash"],
   ["a_flash", "Nhát Chém Chớp Nhoáng", "⚡", "dash low | dmg low 1 fx=slash | dash rand | dmg rand 0.8 fx=slash"],
   ["a_ambush", "Mai Phục", "🕷️", "blink back | cc back stun 1.25 | dmg back 1 fx=slash"],
@@ -159,11 +176,11 @@ const ASSASSIN: Base[] = [
   ["a_windstep", "Lướt Gió", "🍃", "dash far | buff a:me as 0.4 4 | buff a:me dodge 0.3 4"],
   ["a_eyes", "Rạch Mắt", "👁️‍🗨️", "dmg t 1 fx=slash | cc t blind 3"],
   ["a_deepcut", "Vết Cắt Sâu", "🔻", "dmg t 0.9 fx=slash | dot t bleed 1.2 5"],
-  ["a_bounty", "Săn Đầu Người", "💰", "dash high | dmg high 1.6 fx=slash | cc high mark 5"],
+  ["a_bounty", "Săn Đầu Người", "💰", "dash high | dmg high 1.6 fx=slash | cc high mark 5 | loot gold 1 1 kill"],
   ["a_shadow", "Đòn Thù Bóng Tối", "🌑", "dmg t 1.2 fx=slash | cc t weaken 5 | stealth 1"],
-  ["a_frenzy", "Cuồng Sát", "🔥", "dmg t 1 fx=slash | stack ad 0.08"],
+  ["a_frenzy", "Cuồng Sát Liên Hoàn", "🔥", "passive:kill | stack ad 0.15 | stealth 1 | heal a:me 0.6"],
   ["a_storm", "Ám Khí Bão Táp", "🌪️", "dmg near3 0.7 fx=bolt"],
-  ["a_behead", "Trảm Thủ", "🪓", "dash low | dmg low 1.6 fx=slash | exec low 0.2"],
+  ["a_behead", "Trảm Thủ Tích Huyết", "🪓", "dash low | dmg low 1.6 fx=slash | exec low 0.2 | perm ad 0.02 kill"],
   ["a_scorpion", "Nọc Bọ Cạp", "🦂", "dmg t 1 fx=slash | cc t stun 1 | dot t poison 0.6 3"],
   ["a_phase", "Thoắt Ẩn Thoắt Hiện", "🎭", "blink rand | dmg rand@1 0.8 fx=ring | stealth 1"],
   ["a_manabite", "Cắn Trộm Năng Lượng", "🔋", "dmg t 1.1 fx=slash | mana t -30 | mana a:me 20"],
@@ -183,7 +200,7 @@ const MARKSMAN: Base[] = [
   ["m_rain", "Mưa Tên", "🌧️", "dmg t@1 0.4 x=3 gap=0.35 fx=volley"],
   ["m_poison", "Mũi Tên Tẩm Độc", "🐍", "dmg t 1.1 fx=bolt | dot t poison 0.8 4"],
   ["m_snipe", "Bắn Tỉa", "🔭", "dmg far 2 fx=bolt"],
-  ["m_rapid", "Liên Thanh", "🔫", "dmg t 0.45 x=5 gap=0.12 fx=bolt"],
+  ["m_rapid", "Liên Thanh Phân Tán", "🔫", "passive:attack3 | dmg near2 0.6 fx=bolt"],
   ["m_firearrow", "Tên Lửa", "🔥", "dmg t@1 1 fx=bolt | dot t@1 burn 0.4 3"],
   ["m_feathers", "Lông Vũ Sắc Lẹm", "🪶", "dmg rand3 0.7 fx=bolt"],
   ["m_gale", "Tên Xé Gió", "💨", "dmg line 0.9 fx=beam | knock line 1"],
@@ -203,9 +220,9 @@ const MARKSMAN: Base[] = [
   ["m_soul", "Mũi Tên Hút Hồn", "👻", "dmg t 1.2 ls=0.6 fx=bolt"],
   ["m_silence", "Tên Câm Lặng", "🤐", "dmg carry 1 fx=bolt | cc carry silence 3"],
   ["m_storm", "Bão Lông Vũ", "🌪️", "dmg all 0.35 fx=volley"],
-  ["m_charge", "Bắn Tích Năng Lượng", "🔋", "dmg t 1.2 fx=bolt | mana a:me 25"],
-  ["m_divine", "Tên Thần", "🌟", "dmg t 1 fx=bolt | stack as 0.06"],
-  ["m_ap", "Đạn Xuyên Giáp", "🔩", "dmg high 1.5 pierce fx=bolt"],
+  ["m_charge", "Phi Đồng Xu Vàng", "🪙", "dmg t 1.3 fx=bolt | cc t stun 0.5 | loot gold 0.3 1"],
+  ["m_divine", "Tên Thần Tích Lực", "🌟", "dmg t 1 fx=bolt | stack as 0.1"],
+  ["m_ap", "Đạn Xuyên Giáp", "🔩", "dmg high 1.4 type=t fx=bolt"],
   ["m_thunder", "Tên Sét", "⚡", "chain t 3 0.7 | cc t stun 0.5"],
   ["m_net", "Lưới Bắt Mồi", "🕸️", "cc t@1 stun 1 | dmg t@1 0.5 fx=ring"],
   ["m_sling", "Phi Đá", "🪨", "dmg rand2 1 fx=bolt | cc rand2 stun 0.5"],
@@ -216,7 +233,7 @@ const MARKSMAN: Base[] = [
   ["m_hail", "Mưa Đá", "🌨️", "dmg t@2 0.45 fx=volley | cc t@2 chill 2"],
   ["m_spark", "Tia Lửa Bắn Lén", "🔥", "stealth 1 | dmg t 1.5 fx=bolt"],
   ["m_frag", "Đạn Nảy Phân Mảnh", "💥", "dmg t 1 fx=bolt | dmg t@1 0.5 delay=0.3 fx=ring"],
-  ["m_endless", "Bắn Vô Tận", "♾️", "dmg t 0.3 x=8 gap=0.1 fx=bolt"],
+  ["m_endless", "Mũi Tên Ma Thuật", "♾️", "passive:attack | dmg t 0.12 type=t fx=bolt"],
   ["m_hawk", "Mắt Ưng", "🦅", "buff a:me crit 0.4 4 | dmg far 1.3 fx=bolt"],
 ];
 const MAGE: Base[] = [
@@ -244,17 +261,17 @@ const MAGE: Base[] = [
   ["g_bounce", "Quả Cầu Nảy", "🔵", "chain t 6 0.45"],
   ["g_gravity", "Hố Trọng Lực", "🌀", "pull t@2 | dmg t@1 0.8 fx=ring"],
   ["g_acid", "Mưa Axit", "🧪", "dmg t@2 0.5 fx=volley | cc t@2 shred 4"],
-  ["g_death", "Tia Chết Chóc", "💀", "dmg low 1.3 fx=beam | exec low 0.2"],
+  ["g_death", "Tia Chết Chóc", "💀", "dmg low 1.2 type=t fx=beam | exec low 0.2"],
   ["g_bomb", "Bom Hẹn Giờ", "💣", "dmg t@1 1.6 delay=1.5 fx=meteor"],
   ["g_crystal", "Tinh Thể Hộ Mệnh", "💎", "shield a:me 1 4 | dmg t 1 fx=bolt"],
-  ["g_mirror", "Phép Gương", "🪞", "reflect 0.3 4 | dmg t 1 fx=bolt"],
+  ["g_mirror", "Phép Gương Phản Hồi", "🪞", "passive:struck4 | reflect 0.4 2 | dmg carry 0.8 fx=beam"],
   ["g_dragon", "Hỏa Long Quyển", "🐉", "dmg line 0.8 fx=beam | dot line burn 0.6 4"],
-  ["g_chaos", "Ma Pháp Hỗn Loạn", "🎲", "multi 4 0.55"],
+  ["g_chaos", "Ma Pháp Hỗn Loạn", "🎲", "multi 4 0.55 | loot roll 0.25 1"],
   ["g_moon", "Nguyệt Quang", "🌙", "dmg t@1 0.8 fx=ring | heal a:me@1 0.4"],
   ["g_maze", "Mê Cung Ảo Ảnh", "🌀", "cc me@2 blind 2.5 | cc me@2 chill 2 | stealth 1 | dmg me@2 0.6 fx=ring"],
-  ["g_soulfire", "Linh Hồn Bùng Cháy", "🔥", "dmg t 1.4 fx=bolt | stack ap 10"],
+  ["g_soulfire", "Ác Hồn Tích Lũy", "🔥", "dmg low 1.5 fx=bolt | perm ap 3 kill"],
   ["g_spear", "Mũi Giáo Ánh Sáng", "✨", "dmg line 1.2 pierce fx=beam"],
-  ["g_runes", "Lửa Tím Cổ Ngữ", "🟣", "dmg t@1 0.9 fx=ring | mana a:me 15 | cc t silence 2"],
+  ["g_runes", "Lửa Tím Cổ Ngữ", "🟣", "dmg t@1 0.9 fx=ring | cc t silence 2 | loot xp 0.3 2"],
 ];
 const SUPPORT: Base[] = [
   ["s_spring", "Suối Nguồn Chữa Lành", "⛲", "heal a:low2 1"],
@@ -267,15 +284,15 @@ const SUPPORT: Base[] = [
   ["s_angel", "Vòng Tay Thiên Thần", "👼", "heal a:low 1.4 | shield a:low 0.5 3"],
   ["s_bind", "Trói Buộc", "🔗", "cc t@1 stun 1 | heal a:low 0.6"],
   ["s_lullaby", "Lời Ru Ngủ", "😴", "cc carry stun 2 | cc carry weaken 3"],
-  ["s_breeze", "Gió Lành", "🍃", "buff a:all dodge 0.2 4 | heal a:all 0.35"],
+  ["s_breeze", "Gió Lành Che Chở", "🍃", "passive:start | buff a:all dodge 0.15 30 | shield a:all 0.5 8"],
   ["s_drums", "Trống Trận", "🥁", "buff a:all amp 0.15 4 | heal a:all 0.3"],
   ["s_spores", "Bào Tử Hồi Máu", "🍄", "zone me 1 0.35 5 heal"],
   ["s_holy", "Giáp Thánh", "⛪", "buff a:low2 armor 40 5 | heal a:low2 0.5"],
-  ["s_bless", "Chúc Phúc Ma Lực", "🔮", "mana a:me@2 20 | heal a:me@2 0.3"],
+  ["s_bless", "Chúc Phúc Ma Lực", "🔮", "mana a:me@2 20 | heal a:me@2 0.3 | loot xp 0.25 1"],
   ["s_share", "Hút Máu Chia Sẻ", "🩸", "dmg t 0.9 fx=beam | heal a:low2 0.6"],
   ["s_slow", "Phép Chậm", "🐌", "cc t@2 chill 4 | dmg t@2 0.3 fx=ring"],
   ["s_seal", "Ấn Bảo Hộ", "🔰", "shield a:carry 1.5 5 | buff a:carry vamp 0.2 5"],
-  ["s_fireflies", "Bầy Đom Đóm", "✨", "heal a:low 0.5 x=3 gap=0.4"],
+  ["s_fireflies", "Bầy Đom Đóm", "✨", "passive:second3 | heal a:low 0.5"],
   ["s_hypno", "Ánh Mắt Thôi Miên", "🌀", "cc high stun 1.5 | mana high -30 | dmg high 0.7 fx=beam"],
   ["s_elixir", "Thần Dược", "🧪", "hpct a:low 0.25"],
   ["s_prayer", "Lời Cầu Nguyện", "🙏", "heal a:all 0.25 | shield a:all 0.25 3"],
@@ -292,7 +309,7 @@ type Ult = [id: string, name: string, icon: string, fit: "m" | "r" | "a", fx: st
 export const ULTIMATES: Ult[] = [
   ["u_meteors", "Mưa Thiên Thạch", "☄️", "a", "dmg rand4@1 0.8 fx=meteor | cc rand4@1 stun 0.75"],
   ["u_doom", "Đại Tận Thế", "🌋", "a", "dmg all 0.9 fx=ring | dot all burn 0.4 4"],
-  ["u_devour", "Nuốt Chửng Linh Hồn", "👹", "m", "dmg low 2.5 fx=slash | exec low 0.35 | hpct a:me 0.3"],
+  ["u_devour", "Nuốt Chửng Linh Hồn", "👹", "m", "dmg low 2.5 fx=slash | exec low 0.35 | hpct a:me 0.3 | perm hp 0.05 kill"],
   ["u_horde", "Triệu Hồi Bầy Đàn", "🐺", "a", "summon 3"],
   ["u_blackhole", "Hố Đen Nuốt Trời", "🕳️", "a", "pull dense@2 | dmg dense@1 1 fx=ring | cc dense@1 stun 2"],
   ["u_chains", "Xích Lôi Liên Hoàn", "⛓️", "r", "chain t 9 0.6 | cc t stun 1"],
@@ -339,7 +356,7 @@ export const ULTIMATES: Ult[] = [
   ["u_coffin", "Băng Phong Quan Tài", "⚰️", "a", "cc high2 stun 3.5 | dmg high2 1.2 fx=bolt"],
   ["u_myriad", "Lôi Đình Vạn Quân", "🌩️", "r", "chain t 12 0.5"],
   ["u_skysplit", "Phá Thiên Trảm", "⚔️", "m", "dmg line 2.5 pierce fx=beam"],
-  ["u_voidmaw", "Hư Không Nuốt Chửng", "🕳️", "a", "dmg low2 2 fx=ring | exec low2 0.3"],
+  ["u_voidmaw", "Hư Không Nuốt Chửng", "🕳️", "a", "dmg low2 2 type=t fx=ring | exec low2 0.3 | perm ap 5 kill"],
   ["u_altar", "Tế Đàn Máu", "🩸", "a", "hurt 0.2 | buff a:all amp 0.35 6 | buff a:all vamp 0.2 6"],
   ["u_gale", "Cuồng Phong Xé Trời", "💨", "r", "dmg all 0.6 fx=ring | knock all 2 | cc all chill 2"],
   ["u_yinyang", "Địa Ngục Băng Hỏa", "☯️", "a", "dmg t@2 0.8 fx=ring | dot t@2 burn 0.5 4 | cc t@2 chill 4"],
@@ -349,7 +366,7 @@ export const ULTIMATES: Ult[] = [
   ["u_starfall", "Mưa Ánh Sao", "🌟", "r", "dmg rand6 0.7 fx=meteor | heal a:all 0.3"],
   ["u_split", "Linh Hồn Phân Liệt", "👥", "a", "summon 2 | stealth 1.5"],
   ["u_seal", "Phong Ấn Cổ Đại", "📜", "a", "cc carry stun 4 | cc carry silence 6 | cc carry2 weaken 5"],
-  ["u_cosmos", "Hút Năng Lượng Vũ Trụ", "🌌", "a", "mana all -30 | mana a:all 25 | dmg all 0.4 fx=ring"],
+  ["u_cosmos", "Hút Năng Lượng Vũ Trụ", "🌌", "a", "mana all -30 | mana a:all 25 | dmg all 0.4 fx=ring | loot xp 0.5 2"],
   ["u_lighthouse", "Tháp Canh Ánh Sáng", "🗼", "r", "dmg t 0.5 x=10 gap=0.25 fx=beam"],
   ["u_antler", "Sừng Thần Xuyên Núi", "🦌", "m", "dash far | dmg line 1.6 fx=beam | cc line stun 1"],
   ["u_venoms", "Vạn Độc Quy Tông", "☠️", "a", "dot all poison 1.4 6 | cc all weaken 4"],
@@ -368,7 +385,7 @@ export const ULTIMATES: Ult[] = [
   ["u_rift", "Chém Rách Không Gian", "🌌", "m", "blink far | dmg far@2 1.2 fx=ring | cc far@2 chill 3"],
   ["u_needles", "Mưa Kim Châm", "📍", "r", "multi 15 0.25 | cc t mark 5"],
   ["u_guardian", "Thần Hộ Mệnh", "🛐", "a", "shield a:low3 1.5 6 | heal a:low3 0.8"],
-  ["u_kingblade", "Thanh Kiếm Của Vua", "👑", "m", "dmg t 3 fx=slash | exec t 0.3 | buff a:me as 0.5 5"],
+  ["u_kingblade", "Thanh Kiếm Của Vua", "👑", "m", "dmg t 3 fx=slash | exec t 0.3 | buff a:me as 0.5 5 | loot gold 1 2 kill"],
   ["u_hellgate", "Cổng Địa Ngục", "🔥", "a", "summon 2 | zone dense 2 0.35 5"],
   ["u_vortex", "Lốc Xoáy Hút Hồn", "🌪️", "a", "pull dense@3 | dmg dense@2 0.9 fx=ring | mana dense@2 -30"],
   ["u_rite", "Vòng Tròn Tế Lễ", "🔯", "a", "dmg me@2 0.9 fx=ring | heal a:me@2 0.9"],
@@ -443,6 +460,8 @@ export function spellValue(fx: Fx[]): { scal: number; flat: number } {
       case "exec": flat += 0.25 * n * e.v! * 4; break;
       case "hurt": flat -= e.v! * 3; break;
       case "transform": flat += e.dur! * (Number(e.o.as ?? 0) * 0.25 + Number(e.o.amp ?? 0) * 0.35 + Number(e.o.vamp ?? 0) * 0.3); break;
+      case "perm": flat += 0.3; break;
+      case "loot": flat += 0.1; break;
     }
   }
   return { scal, flat };
@@ -574,7 +593,10 @@ export function assignSpells(units: SpellInput[], spellBase: (cost: Cost) => num
 }
 
 function makeVariant(b: Base, variant: number, u: SpellInput, physical: boolean, base: number): SpellDef {
-  let fx = scalePower(normalise(parseFx(b[3]), 1.7), TUNE[b[0]] ?? 1);
+  const { passive, fx: src } = splitPassive(b[3]);
+  // a passive goes off many times (or once): each time is worth a share of two casts
+  const target = passive ? Math.min(3, (1.7 * 2.2) / triggerCount(passive)) : 1.7;
+  let fx = scalePower(normalise(parseFx(src), target), TUNE[b[0]] ?? 1);
   let name = b[1];
   if (variant === 1) {
     fx = scalePower(fx, 1.12);
@@ -590,7 +612,7 @@ function makeVariant(b: Base, variant: number, u: SpellInput, physical: boolean,
     fx = w.fx;
     name = `${b[1]} ${w.label}`;
   }
-  const sp: SpellDef = { id: `${b[0]}_${variant}`, name, icon: b[2], el: u.el, physical, fx, base: b[0], variant, desc: "" };
+  const sp: SpellDef = { id: `${b[0]}_${variant}`, name, icon: b[2], el: u.el, physical, fx, base: b[0], variant, desc: "", passive };
   sp.desc = describe(sp, base);
   return sp;
 }
@@ -609,6 +631,21 @@ const BUFF_NAMES: Record<string, (v: number) => string> = {
 const STACK_NAMES: Record<string, (v: number) => string> = {
   ad: (v) => `+${Math.round(v * 100)}% sát thương đòn đánh`, ap: (v) => `+${v} sức mạnh phép`, armor: (v) => `+${v} giáp`, as: (v) => `+${Math.round(v * 100)}% tốc đánh`, hp: (v) => `+${Math.round(v * 100)}% máu tối đa`,
 };
+
+const PERM_NAMES: Record<string, (v: number) => string> = {
+  ap: (v) => `+${v} sức mạnh phép`, ad: (v) => `+${Math.round(v * 100)}% sát thương đòn đánh`, hp: (v) => `+${Math.round(v * 100)}% máu tối đa`, armor: (v) => `+${v} giáp`, as: (v) => `+${Math.round(v * 100)}% tốc đánh`,
+};
+function TRIGGER_TEXT(t: string): string {
+  const n = t.match(/\d+$/)?.[0];
+  if (t === "attack") return "Mỗi đòn đánh";
+  if (t.startsWith("attack")) return `Mỗi ${n} đòn đánh`;
+  if (t.startsWith("second")) return `Mỗi ${n} giây`;
+  if (t.startsWith("struck")) return `Mỗi khi trúng ${n} đòn`;
+  if (t === "kill") return "Mỗi khi hạ gục kẻ địch";
+  if (t === "hurt50") return "Lần đầu tụt dưới 50% máu";
+  if (t === "start") return "Đầu trận";
+  return t;
+}
 
 export function whoText(w: string): string {
   const p = parseWho(w);
@@ -658,7 +695,7 @@ export function describe(sp: SpellDef, base: number): string {
       case "hpct": parts.push(`Hồi ${Math.round(e.v! * 100)}% máu tối đa cho ${w}`); break;
       case "shield": parts.push(`Tạo khiên ${amt} cho ${w} trong ${secs(e.dur!)}`); break;
       case "buff": parts.push(`${w[0].toUpperCase()}${w.slice(1)} ${BUFF_NAMES[e.id!]?.(e.v!) ?? e.id}${e.id === "ap" || e.id === "ad" ? "" : ` trong ${secs(e.dur!)}`}`); break;
-      case "stack": parts.push(`Mỗi lần dùng chiêu: vĩnh viễn ${STACK_NAMES[e.id!]?.(e.v!) ?? e.id}`); break;
+      case "stack": parts.push(`${sp.passive ? "Cộng dồn" : "Mỗi lần dùng chiêu: cộng dồn"} ${STACK_NAMES[e.id!]?.(e.v!) ?? e.id} đến hết giao tranh`); break;
       case "dash": parts.push(`Lướt tới ${w}`); break;
       case "blink": parts.push(`Dịch chuyển ra sau lưng ${w}`); break;
       case "knock": parts.push(`Đẩy lùi ${w} ${e.n} ô`); break;
@@ -677,6 +714,12 @@ export function describe(sp: SpellDef, base: number): string {
       case "steal": parts.push(`Cướp ${e.v} ${e.id === "armor" ? "giáp" : e.id === "ad" ? "sát thương" : "năng lượng"} của ${w}`); break;
       case "exec": parts.push(`Kết liễu ${w} nếu còn dưới ${Math.round(e.v! * 100)}% máu`); break;
       case "hurt": parts.push(`Hy sinh ${Math.round(e.v! * 100)}% máu tối đa của bản thân`); break;
+      case "perm": parts.push(`${e.o.kill ? "Nếu hạ gục được: v" : "V"}ĩnh viễn ${PERM_NAMES[e.id!]?.(e.v!) ?? e.id} (giữ suốt cả ván đấu)`); break;
+      case "loot": {
+        const what = e.id === "gold" ? `${e.n} vàng` : e.id === "xp" ? `${e.n} kinh nghiệm` : `${e.n} lượt đổi cửa hàng miễn phí`;
+        parts.push(`${e.o.kill ? "Nếu hạ gục được: " : ""}${e.v! >= 1 ? "nhận" : `${Math.round(e.v! * 100)}% cơ hội nhận`} ${what}`);
+        break;
+      }
       case "transform": {
         const bits = [e.o.as && `+${Math.round(Number(e.o.as) * 100)}% tốc đánh`, e.o.amp && `+${Math.round(Number(e.o.amp) * 100)}% sát thương`, e.o.vamp && `hút máu ${Math.round(Number(e.o.vamp) * 100)}%`].filter(Boolean);
         parts.push(`Hóa cuồng ${secs(e.dur!)}: ${bits.join(", ")}`);
@@ -684,7 +727,8 @@ export function describe(sp: SpellDef, base: number): string {
       }
     }
   }
-  return parts.join(". ") + "." + (sp.ult ? " (Tối thượng)" : "");
+  const head = sp.passive ? `Nội tại (không cần năng lượng) — ${TRIGGER_TEXT(sp.passive)}: ` : "";
+  return head + parts.join(". ") + "." + (sp.ult ? " (Tối thượng)" : "");
 }
 
 /** Every debuff id the language knows (for the screen's names). */
