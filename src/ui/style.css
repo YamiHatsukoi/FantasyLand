@@ -277,6 +277,10 @@ img.sprite, .pix { image-rendering: pixelated; image-rendering: crisp-edges; }
 .unit.active { transform: translateY(-6px); }
 .unit.active::after { content: "▼"; position: absolute; top: -18px; color: var(--gold); font-size: 14px; animation: bob 0.8s infinite; }
 .unit.targetable { cursor: crosshair; }
+/* a fallen ally can still be picked for a revive */
+.unit.dead.targetable { pointer-events: auto; opacity: .55; filter: grayscale(.6); }
+.arena .fighter.dead.targetable { opacity: .65; }
+.arena .fighter.dead.targetable .plate { display: flex; }
 .unit.targetable img, .unit.targetable.ally-card { animation: pulse 0.9s infinite; }
 @keyframes pulse { 50% { filter: brightness(1.6) drop-shadow(0 0 8px #ffd84a); } }
 .unit.hit img { animation: shake 0.3s; }
