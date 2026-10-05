@@ -183,6 +183,11 @@ export class ArenaBattle {
     if (m.starPower && star >= 2) { f.maxHp = Math.round(f.maxHp * (1 + m.starPower)); f.ad = Math.round(f.ad * (1 + m.starPower)); }
     f.crit = Math.min(1, f.crit);
     f.hp = f.maxHp;
+    // dear units at ★3+: spells come much faster (a 5-gold ★3 casts almost at once)
+    if (u.cost >= 4 && star >= 3) {
+      f.maxMana = Math.round(f.maxMana * (u.cost === 5 ? 0.5 : 0.75));
+      f.mana = Math.max(f.mana, f.maxMana * (u.cost === 5 ? 0.9 : 0.5));
+    }
     f.mana = Math.min(f.mana, f.maxMana - 1);
     this.fighters.push(f);
     return f;
@@ -194,6 +199,7 @@ export class ArenaBattle {
     if (f.traits.k_construct) this.addShield(f, f.maxHp * f.traits.k_construct, 99);
     if (f.traits.u_overlord) f.ccImmune = 4;
     if (f.fxs.has("quicksilver")) f.ccImmune = Math.max(f.ccImmune, 15);
+    if (f.unit.cost === 5 && f.star >= 3) f.ccImmune = 999; // a 5-gold ★3 cannot be stopped
     if (f.fxs.has("crownguard")) this.addShield(f, f.maxHp * 0.3, 99, "crownguard");
     if (f.fxs.has("locket")) for (const a of this.allies(f)) if (dist(a, f) <= 1) this.addShield(a, 300, 10);
     if (f.fxs.has("zz")) this.spawnDecoy(f);
