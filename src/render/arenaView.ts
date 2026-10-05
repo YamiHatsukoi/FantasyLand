@@ -7,7 +7,7 @@
  * revive pillars, and status marks drawn from each fighter's timers (stun stars, chill frost,
  * burning, shields, stealth, frenzy...).
  */
-import type { ArenaBattle, CombatEvent, Fighter } from "../arena/combat";
+import { DT, MOVE_TIME, type ArenaBattle, type CombatEvent, type Fighter } from "../arena/combat";
 import type { PlacedUnit } from "../arena/combat";
 import { COLS, ROWS, HALF } from "../arena/hex";
 import { ITEMS } from "../arena/items";
@@ -85,7 +85,8 @@ export class ArenaView {
 
   /** Sizes the board to the space given (CSS px). */
   resize(w: number, maxH: number) {
-    this.dpr = Math.min(2, window.devicePixelRatio || 1);
+    // pixel art needs no more than 1.5x: far fewer pixels to fill each frame on phones
+    this.dpr = Math.min(1.5, window.devicePixelRatio || 1);
     const byW = (w - 8) / (7.5 * SQ3);
     // board 12.5 s tall + bench (≈ one hex) + gaps
     const byH = (maxH - 12) / (12.5 + 0.9 + SQ3 * 1.25);
@@ -104,6 +105,7 @@ export class ArenaView {
     this.cv.style.width = `${this.W}px`;
     this.cv.style.height = `${this.H}px`;
     this.bg = null;
+    this.layer = null;
   }
 
   // ------------------------------------------------------------ scenery from the dungeon floors
@@ -220,13 +222,15 @@ export class ArenaView {
     return h ? this.plan.enemy.find((e) => e.x === h.x && e.y === h.y) ?? null : null;
   }
 
+  /** How far the fight is between two engine steps (0..1), so movement is drawn smoothly every frame. */
+  alpha = 0;
   private fighterPt(f: Fighter): Pt {
     const to = this.hexCenter(f.x, f.y);
     if (!f.moveFrom) return to;
     const from = this.hexCenter(f.moveFrom.x, f.moveFrom.y);
-    const t = Math.min(1, f.moveT);
-    const e = t * t * (3 - 2 * t);
-    return { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e };
+    // even speed across hexes (no stop at each one), advanced between engine steps
+    const t = Math.min(1, f.moveT + (this.battle && this.battle.winner === null ? this.alpha * (DT / MOVE_TIME) : 0));
+    return { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t };
   }
 
   // ------------------------------------------------------------ fights
@@ -491,12 +495,50 @@ export class ArenaView {
     g.closePath();
   }
 
+  /** The board drawn once (scenery, hexes, midline, bench slots) and reused every frame. */
+  private layer: HTMLCanvasElement | null = null;
+  private layerFor = "";
   private drawBoard() {
     const g = this.g;
-    // arena floor
-    this.bg ??= this.buildBg();
-    g.drawImage(this.bg, 0, 0, this.W, this.H);
     const fighting = !!this.battle;
+    const key = `${this.biome}|${this.W}x${this.H}|${fighting ? 1 : 0}`;
+    if (!this.layer || !this.bg || this.layerFor !== key) {
+      this.bg ??= this.buildBg();
+      const c = document.createElement("canvas");
+      c.width = this.cv.width; c.height = this.cv.height;
+      const lg = c.getContext("2d")!;
+      lg.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      this.g = lg;
+      this.drawStatic(fighting);
+      this.g = g;
+      this.layer = c;
+      this.layerFor = key;
+    }
+    g.drawImage(this.layer, 0, 0, this.W, this.H);
+    if (this.dropHex) {
+      const c = this.hexCenter(this.dropHex.x, this.dropHex.y);
+      this.hexPath(c, this.s * 0.94);
+      g.fillStyle = "rgba(255,230,140,0.25)";
+      g.fill();
+      g.strokeStyle = "#ffe08a";
+      g.lineWidth = 2;
+      g.stroke();
+    }
+    if (this.dropBench >= 0) {
+      const c = this.benchCenter(this.dropBench);
+      const r = this.slot * 0.46;
+      g.fillStyle = "rgba(255,230,140,0.25)";
+      g.strokeStyle = "#ffe08a";
+      g.lineWidth = 2;
+      roundRect(g, c.x - r, c.y - r, r * 2, r * 2, 6);
+      g.fill();
+      g.stroke();
+    }
+  }
+
+  private drawStatic(fighting: boolean) {
+    const g = this.g;
+    g.drawImage(this.bg!, 0, 0, this.W, this.H);
     for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
       const c = this.hexCenter(x, y);
       this.hexPath(c, this.s * 0.94);
@@ -515,28 +557,26 @@ export class ArenaView {
     g.moveTo(this.ox, my); g.lineTo(this.ox + this.hw * 7.5, my);
     g.stroke();
     g.setLineDash([]);
-    if (this.dropHex) {
-      const c = this.hexCenter(this.dropHex.x, this.dropHex.y);
-      this.hexPath(c, this.s * 0.94);
-      g.fillStyle = "rgba(255,230,140,0.25)";
-      g.fill();
-      g.strokeStyle = "#ffe08a";
-      g.lineWidth = 2;
-      g.stroke();
-    }
     // bench
     for (let i = 0; i < 9; i++) {
       const c = this.benchCenter(i);
       const r = this.slot * 0.46;
-      g.fillStyle = this.dropBench === i ? "rgba(255,230,140,0.25)" : "rgba(0,0,0,0.28)";
-      g.strokeStyle = this.dropBench === i ? "#ffe08a" : "rgba(255,255,255,0.12)";
-      g.lineWidth = this.dropBench === i ? 2 : 1;
+      g.fillStyle = "rgba(0,0,0,0.28)";
+      g.strokeStyle = "rgba(255,255,255,0.12)";
+      g.lineWidth = 1;
       roundRect(g, c.x - r, c.y - r, r * 2, r * 2, 6);
       g.fill();
       g.stroke();
     }
   }
 
+  /** Sprites and white silhouettes per unit id, looked up once. */
+  private spriteMemo = new Map<string, [HTMLCanvasElement, HTMLCanvasElement | null]>();
+  private unitSprites(unitId: string, id: string, pal?: Record<string, string>) {
+    let e = this.spriteMemo.get(unitId);
+    if (!e) { e = [spriteCanvas(id, pal), null]; this.spriteMemo.set(unitId, e); }
+    return e;
+  }
   private sprite(id: string, pal?: Record<string, string>) { return spriteCanvas(id, pal); }
   private silhouette(id: string, pal?: Record<string, string>) {
     const k = `${id}|${pal ? JSON.stringify(pal) : ""}`;
@@ -568,14 +608,16 @@ export class ArenaView {
     g.ellipse(p.x, p.y + this.s * 0.38, size * 0.32, size * 0.11, 0, 0, Math.PI * 2);
     g.fill();
     if (o.ring) { g.strokeStyle = o.ring; g.lineWidth = 2; g.beginPath(); g.ellipse(p.x, p.y + this.s * 0.38, size * 0.4, size * 0.15, 0, 0, Math.PI * 2); g.stroke(); }
-    const src = this.sprite(u.sprite, u.palette);
+    const memo = this.unitSprites(u.id, u.sprite, u.palette);
+    const src = memo[0];
     const x = p.x - size / 2, y = p.y + this.s * 0.42 - size;
     g.save();
     if (o.flip) { g.translate(p.x * 2, 0); g.scale(-1, 1); }
     g.drawImage(src, 0, 0, src.width, src.height, x, y, size, size);
     if (o.flash && o.flash > 0) {
       g.globalAlpha = (o.alpha ?? 1) * Math.min(0.85, o.flash * 7);
-      g.drawImage(this.silhouette(u.sprite, u.palette), 0, 0, src.width, src.height, x, y, size, size);
+      memo[1] ??= this.silhouette(u.sprite, u.palette);
+      g.drawImage(memo[1], 0, 0, src.width, src.height, x, y, size, size);
     }
     g.restore();
     g.globalAlpha = o.alpha ?? 1;
@@ -797,11 +839,11 @@ export class ArenaView {
         g.lineWidth = 3 * a + 1;
         g.beginPath(); g.ellipse(p.x, p.y, r, r * 0.62, 0, 0, Math.PI * 2); g.stroke();
       } else if (p.kind === "glow") {
+        // a pre-drawn soft dot (cheaper than two arcs per particle)
         const r = p.size * (0.6 + a * 0.6);
-        g.fillStyle = hexA(p.col, a * 0.5);
-        g.beginPath(); g.arc(p.x, p.y, r * 2, 0, Math.PI * 2); g.fill();
-        g.fillStyle = hexA(p.col, a);
-        g.beginPath(); g.arc(p.x, p.y, r, 0, Math.PI * 2); g.fill();
+        g.globalAlpha = a;
+        g.drawImage(glowSprite(p.col), p.x - r * 2, p.y - r * 2, r * 4, r * 4);
+        g.globalAlpha = 1;
       } else if (p.kind === "spark") {
         // a slash arc across the target
         const r = p.size, rot = p.rot ?? 0;
@@ -825,7 +867,7 @@ export class ArenaView {
       }
     }
     this.parts = this.parts.filter((p) => p.life > 0);
-    if (this.parts.length > 600) this.parts.splice(0, this.parts.length - 600);
+    if (this.parts.length > 320) this.parts.splice(0, this.parts.length - 320);
     // floating numbers
     g.textAlign = "center";
     g.textBaseline = "middle";
@@ -843,6 +885,25 @@ export class ArenaView {
     g.globalAlpha = 1;
     this.texts = this.texts.filter((t) => t.t < t.max);
   }
+}
+
+const glowCache = new Map<string, HTMLCanvasElement>();
+/** A small soft glowing dot in a colour, drawn once. */
+function glowSprite(col: string): HTMLCanvasElement {
+  let c = glowCache.get(col);
+  if (c) return c;
+  c = document.createElement("canvas");
+  c.width = c.height = 32;
+  const g = c.getContext("2d")!;
+  const gr = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  gr.addColorStop(0, hexA(col, 1));
+  gr.addColorStop(0.45, hexA(col, 0.85));
+  gr.addColorStop(0.5, hexA(col, 0.45));
+  gr.addColorStop(1, hexA(col, 0));
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 32, 32);
+  glowCache.set(col, c);
+  return c;
 }
 
 function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
