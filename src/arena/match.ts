@@ -21,8 +21,6 @@ export const BENCH = 9;
 export const SHOP = 5;
 export const MAX_HP = 100;
 export const DECK_SIZE = 50;
-export const DECK_MIN = 40;
-export const DECK_MAX_FIVE = 8;
 export const REROLL_COST = 2;
 export const XP_COST = 4;
 export const MAX_LEVEL = 10;
@@ -139,26 +137,31 @@ const hash = (...n: number[]) => n.reduce((h, x) => Math.imul(h ^ (x | 0), 16777
 /** The highest floor a CPU's deck draws from at a rank step. */
 export const cpuMaxFloor = (step: number) => Math.min(100, Math.max(8, Math.round(8 + tierOf(step) * 2.4)));
 
-/** A random legal deck from floors 1..maxFloor. */
-export function randomDeck(maxFloor: number, rand: () => number): string[] {
-  const pool = arenaUnits().filter((u) => u.floor <= maxFloor);
-  const five = pool.filter((u) => u.cost === 5), rest = pool.filter((u) => u.cost !== 5);
+/** How many units of each price a match deck takes: 12 / 11 / 10 / 9 / 8. */
+export const DECK_QUOTA = [0, 12, 11, 10, 9, 8];
+
+/**
+ * A match deck drawn at random from a pool (the units a player has unlocked, or a CPU's floors):
+ * 12 one-gold, 11 two-gold, 10 three-gold, 9 four-gold and 8 five-gold. When a price is short,
+ * the deck is topped up with other units of the pool (never more than 8 five-gold).
+ */
+export function deckFrom(pool: string[], rand: () => number): string[] {
+  const units = [...new Set(pool)].map((id) => arenaUnit(id)).filter((u): u is ArenaUnit => !!u);
   const sh = <T>(a: T[]) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
-  const fives = sh([...five]).slice(0, Math.min(DECK_MAX_FIVE, Math.max(3, Math.round(DECK_SIZE * 0.12))));
-  const others = sh([...rest]).slice(0, DECK_SIZE - fives.length);
-  return [...fives, ...others].map((u) => u.id);
+  const out: string[] = [];
+  const left: ArenaUnit[] = [];
+  for (let c = 1; c <= 5; c++) {
+    const at = sh(units.filter((u) => u.cost === c));
+    out.push(...at.slice(0, DECK_QUOTA[c]).map((u) => u.id));
+    if (c < 5) left.push(...at.slice(DECK_QUOTA[c]));
+  }
+  for (const u of sh(left)) { if (out.length >= DECK_SIZE) break; out.push(u.id); }
+  return out;
 }
 
-/** Checks a player's deck: exactly 50 (or every unlocked unit when fewer than 50, at least 40), at most 8 five-cost. */
-export function deckProblem(deck: string[], unlocked: number): string | null {
-  const need = Math.min(DECK_SIZE, unlocked);
-  if (unlocked < DECK_MIN) return `Cần mở khóa ít nhất ${DECK_MIN} tướng.`;
-  if (new Set(deck).size !== deck.length) return "Bể tướng có tướng trùng.";
-  if (deck.length !== need) return `Bể tướng phải có đúng ${need} tướng (đang có ${deck.length}).`;
-  if (deck.some((id) => !arenaUnit(id))) return "Bể tướng có tướng không tồn tại.";
-  const fives = deck.filter((id) => arenaUnit(id)!.cost === 5).length;
-  if (fives > DECK_MAX_FIVE) return `Tối đa ${DECK_MAX_FIVE} tướng 5 vàng (đang có ${fives}).`;
-  return null;
+/** A CPU's deck: drawn from the units of floors 1..maxFloor. */
+export function randomDeck(maxFloor: number, rand: () => number): string[] {
+  return deckFrom(arenaUnits().filter((u) => u.floor <= maxFloor).map((u) => u.id), rand);
 }
 
 const CPU_NAMES = [
