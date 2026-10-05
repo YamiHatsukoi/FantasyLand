@@ -30,6 +30,7 @@ import { fold } from "../ui/smart";
 import { PET, petSpec } from "../data/pets";
 import { creatureSmall } from "../render/creatures";
 import { showLevelUps } from "../ui/levelup";
+import { ARENA_UNLOCK, arenaGate, dexCount } from "./arena";
 import { openCodex } from "./codex";
 import { openPlayers } from "./players";
 import { checkGifts, giftsWaiting, openGifts } from "./gifts";
@@ -133,7 +134,7 @@ export function sanctuaryGround(terr: ReturnType<typeof territory>): HTMLCanvasE
   return cv;
 }
 
-export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: number) => void; visit: (p: PlayerVisit) => void }): Screen {
+export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: number) => void; visit: (p: PlayerVisit) => void; arena: () => void }): Screen {
   playMusic("sanctuary");
   const g = app.game;
   const el = h("div", { class: "screen" });
@@ -221,6 +222,7 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
       { icon: "💰", label: "Bán hàng loạt", fn: () => openSanctuaryMarket(updateHud) },
     ]),
     dockBtn("🌀", "Vực Sâu", () => { const gate = app.game.buildings.find((b) => b.type === "gate"); if (gate) openB(gate); }),
+    arenaBtn(),
     dockGroup("🌐", "Kết nối", [
       { icon: "🎁", label: "Hòm quà", fn: () => openGifts({ onChange: updateHud }), badge: "gift" },
       { icon: "🌐", label: "Người chơi", fn: () => openPlayers(hooks.visit) },
@@ -238,6 +240,12 @@ export function mountSafeZone(root: HTMLElement, hooks: { enterDungeon: (floor: 
   el.append(placeBar);
   updateHud();
 
+  /** The arena: locked (with a lock mark) until 40 monster kinds are in the codex. */
+  function arenaBtn() {
+    const b = dockBtn("🏟️", "Đấu Trường", () => arenaGate(hooks.arena));
+    if (dexCount() < ARENA_UNLOCK) { b.classList.add("locked"); b.append(h("span", { class: "dock-lock" }, "🔒")); }
+    return b;
+  }
   function dockBtn(icon: string, label: string, fn: () => void, badge?: string) {
     const b = h("button", { onclick: () => { closeDockMenu(); fn(); } }, h("span", null, icon), h("span", null, label));
     if (badge) { const e = h("span", { class: "dock-badge" }); groupBadges.push({ el: e, keys: [badge] }); b.append(e); }

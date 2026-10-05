@@ -14,6 +14,7 @@ import { ApiError, cachedSession, clearSession, errorText, type PlayerVisit, typ
 import { SaveManager } from "./net/save";
 import { openAppearance } from "./screens/appearance";
 import { mountDungeon, startExpedition } from "./screens/dungeon";
+import { mountArena } from "./screens/arena";
 import { mountLogin } from "./screens/login";
 import { mountSafeZone } from "./screens/safezone";
 import { mountVisit } from "./screens/visit";
@@ -62,9 +63,14 @@ async function startSession(s: Session) {
 
 function goSafeZone(animate = true): Promise<void> {
   closeAllModals();
-  const show = () => app.show((root) => mountSafeZone(root, { enterDungeon: (f) => enterDungeon(f), visit: goVisit }));
+  const show = () => app.show((root) => mountSafeZone(root, { enterDungeon: (f) => enterDungeon(f), visit: goVisit, arena: goArena }));
   if (!animate) { show(); return Promise.resolve(); }
   return playTransition({ kicker: "TRỞ VỀ", title: "⌂", name: "Thánh Địa", sub: "Ánh đèn nhà đang chờ", accent: "#ffd27a", ground: "#1a2a18" }, show);
+}
+
+function goArena() {
+  closeAllModals();
+  app.show((root) => mountArena(root, { leave: () => void goSafeZone(false) }));
 }
 
 function goVisit(v: PlayerVisit) {

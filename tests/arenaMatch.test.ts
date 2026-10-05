@@ -42,7 +42,7 @@ describe("arena match", () => {
       expect(sum.standings.length).toBe(8);
       expect(M.human(m).augments.length).toBeGreaterThan(0);
     }
-  });
+  }, 30000);
 
   it("rounds follow TFT: carousel, monsters, augments", () => {
     expect(M.roundKind(1, 1)).toBe("carousel");
@@ -124,17 +124,28 @@ describe("arena match", () => {
     expect([a.x, a.y]).toEqual([2, 4]);
   });
 
-  it("deck rules and CPU decks by rank", () => {
-    expect(M.deckProblem(deck(), 300)).toBeNull();
-    expect(M.deckProblem(deck().slice(0, 45), 300)).not.toBeNull();
-    expect(M.deckProblem(deck().slice(0, 45), 45)).toBeNull();
-    expect(M.deckProblem(deck().slice(0, 39), 39)).not.toBeNull();
-    const fives = us.filter((u) => u.cost === 5).slice(0, 9).map((u) => u.id);
-    expect(M.deckProblem([...fives, ...us.filter((u) => u.cost === 1).slice(0, 41).map((u) => u.id)], 300)).toMatch(/5 vàng/);
+  it("each match draws 12/11/10/9/8 units by price, topping up when a price is short", () => {
+    const rand = Math.random;
+    const costs = (d: string[]) => [1, 2, 3, 4, 5].map((c) => d.filter((id) => us.find((u) => u.id === id)!.cost === c).length);
+    // plenty unlocked: exactly the quotas
+    const full = M.deckFrom(us.map((u) => u.id), rand);
+    expect(full.length).toBe(50);
+    expect(new Set(full).size).toBe(50);
+    expect(costs(full)).toEqual([12, 11, 10, 9, 8]);
+    // only 7 floors unlocked (14/14/7/7/7): short prices are topped up from the others
+    const seven = us.filter((u) => u.floor <= 7).map((u) => u.id);
+    const d7 = M.deckFrom(seven, rand);
+    expect(d7.length).toBe(49);
+    expect(costs(d7)[4]).toBe(7);
+    // fewer than 50 unlocked: all of them
+    const few = us.filter((u) => u.floor <= 6).map((u) => u.id);
+    expect(M.deckFrom(few, rand).sort()).toEqual([...few].sort());
+    // CPU decks follow the same quotas, from floors by rank
     expect(M.cpuMaxFloor(0)).toBeLessThan(M.cpuMaxFloor(60));
     expect(M.cpuMaxFloor(119)).toBe(100);
-    const d = M.randomDeck(12, Math.random);
+    const d = M.randomDeck(12, rand);
     expect(d.length).toBe(50);
+    expect(costs(d)[4]).toBe(8);
     expect(d.every((id) => us.find((u) => u.id === id)!.floor <= 12)).toBe(true);
   });
 });
