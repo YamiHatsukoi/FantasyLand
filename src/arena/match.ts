@@ -50,7 +50,8 @@ export function roundKind(stage: number, round: number): RoundKind {
 export const roundsIn = (stage: number) => (stage === 1 ? 4 : 7);
 
 // ------------------------------------------------------------ state
-export interface Owned { uid: number; unitId: string; star: Star; items: string[]; x: number; y: number; bench: number }
+/** A unit a player owns. `bonus` holds stats it has earned for good this match (Veigar-style spells). */
+export interface Owned { uid: number; unitId: string; star: Star; items: string[]; x: number; y: number; bench: number; bonus?: Record<string, number> }
 
 export interface PlayerStats {
   wins: number; losses: number; dealt: number; taken: number; rolls: number; bought: number; xpBought: number;
@@ -80,6 +81,8 @@ export interface Player {
   income: number;
   freeRolls: number;
   freeRollsLeft: number;
+  /** Free rolls picked up by spells, for the next planning. */
+  bonusRolls?: number;
   interestCap: number;
   xpRound: number;
   boardBonus: number;
@@ -214,7 +217,7 @@ const unitAt = (p: Player, x: number, y: number) => p.units.find((u) => u.bench 
 export const sellValue = (o: Owned) => { const c = arenaUnit(o.unitId)!.cost; const n = 3 ** (o.star - 1); return o.star === 1 ? c : c * n - 1; };
 
 export function placed(p: Player): PlacedUnit[] {
-  return onBoard(p).map((u) => ({ unitId: u.unitId, star: u.star, x: u.x, y: u.y, items: u.items }));
+  return onBoard(p).map((u) => ({ unitId: u.unitId, star: u.star, x: u.x, y: u.y, items: u.items, ref: u.uid, bonus: u.bonus }));
 }
 /** Trait counts of the board as it stands. */
 export function boardTraits(p: Player): Record<string, number> {
@@ -242,6 +245,10 @@ export function combineStars(m: MatchState, p: Player): Owned[] {
       const three = g.sort((a, b) => (a.bench < 0 ? 0 : 1) - (b.bench < 0 ? 0 : 1) || a.uid - b.uid).slice(0, 3);
       const keep = three[0];
       const items = three.flatMap((u) => u.items);
+      // earned stats carry over to the upgraded copy
+      const bonus: Record<string, number> = {};
+      for (const u of three) for (const [k, v] of Object.entries(u.bonus ?? {})) bonus[k] = (bonus[k] ?? 0) + v;
+      keep.bonus = Object.keys(bonus).length ? bonus : undefined;
       p.units = p.units.filter((u) => !three.includes(u) || u === keep);
       keep.star = (keep.star + 1) as Star;
       keep.items = [];
@@ -485,7 +492,8 @@ function startRound(m: MatchState) {
       if (m.stage >= 2) gainXp(p, 2 + p.xpRound);
       else if (m.round === 2) gainXp(p, 2);
     }
-    p.freeRollsLeft = p.freeRolls;
+    p.freeRollsLeft = p.freeRolls + (p.bonusRolls ?? 0);
+    p.bonusRolls = 0;
     if (!p.locked || p.shop.every((s) => !s)) rollShop(m, p);
     p.locked = false;
   }
@@ -605,6 +613,8 @@ export function resolveCombat(m: MatchState) {
     const b = makeBattle(m, f);
     const w = b.run();
     const A = m.players[f.a];
+    keepGains(m, A, b, 0);
+    if (!f.pve && !f.ghost) keepGains(m, m.players[f.b], b, 1);
     for (const x of b.fighters) if (x.side === 0 && !x.summoned) A.stats.unitDamage[x.unit.id] = (A.stats.unitDamage[x.unit.id] ?? 0) + Math.round(x.dealt);
     if (!f.pve && !f.ghost) {
       const B = m.players[f.b];
@@ -633,6 +643,19 @@ export function resolveCombat(m: MatchState) {
   const left = alivePlayers(m);
   if (left.length <= 1) { for (const p of left) p.place = 1; m.phase = "end"; return; }
   m.phase = "result";
+}
+
+/** After a fight: stats units earned for good, and gold / experience / rolls their spells picked up. */
+function keepGains(_m: MatchState, p: Player, b: ArenaBattle, side: 0 | 1) {
+  for (const g of b.gains(side)) {
+    const o = p.units.find((u) => u.uid === g.ref);
+    if (o) { o.bonus ??= {}; o.bonus[g.stat] = Math.round(((o.bonus[g.stat] ?? 0) + g.v) * 1000) / 1000; }
+  }
+  const l = b.loot[side];
+  p.gold += l.gold;
+  p.stats.goldEarned += l.gold;
+  if (l.xp) gainXp(p, l.xp);
+  if (l.roll) p.bonusRolls = (p.bonusRolls ?? 0) + l.roll;
 }
 
 function hurt(p: Player, n: number) { p.hp -= n; p.stats.taken += n; }

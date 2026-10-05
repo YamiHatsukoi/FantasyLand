@@ -95,6 +95,17 @@ describe("arena match", () => {
     expect(ITEMS[p.items[0]].component).toBeFalsy();
   });
 
+  it("earned stats stay with the unit and add up when it stars up", () => {
+    const m = M.newMatch({ deck: deck(), name: "Tôi", rankStep: 0, seed: 21 });
+    const p = M.human(m);
+    p.units = [];
+    p.gold = 99;
+    const id = p.deck.find((d) => us.find((u) => u.id === d)!.cost === 1)!;
+    for (let i = 0; i < 3; i++) { p.shop[0] = id; if (i < 2) { M.buy(m, p, 0); p.units[p.units.length - 1].bonus = { ap: 4 }; } else M.buy(m, p, 0); }
+    expect(p.units.length).toBe(1);
+    expect(p.units[0].bonus).toEqual({ ap: 8 });
+    expect(M.placed({ ...p, units: [{ ...p.units[0], bench: -1, x: 3, y: 4 }] })[0].bonus).toEqual({ ap: 8 });
+  });
   it("board size follows the level; moving and levelling", () => {
     const m = M.newMatch({ deck: deck(), name: "Tôi", rankStep: 0, seed: 11 });
     const p = M.human(m);

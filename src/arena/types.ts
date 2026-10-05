@@ -41,6 +41,8 @@ export interface SpellDef {
   ult?: boolean; // a boss's ultimate
   base: string; // base spell id
   variant: number; // 1 strong, 2 elemental, 3 wide (0 for ultimates)
+  /** Set for passives: what sets it off (attack, attack3, kill, hurt50, start, second3, struck5). */
+  passive?: string;
   desc: string;
 }
 

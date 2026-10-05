@@ -20,7 +20,8 @@ export const TIME_LIMIT = 45;
 const AD_STAR = [0, 1, 1.5, 2.25, 3.4];
 const MOVE_TIME = 0.42;
 
-export interface PlacedUnit { unitId: string; star: Star; x: number; y: number; items: string[] }
+/** `ref` names the player's own copy; `bonus` holds stats it has earned for good (Veigar-style). */
+export interface PlacedUnit { unitId: string; star: Star; x: number; y: number; items: string[]; ref?: number; bonus?: Record<string, number> }
 export interface TeamMods {
   hp?: number; ad?: number; ap?: number; as?: number; armor?: number; mr?: number; crit?: number; omnivamp?: number; mana?: number;
   frontline?: { hp: number; armor: number }; backline?: number; starPower?: number; traitBonus?: number;
@@ -51,6 +52,7 @@ export interface Fighter {
   stun: number; chill: number; chillV: number; shred: number; weaken: number; blind: number; silence: number; mark: number; griev: number;
   ccImmune: number; taunt: number; stealth: number; mirror: number; frenzy: number; haste: number; hasteV: number; critUp: number; rally: number; rallyV: number;
   guard: number; guardV: number;
+  ref?: number; perm: Record<string, number>; struck: number;
   critV: number; ampT: number; ampV: number; vampT: number; vampV: number; dodgeT: number; dodgeV: number; mirrorV: number;
   dots: Dot[]; shields: Shield[];
   flags: Set<string>; stacks: number; revived: boolean;
@@ -69,7 +71,8 @@ export type CombatEvent =
   | { t: "death"; uid: number }
   | { t: "revive"; uid: number }
   | { t: "spawn"; uid: number }
-  | { t: "move"; uid: number };
+  | { t: "move"; uid: number }
+  | { t: "loot"; uid: number; kind: "gold" | "xp" | "roll"; n: number };
 
 interface Pending { at: number; fn: () => void }
 
@@ -80,6 +83,8 @@ export class ArenaBattle {
   time = 0;
   events: CombatEvent[] = [];
   winner: 0 | 1 | -1 | null = null;
+  /** Gold, experience and free rolls picked up by spells, per side. */
+  loot: [{ gold: number; xp: number; roll: number }, { gold: number; xp: number; roll: number }] = [{ gold: 0, xp: 0, roll: 0 }, { gold: 0, xp: 0, roll: 0 }];
   private rng: Rng;
   private pending: Pending[] = [];
   private zones: Zone[] = [];
@@ -118,7 +123,9 @@ export class ArenaBattle {
       const u = arenaUnit(p.unitId);
       if (!u) continue;
       const pos = side === 0 ? { x: p.x, y: p.y } : mirror({ x: p.x, y: p.y });
-      this.addFighter(u, p.star, pos, side, p.items, team.mods, counts);
+      const f = this.addFighter(u, p.star, pos, side, p.items, team.mods, counts);
+      f.ref = p.ref;
+      this.applyBonus(f, p.bonus);
     }
   }
 
@@ -133,6 +140,7 @@ export class ArenaBattle {
       traits: {}, target: null, atkTimer: 0.2 + this.rng.next() * 0.3, castLock: 0, attacks: 0, alive: true, summoned, decoy: false,
       stun: 0, chill: 0, chillV: 0, shred: 0, weaken: 0, blind: 0, silence: 0, mark: 0, griev: 0, ccImmune: 0, taunt: 0, stealth: 0, mirror: 0,
       frenzy: 0, haste: 0, hasteV: 0, critUp: 0, rally: 0, rallyV: 0, guard: 0, guardV: 0,
+      perm: {}, struck: 0,
       critV: 0, ampT: 0, ampV: 0, vampT: 0, vampV: 0, dodgeT: 0, dodgeV: 0, mirrorV: 0.6,
       dots: [], shields: [], flags: new Set(), stacks: 0, revived: false, dealt: 0, taken: 0, healed: 0,
     };
@@ -197,6 +205,7 @@ export class ArenaBattle {
   }
 
   private startOfCombat(f: Fighter) {
+    if (f.unit.spell.passive === "start") this.trigger(f, "start");
     const team = this.teamTraits[f.side];
     if (team.o_light) this.addShield(f, team.o_light * (f.traits.o_light ? 2 : 1), 12);
     if (f.traits.k_construct) this.addShield(f, f.maxHp * f.traits.k_construct, 99);
@@ -290,6 +299,9 @@ export class ArenaBattle {
     f.dots = f.dots.filter((d) => d.until > t);
     f.shields = f.shields.filter((s) => s.until > t && s.amt > 0);
     if (!f.alive) return;
+    const pv = f.unit.spell.passive;
+    if (pv?.startsWith("second") && Math.round(t) % Number(pv.slice(6)) === 0) this.trigger(f, pv);
+    if (!f.alive) return;
     if (f.traits.k_plant) this.heal(f, f.maxHp * f.traits.k_plant, f);
     if (f.traits.o_water && Math.round(t) % 3 === 0) this.heal(f, f.maxHp * f.traits.o_water, f);
     if (f.frenzy > t) this.heal(f, f.maxHp * 0.03, f);
@@ -326,7 +338,7 @@ export class ArenaBattle {
     if (f.decoy) return;
     if (f.stun > t) return;
     if (f.castLock > 0) { f.castLock -= DT; return; }
-    if (f.mana >= f.maxMana && f.silence <= t) { this.cast(f); return; }
+    if (!f.unit.spell.passive && f.mana >= f.maxMana && f.silence <= t) { this.cast(f); return; }
     // target: a taunting enemy nearby, else keep the current one, else the nearest
     let tg = this.byUid(f.target);
     const taunter = this.enemies(f).find((e) => e.taunt > t && dist(e, f) <= 2);
@@ -361,6 +373,8 @@ export class ArenaBattle {
       if (f.fxs.has("giantslayer") && tg.maxHp > 1600) dmg *= 1.25;
       const dealt = this.damage(f, tg, dmg, "phys", { crit, attack: true });
       this.onHit(f, tg, crit, dealt);
+      const pv = f.unit.spell.passive;
+      if (pv?.startsWith("attack") && f.alive && f.attacks % Number(pv.slice(6) || 1) === 0) this.trigger(f, pv);
     };
     if (ranged) this.pending.push({ at: this.time + Math.max(0.08, dist(f, tg) * 0.07), fn: land });
     else land();
@@ -435,12 +449,18 @@ export class ArenaBattle {
     if (tg.mirror > t && src !== tg && !o.dot && src.alive) this.damage(tg, src, dmg * tg.mirrorV, "true", { dot: true });
     this.thresholds(tg);
     if (tg.hp <= 0) this.kill(tg, src);
+    else if (o.attack) {
+      tg.struck++;
+      const pv = tg.unit.spell.passive;
+      if (pv?.startsWith("struck") && tg.struck % Number(pv.slice(6)) === 0) this.trigger(tg, pv);
+    }
     return dmg;
   }
 
   private thresholds(f: Fighter) {
     if (!f.alive || f.hp <= 0) return;
     const pct = f.hp / f.maxHp;
+    if (pct < 0.5 && f.unit.spell.passive === "hurt50" && !f.flags.has("hurt50")) { f.flags.add("hurt50"); this.trigger(f, "hurt50"); }
     if (pct < 0.6 && f.fxs.has("edge") && !f.flags.has("edge")) { f.flags.add("edge"); f.stealth = this.time + 1; this.events.push({ t: "status", uid: f.uid, s: "stealth" }); }
     if (pct < 0.6 && f.fxs.has("steraks") && !f.flags.has("steraks")) { f.flags.add("steraks"); this.addShield(f, f.maxHp * 0.25, 6); }
     if (pct < 0.4 && f.fxs.has("bloodthirster") && !f.flags.has("bt")) { f.flags.add("bt"); this.addShield(f, f.maxHp * 0.25, 5); }
@@ -461,6 +481,7 @@ export class ArenaBattle {
     this.events.push({ t: "death", uid: f.uid });
     if (by.alive && by !== f) {
       if (by.fxs.has("deathblade")) by.ad += 10;
+      if (by.unit.spell.passive === "kill" && by.side !== f.side) this.trigger(by, "kill");
     }
   }
 
@@ -588,6 +609,35 @@ export class ArenaBattle {
       return { list: all.filter((e) => centres.some((c) => dist(e, c) <= p.r)), at };
     }
     return { list: base, at };
+  }
+
+  /** A passive spell going off (no mana, no casting pause). */
+  private trigger(f: Fighter, why: string) {
+    if (!f.alive) return;
+    const sp = f.unit.spell;
+    const cache = new Map<string, Fighter[]>();
+    const targets = new Set<number>();
+    let at: Hex | undefined;
+    for (const e of sp.fx) { const r = this.runFx(f, e, cache, targets); at ??= r ?? undefined; }
+    // every-attack passives are too frequent for a banner
+    if (why !== "attack") this.events.push({ t: "cast", uid: f.uid, spell: sp, targets: [...targets], at });
+  }
+
+  /** Stats a unit has earned for good in earlier rounds. */
+  private applyBonus(f: Fighter, b?: Record<string, number>) {
+    if (!b) return;
+    if (b.ap) f.ap += b.ap;
+    if (b.ad) f.ad += f.baseAd * b.ad;
+    if (b.armor) { f.armor += b.armor; f.mr += b.armor; }
+    if (b.as) f.as *= 1 + b.as;
+    if (b.hp) { f.maxHp = Math.round(f.maxHp * (1 + b.hp)); f.hp = f.maxHp; }
+  }
+
+  /** What each of a side's units earned for good this fight (by the player's copy). */
+  gains(side: 0 | 1): { ref: number; stat: string; v: number }[] {
+    const out: { ref: number; stat: string; v: number }[] = [];
+    for (const f of this.fighters) if (f.side === side && f.ref !== undefined) for (const [stat, v] of Object.entries(f.perm)) out.push({ ref: f.ref, stat, v });
+    return out;
   }
 
   private cast(f: Fighter) {
@@ -830,6 +880,20 @@ export class ArenaBattle {
         return at;
       }
       case "hurt": f.hp = Math.max(1, f.hp - f.maxHp * e.v!); return null;
+      case "perm": case "loot": {
+        if (e.o.kill && ![...targets].some((uid) => !this.byUid(uid)?.alive)) return null;
+        if (e.k === "perm") {
+          const v = e.v!;
+          f.perm[e.id!] = (f.perm[e.id!] ?? 0) + v;
+          if (e.id === "hp") { const add = f.maxHp * v; f.maxHp = Math.round(f.maxHp + add); f.hp += add; } else this.applyBonus(f, { [e.id!]: v });
+          this.events.push({ t: "status", uid: f.uid, s: "buff" });
+        } else if (this.rng.next() < e.v!) {
+          const l = this.loot[f.side];
+          if (e.id === "gold") l.gold += e.n!; else if (e.id === "xp") l.xp += e.n!; else l.roll += e.n!;
+          this.events.push({ t: "loot", uid: f.uid, kind: e.id as "gold" | "xp" | "roll", n: e.n! });
+        }
+        return null;
+      }
       case "transform": {
         const d = e.dur!;
         f.frenzy = t + d;
