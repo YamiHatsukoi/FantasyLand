@@ -144,6 +144,28 @@ describe("arena combat", async () => {
     expect(w / 60).toBeGreaterThan(0.8);
     expect(w4 / 60).toBeGreaterThan(0.75);
   });
+  it("a unit that cannot reach its target goes for another enemy it can reach", async () => {
+    const { neighbors } = await import("../src/arena/hex");
+    const melee = us.filter((u) => u.stats.range === 1 && u.cost === 1 && !u.spell.passive);
+    const units = Array.from({ length: 7 }, (_, i) => ({ unitId: melee[i].id, star: 1 as const, x: i, y: 7, items: [] }));
+    const foes = [{ unitId: melee[10].id, star: 1 as const, x: 3, y: 4, items: [] }, { unitId: melee[11].id, star: 1 as const, x: 0, y: 7, items: [] }];
+    const b = new ArenaBattle({ units }, { units: foes }, 1);
+    const [m, ...walls] = b.fighters.filter((f) => f.side === 0);
+    const [shut, open] = b.fighters.filter((f) => f.side === 1);
+    // the near enemy is boxed in by six frozen allies; the far one stands free
+    const put = (f: (typeof b.fighters)[number], x: number, y: number) => { f.x = x; f.y = y; f.fx = x; f.fy = y; };
+    put(shut, 3, 3);
+    neighbors(3, 3).forEach((h, i) => put(walls[i], h.x, h.y));
+    put(open, 6, 0);
+    put(m, 0, 6);
+    for (const f of [...walls, shut, open]) { f.stun = 999; f.mana = 0; }
+    m.mana = 0;
+    m.target = shut.uid;
+    const start = { x: m.x, y: m.y };
+    for (let i = 0; i < 30; i++) b.step();
+    expect(m.target).toBe(open.uid);
+    expect(m.x !== start.x || m.y !== start.y).toBe(true);
+  });
   it("items make a unit stronger", () => {
     const r = new Rng(5);
     let w = 0;

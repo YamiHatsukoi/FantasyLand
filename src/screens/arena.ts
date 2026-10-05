@@ -381,7 +381,7 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
     };
 
     // ------------------------------------------------ loop
-    let last = performance.now(), acc = 0;
+    let last = performance.now(), acc = 0, shownSec = -1;
     const frame = (now: number) => {
       if (!alive) return;
       const dt = Math.min(0.05, (now - last) / 1000);
@@ -389,7 +389,9 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
       if (battle && battle.winner === null) {
         acc += dt;
         while (acc >= DT && battle.winner === null) { battle.step(); acc -= DT; view.takeEvents(); }
-        shopInfo.querySelector(".ar-timer")?.replaceChildren(`⏱ ${Math.floor(battle.time)}s`);
+        view.alpha = acc / DT;
+        const sec = Math.floor(battle.time);
+        if (sec !== shownSec) { shownSec = sec; shopInfo.querySelector(".ar-timer")?.replaceChildren(`⏱ ${sec}s`); } // touch the DOM once a second only
       }
       if (battle && battle.winner !== null && !finishing) { finishing = true; view.takeEvents(); setTimeout(endFight, 1300); }
       dmgT += dt;

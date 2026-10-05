@@ -18,7 +18,8 @@ export const DT = 0.05;
 export const OVERTIME = 30;
 export const TIME_LIMIT = 45;
 const AD_STAR = [0, 1, 1.5, 2.25, 3.4];
-const MOVE_TIME = 0.42;
+/** Seconds a unit takes to cross one hex. */
+export const MOVE_TIME = 0.42;
 
 /** `ref` names the player's own copy; `bonus` holds stats it has earned for good (Veigar-style). */
 export interface PlacedUnit { unitId: string; star: Star; x: number; y: number; items: string[]; ref?: number; bonus?: Record<string, number> }
@@ -355,7 +356,18 @@ export class ArenaBattle {
       f.atkTimer -= DT;
       if (f.atkTimer <= 0) { f.atkTimer += 1 / this.effAs(f); this.attack(f, tg); }
     } else if (!f.moveFrom) {
-      const next = stepToward(f, tg, f.range, (x, y) => this.occupied(x, y));
+      const blocked = (x: number, y: number) => this.occupied(x, y);
+      let next = stepToward(f, tg, f.range, blocked);
+      if (!next) {
+        // no way through to this one: go for the nearest enemy that can be reached (or hit from here)
+        const others = this.enemies(f).filter((e) => e !== tg && e.stealth <= t && !e.decoy).sort((a, b) => dist(a, f) - dist(b, f));
+        for (const e of others) {
+          if (dist(f, e) <= f.range) { f.target = e.uid; return; } // attack it from the next tick
+          const n = stepToward(f, e, f.range, blocked);
+          if (n) { f.target = e.uid; next = n; break; }
+        }
+      }
+      // nothing reachable at all: wait where we stand
       if (next) { f.moveFrom = { x: f.x, y: f.y }; f.moveT = 0; f.x = next.x; f.y = next.y; }
     }
   }
