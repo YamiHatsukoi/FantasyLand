@@ -35,7 +35,31 @@ export type SpellShape =
   | "heal" // heal the weakest allies
   | "shield" // shield self and allies nearby
   | "rally" // buff allies around (attack speed / damage)
-  | "fortify"; // self: shield and armor, taunt
+  | "fortify" // self: shield and armor, taunt
+  // ultimates (5-gold bosses only)
+  | "meteor" // meteors fall on several enemies
+  | "cataclysm" // every enemy is hit
+  | "devour" // swallow the weakest enemy below a threshold, heal
+  | "summon" // call minions onto the board
+  | "blackhole" // pull enemies together and stun them
+  | "chain" // lightning bouncing many times
+  | "revive" // bring a fallen ally back
+  | "timestop" // every enemy is stunned
+  | "frenzy" // transform: big attack speed and damage, heal over time
+  | "prison" // freeze an area for long
+  | "miasma" // a lingering cloud that hurts every second
+  | "drainall" // hit every enemy, heal by the total
+  | "aegis" // shield every ally and cleanse
+  | "rampage" // charge down a line, knocking up
+  | "mirror" // reflect damage for a while
+  | "volley" // rain of arrows over a wide area, several waves
+  | "manaburn" // burn every enemy's mana
+  | "quake" // around self, big stun
+  | "swap" // swap with the farthest enemy and stun it
+  | "blizzard"; // slow and hurt every enemy for a while
+
+/** A second effect that makes a spell its owner's own. */
+export type SpellBonus = "selfShield" | "selfHeal" | "manaBack" | "haste" | "spread" | "pierce" | "armorUp" | "stunChance" | "critUp" | "none";
 
 export type Debuff = "stun" | "burn" | "poison" | "bleed" | "chill" | "shred" | "weaken" | "blind" | "silence" | "mark";
 
@@ -53,7 +77,8 @@ export interface SpellDef {
   debuff?: { id: Debuff; dur: number };
   lifesteal?: number;
   execute?: boolean;
-  ult?: boolean; // a boss's empowered version
+  ult?: boolean; // a boss's ultimate
+  bonus: SpellBonus;
   desc: string;
 }
 
