@@ -1158,3 +1158,4 @@ img.iicon.lg { width: 48px; height: 48px; }
 .trait-chip { font-size: 12px; margin-top: 3px; color: #ffe38a; line-height: 1.35; }
 .trait-box { margin: 8px 0; padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(242,197,66,.45); background: rgba(242,197,66,.08); }
 .trait-box b { color: #ffe38a; }
+.small.bonus { color: #ffe38a; }
