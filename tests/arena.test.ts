@@ -117,6 +117,16 @@ describe("arena combat", async () => {
     expect(even).toBeGreaterThan(0.25);
     expect(even).toBeLessThan(0.75);
   });
+  it("dear units at ★3 are huge: a lone 5-gold ★3 beats three 4-gold ★2", () => {
+    const r = new Rng(3);
+    let w = 0, w4 = 0;
+    for (let i = 0; i < 60; i++) {
+      if (new ArenaBattle({ units: team(5, 3, 1, r) }, { units: team(4, 2, 3, r) }, i).run() === 0) w++;
+      if (new ArenaBattle({ units: team(4, 3, 1, r) }, { units: team(4, 2, 2, r) }, i).run() === 0) w4++;
+    }
+    expect(w / 60).toBeGreaterThan(0.85);
+    expect(w4 / 60).toBeGreaterThan(0.7);
+  });
   it("items make a unit stronger", () => {
     const r = new Rng(5);
     let w = 0;
