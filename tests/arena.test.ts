@@ -5,6 +5,7 @@ import { COMPONENTS, ITEMS, combine, EMBLEMS, FINISHED } from "../src/arena/item
 import { AUGMENTS } from "../src/arena/augments";
 import { TIERS, applyResult, lpDelta, newRank, rankName, tierReward } from "../src/arena/rank";
 import { getItem } from "../src/data/items";
+import { BASE_SPELLS, ULTIMATES } from "../src/arena/spells";
 
 describe("arena units", () => {
   const us = arenaUnits();
@@ -69,16 +70,31 @@ describe("arena items, augments and ranks", () => {
 });
 
 describe("arena spells", () => {
-  it("every unit's spell has its own name; bosses have ultimates no other unit has", () => {
-    const us = arenaUnits();
-    expect(new Set(us.map((u) => u.spell.name)).size).toBe(700);
-    const bosses = us.filter((u) => u.cost === 5);
+  const us = arenaUnits();
+  it("200 base spells in 3 variants for the 600 ordinary units, 100 ultimates for the 100 bosses", () => {
+    expect(Object.values(BASE_SPELLS).flat().length).toBe(200);
+    expect(new Set(Object.values(BASE_SPELLS).flat().map((b) => b[0])).size).toBe(200);
+    expect(new Set(Object.values(BASE_SPELLS).flat().map((b) => b[1])).size).toBe(200);
+    expect(ULTIMATES.length).toBe(100);
+    expect(new Set(ULTIMATES.map((u) => u[1])).size).toBe(100);
+    const normal = us.filter((u) => !u.boss);
+    const uses = new Map<string, number[]>();
+    for (const u of normal) uses.set(u.spell.base, [...(uses.get(u.spell.base) ?? []), u.spell.variant]);
+    expect(uses.size).toBe(200);
+    for (const [b, v] of uses) expect(v.sort(), b).toEqual([1, 2, 3]);
+    const bosses = us.filter((u) => u.boss);
     expect(bosses.every((u) => u.spell.ult)).toBe(true);
-    expect(new Set(bosses.map((u) => `${u.spell.shape}|${u.spell.el}`)).size).toBe(100);
-    expect(new Set(bosses.map((u) => u.spell.shape)).size).toBe(20);
-    expect(us.filter((u) => u.cost < 5).every((u) => !u.spell.ult && u.spell.bonus !== "none")).toBe(true);
-    const sig = (u: (typeof us)[number]) => [u.spell.shape, u.spell.el, u.spell.debuff?.id, u.spell.bonus, u.spell.hits, u.spell.radius, u.spell.physical, u.spell.power].join("|");
-    expect(new Set(us.filter((u) => u.cost < 5).map(sig)).size).toBeGreaterThan(560);
+    expect(new Set(bosses.map((u) => u.spell.id)).size).toBe(100);
+    expect(new Set(us.map((u) => u.spell.name)).size).toBe(700);
+  });
+  it("every spell reads well and has sane numbers", () => {
+    for (const u of us) {
+      expect(u.spell.desc.length, u.id).toBeGreaterThan(15);
+      expect(u.spell.desc, u.id).not.toMatch(/NaN|undefined/);
+      // a spell never hurts or hinders its own caster
+      expect(u.spell.fx.some((e) => ["cc", "dot", "dmg", "knock"].includes(e.k) && e.w === "me"), u.id).toBe(false);
+      for (const e of u.spell.fx) for (const k of ["p", "n", "v", "dur", "r"] as const) if (e[k] !== undefined) expect(Number.isFinite(e[k]), `${u.id} ${e.k}.${k}`).toBe(true);
+    }
   });
 });
 
@@ -138,6 +154,16 @@ describe("arena combat", async () => {
     }
     expect(w / 60).toBeGreaterThan(0.8);
   });
+  it("every one of the 600 ordinary spells can be cast", () => {
+    const castBy = new Set<string>();
+    for (const u of us.filter((x) => !x.boss)) {
+      const bt = new ArenaBattle({ units: [{ unitId: u.id, star: 2, x: 3, y: 5, items: ["tear", "tear"] }] }, { units: team(u.cost, 1, 2, new Rng(u.floor)) }, u.floor);
+      bt.run();
+      for (const f of bt.fighters) expect(Number.isFinite(f.hp) && Number.isFinite(f.mana), u.id).toBe(true);
+      if (bt.events.some((e) => e.t === "cast" && e.spell.base === u.spell.base)) castBy.add(u.spell.base);
+    }
+    expect(castBy.size).toBeGreaterThan(195);
+  });
   it("every boss ultimate and every item can be used in a fight without breaking", () => {
     const bosses = us.filter((u) => u.boss);
     const fin = FINISHED();
@@ -145,7 +171,7 @@ describe("arena combat", async () => {
       const b = bosses[i];
       const items = [fin[i % fin.length].id, fin[(i + 7) % fin.length].id, EMBLEMS()[i % EMBLEMS().length].id];
       const bt = new ArenaBattle(
-        { units: [{ unitId: b.id, star: 2, x: 3, y: 5, items }, ...team(1, 1, 3, new Rng(i))] },
+        { units: [{ unitId: b.id, star: 3, x: 3, y: 5, items }, ...team(1, 1, 3, new Rng(i))] },
         { units: team(2, 2, 5, new Rng(i + 100)) },
         i,
       );

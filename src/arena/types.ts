@@ -4,6 +4,7 @@
  * buying, combining and placing units that then fight on their own.
  */
 import type { Element } from "../combat/types";
+import type { Fx } from "./spells";
 
 export type Cost = 1 | 2 | 3 | 4 | 5;
 export type Star = 1 | 2 | 3 | 4;
@@ -24,61 +25,22 @@ export interface UnitStats {
   crit: number; // chance 0..1
 }
 
-/** What a unit's spell does; the engine reads the shape, the art reads `vfx`. */
-export type SpellShape =
-  | "strike" // a heavy single-target hit
-  | "bolt" // a magic projectile at the target
-  | "multi" // several hits / bounces on random enemies
-  | "nova" // area around the target
-  | "line" // everything in a line from the caster
-  | "dash" // leap to the farthest enemy and hit
-  | "heal" // heal the weakest allies
-  | "shield" // shield self and allies nearby
-  | "rally" // buff allies around (attack speed / damage)
-  | "fortify" // self: shield and armor, taunt
-  // ultimates (5-gold bosses only)
-  | "meteor" // meteors fall on several enemies
-  | "cataclysm" // every enemy is hit
-  | "devour" // swallow the weakest enemy below a threshold, heal
-  | "summon" // call minions onto the board
-  | "blackhole" // pull enemies together and stun them
-  | "chain" // lightning bouncing many times
-  | "revive" // bring a fallen ally back
-  | "timestop" // every enemy is stunned
-  | "frenzy" // transform: big attack speed and damage, heal over time
-  | "prison" // freeze an area for long
-  | "miasma" // a lingering cloud that hurts every second
-  | "drainall" // hit every enemy, heal by the total
-  | "aegis" // shield every ally and cleanse
-  | "rampage" // charge down a line, knocking up
-  | "mirror" // reflect damage for a while
-  | "volley" // rain of arrows over a wide area, several waves
-  | "manaburn" // burn every enemy's mana
-  | "quake" // around self, big stun
-  | "swap" // swap with the farthest enemy and stun it
-  | "blizzard"; // slow and hurt every enemy for a while
-
-/** A second effect that makes a spell its owner's own. */
-export type SpellBonus = "selfShield" | "selfHeal" | "manaBack" | "haste" | "spread" | "pierce" | "armorUp" | "stunChance" | "critUp" | "none";
-
 export type Debuff = "stun" | "burn" | "poison" | "bleed" | "chill" | "shred" | "weaken" | "blind" | "silence" | "mark";
 
+/**
+ * A unit's spell: a list of effects (see src/arena/spells.ts for the little language). Ordinary
+ * units use one of 200 base spells in one of three variants; bosses each have an ultimate.
+ */
 export interface SpellDef {
-  id: string; // the skill it comes from
+  id: string;
   name: string;
   icon: string;
-  shape: SpellShape;
   el: Element;
-  /** Damage (or heal / shield) at one star before AP; scaled by star and AP in battle. */
-  power: number;
-  physical: boolean; // scales with AD and is reduced by armor
-  radius: number; // nova / shield / rally / heal reach in hexes
-  hits: number;
-  debuff?: { id: Debuff; dur: number };
-  lifesteal?: number;
-  execute?: boolean;
+  physical: boolean; // scales with attack damage and is reduced by armor
+  fx: Fx[];
   ult?: boolean; // a boss's ultimate
-  bonus: SpellBonus;
+  base: string; // base spell id
+  variant: number; // 1 strong, 2 elemental, 3 wide (0 for ultimates)
   desc: string;
 }
 

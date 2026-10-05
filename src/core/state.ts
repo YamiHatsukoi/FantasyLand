@@ -155,6 +155,8 @@ export interface GameState {
   scan?: Record<string, string[]>;
   /** Monster codex: kills and the shallowest floor each kind was met on. */
   dex?: Record<string, { k: number; f: number }>;
+  /** Monster Arena: rank, chosen deck and a few counters. */
+  arena?: { rank: { step: number; lp: number; best: number }; deck: string[]; played: number; top1: number; top4: number };
   /** Pets hatched so far, and the one travelling with the party. */
   pets?: string[];
   pet?: string;
