@@ -16,7 +16,7 @@ export type ItemFx =
   | "dragonclaw" | "zz" | "crownguard"
   | "warmog" | "redbuff"
   | "thief"
-  | "magnet"
+  | "magnet" | "dup"
   | "emblem" | "crown";
 
 export interface ItemStats { ad?: number; as?: number; ap?: number; mana?: number; armor?: number; mr?: number; hp?: number; crit?: number; dodge?: number; dmg?: number }
@@ -51,7 +51,7 @@ const COMP = Object.fromEntries(COMPONENTS.map((c) => [c.id, c]));
 
 /** Finished items: [a, b, id, name, icon, extra stats, fx, description]. */
 const RECIPES: [string, string, string, string, string, ItemStats, ItemFx, string][] = [
-  ["sword", "sword", "deathblade", "Kiếm Tử Thần", "⚔️", { ad: 35 }, "deathblade", "+45 sát thương. Mỗi lần hạ gục kẻ địch +10 sát thương."],
+  ["sword", "sword", "deathblade", "Kiếm Tử Thần", "⚔️", { ad: 35 }, "deathblade", "Mỗi lần hạ gục kẻ địch +10 sát thương."],
   ["sword", "bow", "giantslayer", "Cung Diệt Khổng Lồ", "🎯", { ad: 10, as: 0.1 }, "giantslayer", "Gây thêm 25% sát thương lên kẻ địch có trên 1.600 máu."],
   ["sword", "rod", "gunblade", "Kiếm Súng Hút Hồn", "🔫", { ad: 10, ap: 10 }, "gunblade", "Hồi máu bằng 22% mọi sát thương gây ra, chia cho đồng minh yếu nhất."],
   ["sword", "tear", "shojin", "Thương Thần Ân", "🔱", { ad: 5, ap: 5 }, "shojin", "Đánh thường hồi thêm 5 năng lượng."],
@@ -59,14 +59,14 @@ const RECIPES: [string, string, string, string, string, ItemStats, ItemFx, strin
   ["sword", "cloak", "bloodthirster", "Kiếm Khát Máu", "🩸", { ad: 5 }, "bloodthirster", "Hút máu 22%. Lần đầu xuống dưới 40% máu nhận khiên 25% máu tối đa."],
   ["sword", "belt", "steraks", "Rìu Cuồng Nộ", "🪓", { ad: 5 }, "steraks", "Lần đầu xuống dưới 60% máu: khiên 25% máu tối đa và +35% sát thương."],
   ["sword", "glove", "infinity", "Vô Cực Kiếm", "💎", { ad: 5, crit: 0.15 }, "infinity", "Chiêu có thể chí mạng, sát thương chí mạng +30%."],
-  ["bow", "bow", "rapidfire", "Cung Liên Thanh", "🏹", { as: 0.25 }, "rapidfire", "+35% tốc đánh, +1 tầm đánh."],
+  ["bow", "bow", "rapidfire", "Cung Liên Thanh", "🏹", { as: 0.25 }, "rapidfire", "+1 tầm đánh."],
   ["bow", "rod", "guinsoo", "Cuồng Đao Nguyên Tố", "🌀", { ap: 5 }, "guinsoo", "Mỗi đòn đánh +5% tốc đánh (cộng dồn không giới hạn)."],
   ["bow", "tear", "statikk", "Dao Điện Statik", "⚡", {}, "statikk", "Cứ đòn thứ 3 phóng điện 3 kẻ địch (100 sát thương phép), giảm 30% kháng phép của chúng."],
   ["bow", "vest", "titans", "Quyết Tâm Khổng Lồ", "🗿", { as: 0.05 }, "titans", "Mỗi khi đánh hoặc bị đánh: +2% sát thương và phép (tối đa 25 lần); đủ 25 lần +25 giáp, kháng."],
   ["bow", "cloak", "runaan", "Cung Gió Lốc", "🍃", { mr: 5 }, "runaan", "Đòn đánh bắn thêm một mũi tên vào kẻ địch gần đó (55% sát thương)."],
   ["bow", "belt", "zz", "Trượng Lấp Lánh", "✨", { hp: 50 }, "zz", "Đầu trận triệu hồi một vệ binh 600 máu chặn đường kẻ địch."],
   ["bow", "glove", "lastwhisper", "Lời Thì Thầm Cuối", "🎵", { crit: 0.1 }, "lastwhisper", "Đòn chí mạng phá 30% giáp mục tiêu trong 3 giây."],
-  ["rod", "rod", "rabadon", "Mũ Phù Thủy", "🎩", { ap: 40 }, "rabadon", "+50 sức mạnh phép, tăng thêm 20% sát thương."],
+  ["rod", "rod", "rabadon", "Mũ Phù Thủy", "🎩", { ap: 40 }, "rabadon", "Chiêu gây thêm 20% sát thương."],
   ["rod", "tear", "archangel", "Trượng Thiên Thần", "🪽", {}, "archangel", "Mỗi 5 giây trong trận +20 sức mạnh phép."],
   ["rod", "vest", "locket", "Mề Đay Hộ Mệnh", "📿", { armor: 10 }, "locket", "Đầu trận đồng minh 2 hàng ngang quanh được khiên 300."],
   ["rod", "cloak", "ionic", "Tia Sét Ion", "🌩️", {}, "ionic", "Kẻ địch trong 2 ô giảm 30% kháng phép; mỗi lần chúng tung chiêu bị sét đánh."],
@@ -115,6 +115,11 @@ for (const t of Object.values(TRAITS)) {
 }
 /** Magnetic remover: dropped on a unit, it takes all of that unit's items back to the bench. */
 ITEMS.magnet = { id: "magnet", name: "Nam Châm Tháo Đồ", icon: "🧲", stats: {}, fx: "magnet", desc: "Kéo thả vào tướng để tháo hết trang bị của tướng đó về hàng đồ. Dùng 1 lần." };
+/** Unit copiers: dropped on a unit, they add a one-star copy of it to the bench. */
+ITEMS.dup3 = { id: "dup3", name: "Máy Sao Chép", icon: "🖨️", stats: {}, fx: "dup", desc: "Kéo thả vào tướng giá 1–3 vàng để nhận thêm 1 bản sao ★1 của tướng đó. Dùng 1 lần." };
+ITEMS.dup5 = { id: "dup5", name: "Máy Sao Chép Thượng Hạng", icon: "🖨️", stats: {}, fx: "dup", desc: "Kéo thả vào bất kỳ tướng nào (kể cả 4–5 vàng) để nhận thêm 1 bản sao ★1 của tướng đó. Dùng 1 lần." };
+/** Items that are used up on a unit instead of being worn. */
+export const isTool = (id: string) => ITEMS[id]?.fx === "magnet" || ITEMS[id]?.fx === "dup";
 ITEMS.crown = { id: "crown", name: "Vương Miện Chiến Thuật", icon: "👑", stats: {}, parts: ["seal", "seal"], fx: "crown", desc: "+1 tướng được ra sân." };
 
 /** The finished item two components make, if any. */
@@ -128,5 +133,16 @@ export function combine(a: string, b: string): string | undefined {
 }
 
 export const isComponent = (id: string) => !!ITEMS[id]?.component;
-export const FINISHED = () => Object.values(ITEMS).filter((i) => !i.component && i.fx !== "emblem" && i.fx !== "crown" && i.fx !== "magnet");
+export const FINISHED = () => Object.values(ITEMS).filter((i) => !i.component && i.fx !== "emblem" && i.fx !== "crown" && i.fx !== "magnet" && i.fx !== "dup");
 export const EMBLEMS = () => Object.values(ITEMS).filter((i) => i.fx === "emblem");
+
+const STAT_TEXT: [keyof ItemStats, (v: number) => string][] = [
+  ["ad", (v) => `+${v} sát thương`], ["ap", (v) => `+${v} sức mạnh phép`], ["as", (v) => `+${Math.round(v * 100)}% tốc đánh`],
+  ["mana", (v) => `+${v} năng lượng`], ["armor", (v) => `+${v} giáp`], ["mr", (v) => `+${v} kháng phép`], ["hp", (v) => `+${v} máu`],
+  ["crit", (v) => `+${Math.round(v * 100)}% chí mạng`], ["dodge", (v) => `+${Math.round(v * 100)}% né`],
+];
+/** An item's flat stats as words: "+10 sát thương · +10% tốc đánh". */
+export function itemStatText(id: string): string {
+  const st = ITEMS[id]?.stats ?? {};
+  return STAT_TEXT.filter(([k]) => st[k]).map(([k, f]) => f(st[k]!)).join(" · ");
+}
