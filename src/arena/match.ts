@@ -90,10 +90,27 @@ export interface Player {
   stats: PlayerStats;
   /** What the last round paid, part by part (for the screen). */
   lastIncome?: Income;
-  /** CPU personality. */
-  style?: "econ" | "reroll" | "fast";
+  /**
+   * CPU personality. Grade: how well it plays (a strong CPU also gets extra gold and items).
+   * Style: "econ" levels on the usual curve and rolls down at 4-2; "fast" saves and levels
+   * early to 8–9 to find and carry 4- and 5-gold units; "reroll" stays low and slow-rolls with
+   * the gold above 50 until its cheap units (`focusCost`) reach three stars, then levels.
+   */
+  style?: CpuStyle;
+  grade?: CpuGrade;
   skill?: number; // 0..1
+  focusCost?: number;
+  /** The units a reroll CPU is trying to three-star. */
+  focus?: string[];
+  rerollDone?: boolean;
+  /** Bench places beyond the usual nine (better CPUs at high ranks). */
+  extraBench?: number;
 }
+
+export type CpuStyle = "econ" | "reroll" | "fast";
+export type CpuGrade = "weak" | "normal" | "strong";
+export const STYLE_NAMES: Record<CpuStyle, string> = { econ: "Kinh tế (lên cấp đều, lăn ở 4-2)", fast: "Lên cấp nhanh (nuôi tướng 4–5 vàng)", reroll: "Lăn chậm (nuôi tướng 3 sao)" };
+export const GRADE_NAMES: Record<CpuGrade, string> = { weak: "Tay mơ", normal: "Khá", strong: "Cao thủ" };
 
 export interface Income { base: number; interest: number; streak: number; extra: number; total: number }
 
@@ -199,12 +216,18 @@ export function newMatch(o: NewMatchOpts): MatchState {
   m.players[0].items.push("magnet", "magnet", "magnet"); // 3 magnetic removers to start
   const names = shuffle(m, [...CPU_NAMES]);
   const maxFloor = cpuMaxFloor(o.rankStep);
-  // even the lowest ranks get CPUs that play properly; higher ranks play close to perfectly
-  const skill = cpuSkill(o.rankStep);
+  // a mix of weak, decent and strong CPUs; more strong ones (and no weak ones) as the rank rises
+  const grades = cpuGrades(o.rankStep);
+  // every style shows up among the better players
+  const styles = [...shuffle(m, ["fast", "reroll", "econ"] as CpuStyle[]), ...shuffle(m, ["fast", "reroll", "econ", "econ"] as CpuStyle[])];
   for (let i = 1; i < PLAYERS; i++) {
     const p = newPlayer(m, i, names[i - 1], pick(m, CPU_ICONS), true, randomDeck(maxFloor, () => rnd(m)));
-    p.style = pick(m, ["econ", "econ", "reroll", "fast"] as const);
-    p.skill = Math.max(0.45, Math.min(1, skill + (rnd(m) - 0.5) * 0.2));
+    p.grade = grades[i - 1];
+    p.style = p.grade === "weak" ? pick(m, ["econ", "econ", "fast"] as const) : styles[i - 1];
+    p.skill = cpuSkillOf(p.grade, o.rankStep, rnd(m));
+    p.focusCost = pick(m, [1, 2, 2, 3, 3]);
+    p.extraBench = cpuExtraBench(p.grade, o.rankStep);
+    if (p.grade === "strong") p.items.push(randomComponent(m));
     m.players.push(p);
   }
   // the augment tier of each augment round is the same for everyone, like in TFT
@@ -213,8 +236,38 @@ export function newMatch(o: NewMatchOpts): MatchState {
   return m;
 }
 
-/** How well CPUs play at a rank step (0..1). */
-export const cpuSkill = (step: number) => Math.min(1, 0.6 + (tierOf(step) / 39) * 0.4);
+/** The seven CPUs' grades at a rank step: 2 strong and 3 weak at the bottom, 5 strong and none weak at the top. */
+export function cpuGrades(step: number): CpuGrade[] {
+  const t = tierOf(step);
+  const strong = Math.min(5, 2 + Math.floor(t / 10));
+  const weak = Math.max(0, 3 - Math.floor(t / 12));
+  return [...Array(strong).fill("strong"), ...Array(PLAYERS - 1 - strong - weak).fill("normal"), ...Array(weak).fill("weak")];
+}
+/** How well a CPU of a grade plays (0..1); `r` is a random 0..1 for a little spread. */
+export function cpuSkillOf(g: CpuGrade, step: number, r: number): number {
+  const t = tierOf(step) / 39;
+  const [lo, hi] = g === "weak" ? [0.2, 0.4] : g === "normal" ? [0.55 + t * 0.15, 0.75 + t * 0.15] : [0.85 + t * 0.1, 1];
+  return Math.min(1, lo + (hi - lo) * r);
+}
+/** Unit copiers a CPU gets at the start of a stage (stage 3+): more and better ones higher up. */
+export function cpuCopiers(m: MatchState, p: Player): string[] {
+  const t = tierOf(m.rankStep);
+  if (p.grade === "weak" || t < 5) return [];
+  const deluxe = m.stage >= 4 && t >= 10;
+  if (p.grade === "strong") return t >= 25 ? [deluxe ? "dup5" : "dup3", deluxe ? "dup5" : "dup3"] : [deluxe ? "dup5" : "dup3"];
+  return t >= 20 ? [deluxe ? "dup5" : "dup3"] : [];
+}
+
+/** Extra bench places for a CPU: from rank tier 10, more for strong ones (up to +9). */
+export function cpuExtraBench(g: CpuGrade, step: number): number {
+  const t = tierOf(step);
+  if (g === "weak" || t < 10) return 0;
+  const lvl = t >= 30 ? 2 : t >= 20 ? 1 : 0;
+  return g === "strong" ? [3, 6, 9][lvl] : [2, 3, 5][lvl];
+}
+
+/** Extra gold a strong CPU gets every round. */
+export const strongGold = (step: number) => 1 + Math.floor(tierOf(step) / 14);
 
 export const human = (m: MatchState) => m.players[0];
 export const alivePlayers = (m: MatchState) => m.players.filter((p) => !p.place);
@@ -225,7 +278,9 @@ export const currentKind = (m: MatchState) => roundKind(m.stage, m.round);
 export const onBoard = (p: Player) => p.units.filter((u) => u.bench < 0);
 export const onBench = (p: Player) => p.units.filter((u) => u.bench >= 0);
 export const boardSize = (p: Player) => Math.min(COLS * HALF, p.level + p.boardBonus + onBoard(p).filter((u) => u.items.includes("crown")).length);
-const freeBench = (p: Player) => { for (let i = 0; i < BENCH; i++) if (!p.units.some((u) => u.bench === i)) return i; return -1; };
+/** Bench places: 9, more for the better CPUs at high ranks (room to hold copies for three stars). */
+export const benchSize = (p: Player) => BENCH + (p.extraBench ?? 0);
+const freeBench = (p: Player) => { for (let i = 0; i < benchSize(p); i++) if (!p.units.some((u) => u.bench === i)) return i; return -1; };
 const unitAt = (p: Player, x: number, y: number) => p.units.find((u) => u.bench < 0 && u.x === x && u.y === y);
 export const sellValue = (o: Owned) => { const c = arenaUnit(o.unitId)!.cost; const n = 3 ** (o.star - 1); return o.star === 1 ? c : c * n - 1; };
 
@@ -370,7 +425,7 @@ export function moveUnit(_m: MatchState, p: Player, uid: number, to: { x: number
   const o = p.units.find((u) => u.uid === uid);
   if (!o) return "Không có tướng này.";
   if ("bench" in to) {
-    if (to.bench < 0 || to.bench >= BENCH) return "Sai vị trí.";
+    if (to.bench < 0 || to.bench >= benchSize(p)) return "Sai vị trí.";
     const other = p.units.find((u) => u.bench === to.bench);
     if (other && other !== o) { other.bench = o.bench; other.x = o.x; other.y = o.y; }
     o.bench = to.bench;
@@ -584,6 +639,15 @@ function startRound(m: MatchState) {
       p.gold += inc.total;
       p.stats.goldEarned += inc.total;
       gainXp(p, 2 + p.xpRound); // 2 experience every round
+      // strong CPUs get a little extra gold every round and an item each new stage
+      if (p.cpu && p.grade === "strong") {
+        const g = strongGold(m.rankStep);
+        p.gold += g;
+        p.stats.goldEarned += g;
+        if (m.round === 1) p.items.push(m.stage >= 4 ? randomFinished(m) : randomComponent(m));
+      }
+      // at higher ranks the better CPUs also get unit copiers to chase three stars
+      if (p.cpu && m.round === 1 && m.stage >= 3) for (const c of cpuCopiers(m, p)) p.items.push(c);
     }
     p.freeRollsLeft = p.freeRolls + (p.bonusRolls ?? 0);
     p.bonusRolls = 0;
@@ -936,7 +1000,7 @@ function cpuCarouselChoice(m: MatchState, p: Player): number {
   const traits = teamTraitSet(p);
   const val = (c: CarouselSlot) => {
     const u = arenaUnit(c.unitId)!;
-    return (owned.has(c.unitId) ? 3 : 0) + u.traits.filter((t) => traits.has(t)).length + (ITEMS[c.item]?.component ? 0 : 2) + u.cost * 0.3 + rnd(m) * (2 - (p.skill ?? 0.5));
+    return (owned.has(c.unitId) ? 3 : 0) + (p.focus?.includes(c.unitId) ? 4 : 0) + (p.style === "fast" ? u.cost * 0.5 : 0) + u.traits.filter((t) => traits.has(t)).length + (ITEMS[c.item]?.component ? 0 : 2) + u.cost * 0.3 + rnd(m) * (2 - (p.skill ?? 0.5));
   };
   return open.sort((a, b) => val(b.c) - val(a.c))[0].i;
 }
@@ -947,35 +1011,100 @@ function teamTraitSet(p: Player): Set<string> {
   return new Set(Object.entries(counts).filter(([, n]) => n >= 2).map(([t]) => t));
 }
 
+/** The level a CPU aims for this round (r = stage * 10 + round). */
 function targetLevel(m: MatchState, p: Player): number {
   const r = m.stage * 10 + m.round;
-  const fast = p.style === "fast" ? 1 : 0, slow = p.style === "reroll" ? 1 : 0;
-  if (r < 21) return 3;
-  if (r < 25) return 4 + (fast && r >= 22 ? 1 : 0);
-  if (r < 32) return 5 + fast;
-  if (r < 41) return 6 + fast;
-  if (r < 45) return 7 + fast - slow;
-  if (r < 51) return 8 - slow;
-  if (r < 55) return 8 + fast - slow;
-  if (r < 61) return 9 - slow;
-  return 10 - slow;
+  const curve = (steps: [number, number][]) => { let lv = 3; for (const [at, l] of steps) if (r >= at) lv = l; return lv; };
+  // the usual curve: 4 at 2-1, 5 at 2-5, 6 at 3-2, 7 at 4-1, 8 at 4-2, 9 at 5-2, 10 late
+  const econ = curve([[21, 4], [25, 5], [32, 6], [41, 7], [42, 8], [52, 9], [62, 10]]);
+  let lv = econ;
+  if (p.style === "fast") lv = curve([[21, 4], [25, 5], [32, 6], [35, 7], [41, 8], [51, 9], [55, 10]]); // 7 at 3-5, 8 at 4-1, 9 at 5-1
+  else if (p.style === "reroll" && !p.rerollDone) {
+    // get to the level where its price shows up most (5 / 6 / 7) by the round it starts rolling, then stay
+    const c = p.focusCost ?? 1;
+    lv = Math.min(econ, 4 + c);
+    if (r >= rollFrom(c)) lv = 4 + c;
+  }
+  if (p.grade === "weak" && r >= 32) lv -= 1; // weak players level late
+  return Math.max(1, Math.min(MAX_LEVEL, lv));
+}
+
+/** When a reroll player starts slow-rolling (r = stage * 10 + round): 1-gold at 2-5, 2-gold at 3-1, 3-gold at 3-5. */
+const rollFrom = (cost: number) => (cost <= 1 ? 25 : cost === 2 ? 31 : 35);
+
+/** The round a style spends its gold to find its units ("roll down"). */
+function rolldownRound(m: MatchState, p: Player): boolean {
+  const r = m.stage * 10 + m.round;
+  if (p.style === "fast") return (r === 41 || r === 42) && p.level >= 7 || r === 51 || r === 52; // at 8 (4-1 or 4-2), then at 9 for 5-gold units
+  if (p.style === "econ") return r === 42 || r === 52;
+  return !!p.rerollDone && r === 42;
+}
+
+/** A reroll CPU's targets: the units of its price it has the most copies of (topped up from its deck). */
+function updateFocus(m: MatchState, p: Player) {
+  if (p.style === "fast" || (p.style === "econ" && carryRank(m.rankStep))) { carryFocus(m, p); return; }
+  if (p.style !== "reroll") return;
+  const c = p.focusCost ?? 1;
+  const weight: Record<string, number> = {};
+  for (const o of p.units) if (arenaUnit(o.unitId)!.cost === c) weight[o.unitId] = (weight[o.unitId] ?? 0) + 3 ** (o.star - 1);
+  const owned = Object.entries(weight).sort((a, b) => b[1] - a[1]).map(([id]) => id);
+  const keep = (p.focus ?? []).filter((id) => weight[id]);
+  const n = c >= 3 ? 2 : 3; // dearer units: fewer targets, so the copies are not spread thin
+  const focus = [...new Set([...keep, ...owned])].slice(0, n);
+  for (const id of shuffle(m, p.deck.filter((d) => arenaUnit(d)!.cost === c))) { if (focus.length >= n) break; if (!focus.includes(id)) focus.push(id); }
+  p.focus = focus;
+  // done once two of them are three stars: from then on it levels like everyone else
+  const three = focus.filter((id) => p.units.some((o) => o.unitId === id && o.star >= 3)).length;
+  if (three >= Math.min(2, focus.length) || m.stage >= 6) p.rerollDone = true;
+}
+
+/** At high ranks a CPU at level 8+ can three-star a 4-gold unit (or, at 9, a 5-gold one). */
+export const carryRank = (step: number) => tierOf(step) >= 10;
+const fiveRank = (step: number) => tierOf(step) >= 20;
+
+/**
+ * A fast player's carries once it reaches 8: the dear units it has the most copies of (4-gold,
+ * or 5-gold at 9 in the higher ranks). It buys every copy and, at high ranks, keeps rolling for
+ * them until one is three stars.
+ */
+function carryFocus(m: MatchState, p: Player) {
+  if (p.level < 8 || m.stage < 4 || p.grade === "weak") { p.focus = []; return; }
+  const c = p.level >= 9 && fiveRank(m.rankStep) ? 5 : 4;
+  const weight: Record<string, number> = {};
+  for (const o of p.units) { const u = arenaUnit(o.unitId)!; if (u.cost >= 4) weight[o.unitId] = (weight[o.unitId] ?? 0) + 3 ** (o.star - 1) + (u.cost === c ? 0.5 : 0); }
+  p.focusCost = c;
+  // the main carry first (most copies); a 5-gold carry gets all the attention
+  p.focus = Object.entries(weight).sort((a, b) => b[1] - a[1]).map(([id]) => id).slice(0, c === 5 ? 1 : 2);
+  p.rerollDone = p.focus.some((id) => p.units.some((o) => o.unitId === id && o.star >= 3));
 }
 
 /** One CPU planning turn: augments, levelling, buying, rolling, selling, items and placement. */
 export function cpuPlan(m: MatchState, p: Player) {
   if (p.augmentOffer) cpuPickAugment(m, p);
   const skill = p.skill ?? 0.5;
-  const rolldown = p.style === "reroll" ? m.stage === 3 && m.round === 2 : p.style === "fast" ? m.stage === 4 && m.round === 2 : m.stage === 4 && m.round === 1;
-  const desperate = p.hp < 35;
+  const weak = p.grade === "weak";
+  updateFocus(m, p);
+  const rolldown = !weak && rolldownRound(m, p);
+  const desperate = p.hp < 30 && !weak;
   // losing again and again in the mid game: spend to get stronger before it is too late
-  const stabilise = m.stage >= 3 && p.streak <= -2 && p.hp < 75 && skill >= 0.5;
-  let reserve = m.stage <= 1 ? 0 : m.stage === 2 ? 20 : 50;
-  if (p.style === "reroll" && m.stage >= 3) reserve = 30;
+  const stabilise = m.stage >= 3 && p.streak <= -3 && p.hp < 60 && skill >= 0.5;
+  // gold kept back for interest: up to 50 from stage 3 (weak players keep a random amount)
+  let reserve = m.stage <= 1 ? 0 : m.stage === 2 ? (p.style === "econ" || p.style === "fast" ? 20 : 10) : 50;
+  if (weak) reserve = Math.floor(rnd(m) * 40);
   if (stabilise) reserve = Math.min(reserve, 20);
-  if (rolldown || desperate) reserve = 10;
+  if (rolldown) reserve = p.style === "fast" && m.stage === 4 && m.round === 1 ? 20 : 10;
+  if (desperate) reserve = 0;
+  const slowRoll = !weak && p.style === "reroll" && !p.rerollDone && m.stage * 10 + m.round >= rollFrom(p.focusCost ?? 1);
+  // slow roll: keep about 40 for interest and roll the rest every round (more when health runs low)
+  if (slowRoll && !rolldown && !desperate) reserve = p.hp >= 50 ? 40 : 20;
+  // high ranks: a fast player at 8–9 keeps rolling for its 4- or 5-gold carry until it is three stars
+  const carryRoll = !weak && (p.style === "fast" || p.style === "econ") && carryRank(m.rankStep) && !!p.focus?.length && !p.rerollDone && p.level >= 8;
+  if (carryRoll && !rolldown && !desperate) reserve = Math.min(reserve, p.hp >= 50 ? 30 : 10);
   // level up
   const want = targetLevel(m, p);
-  while (p.level < want && p.gold >= XP_COST && (p.gold - XP_COST >= Math.min(reserve, 10) || rolldown || desperate)) buyXp(m, p);
+  // a fast player spends everything to reach 8, then saves again for 9; the others keep a little
+  const xpKeep = rolldown || desperate ? 0 : p.style === "fast" ? (p.level < 8 ? 0 : 30) : m.stage >= 3 && !weak ? 10 : 0;
+  while (p.level < want && p.gold >= XP_COST && p.gold - XP_COST >= xpKeep) buyXp(m, p);
   // buy what fits, then roll for more while over the reserve
   const shop = () => {
     for (let s = 0; s < SHOP; s++) {
@@ -983,36 +1112,61 @@ export function cpuPlan(m: MatchState, p: Player) {
       if (!id) continue;
       const u = arenaUnit(id)!;
       if (p.gold < u.cost) continue;
-      if (wantUnit(p, u, skill) && (p.gold - u.cost >= reserve - 8 || p.units.some((o) => o.unitId === id) || onBoard(p).length + onBench(p).length < boardSize(p))) {
-        if (freeBench(p) < 0) sellWorst(m, p, id);
-        buy(m, p, s);
-      }
+      if (weak && rnd(m) < 0.35) continue; // weak players miss things
+      const key = keyUnit(p, u);
+      const room = onBoard(p).length + onBench(p).length < boardSize(p);
+      if (!wantUnit(p, u, skill)) continue;
+      // anything else only to fill the board, or with spare gold and a near-empty bench (weak players buy anything)
+      if (!(key || room || (p.gold - u.cost >= reserve && onBench(p).length < 4) || (weak && p.gold - u.cost >= reserve))) continue;
+      if (freeBench(p) < 0) sellWorst(m, p, id);
+      buy(m, p, s);
     }
   };
+  if (!weak) cleanBench(m, p);
   shop();
   let rolls = 0;
-  const maxRolls = rolldown ? 30 : desperate ? 15 : stabilise ? 8 : 2 + Math.round(skill * 3);
-  while (p.gold - REROLL_COST >= reserve && rolls < maxRolls && p.level >= want - (p.style === "reroll" ? 1 : 0)) {
+  const maxRolls = weak ? (p.gold > 60 ? 4 : rnd(m) < 0.3 ? 1 : 0) : rolldown ? 40 : desperate ? 25 : slowRoll || carryRoll ? 30 : stabilise ? 10 : Math.round(skill * 3);
+  while (p.gold - REROLL_COST >= reserve && rolls < maxRolls && (p.level >= want || desperate)) {
     reroll(m, p);
     shop();
     rolls++;
+    updateFocus(m, p);
   }
   if (p.freeRollsLeft > 0) { reroll(m, p); shop(); }
   cpuItems(m, p);
   cpuPlace(m, p);
 }
 
+/** A unit the CPU's plan is built on: a copy of something it owns, a reroll target, a dear unit for a fast player. */
+function keyUnit(p: Player, u: ArenaUnit): boolean {
+  if (p.units.some((o) => o.unitId === u.id && o.star < 4)) return true;
+  if (p.style === "reroll" && p.focus?.includes(u.id)) return true;
+  if (p.style === "fast" && u.cost >= 4 && p.level >= 7) return true;
+  if (p.focus?.includes(u.id)) return true;
+  return false;
+}
+
 function wantUnit(p: Player, u: ArenaUnit, skill: number): boolean {
-  const copies = p.units.filter((o) => o.unitId === u.id);
-  if (copies.some((o) => o.star < 4)) return true;
+  if (keyUnit(p, u)) return true;
+  // a fast player at a high level does not bother with cheap units it does not own
+  if (p.style === "fast" && p.level >= 8 && u.cost <= 2) return p.units.length < boardSize(p);
   const traits = teamTraitSet(p);
   const fit = u.traits.filter((t) => traits.has(t)).length;
   const room = p.units.length < boardSize(p) + 3;
   return fit >= (skill > 0.6 ? 2 : 1) || (room && u.cost >= 2) || p.units.length < boardSize(p);
 }
 
+/** Sells bench units that lead nowhere (single copies of units the plan does not need), keeping a few. */
+function cleanBench(m: MatchState, p: Player) {
+  const junk = onBench(p).filter((o) => o.star === 1 && !o.items.length && p.units.filter((x) => x.unitId === o.unitId).length < 2 && !keyUnitOwned(p, o))
+    .sort((a, b) => unitPower(a) - unitPower(b));
+  const keep = m.stage <= 2 ? 3 : 2;
+  for (const o of junk.slice(0, Math.max(0, junk.length - keep))) sell(m, p, o.uid);
+}
+const keyUnitOwned = (p: Player, o: Owned) => (p.style === "reroll" && !!p.focus?.includes(o.unitId)) || (p.style === "fast" && arenaUnit(o.unitId)!.cost >= 4);
+
 function sellWorst(m: MatchState, p: Player, keepId: string) {
-  const bench = onBench(p).filter((o) => o.unitId !== keepId && p.units.filter((x) => x.unitId === o.unitId).length < 2);
+  const bench = onBench(p).filter((o) => o.unitId !== keepId && p.units.filter((x) => x.unitId === o.unitId).length < 2 && !p.focus?.includes(o.unitId));
   const worst = bench.sort((a, b) => unitPower(a) - unitPower(b))[0];
   if (worst) sell(m, p, worst.uid);
 }
@@ -1032,9 +1186,14 @@ function cpuItems(m: MatchState, p: Player) {
     if (it === "magnet") continue; // CPUs keep their items on
     if (ITEMS[it].fx === "dup") {
       // copy the unit closest to its next star (dearest first)
+      const focus = (o: Owned) => (p.focus?.[0] === o.unitId && o.star < 3 ? 2 : p.focus?.includes(o.unitId) && o.star < 3 ? 1 : 0) + (it === "dup5" && arenaUnit(o.unitId)!.cost >= 4 ? 0.5 : 0);
       const goal = [...p.units].filter((o) => o.star < 4 && !canEquip(p, o, it))
-        .sort((a, b) => p.units.filter((x) => x.unitId === b.unitId && x.star === b.star).length - p.units.filter((x) => x.unitId === a.unitId && x.star === a.star).length || unitPower(b) - unitPower(a))[0];
-      if (goal) giveItem(m, p, i, goal.uid);
+        .sort((a, b) => focus(b) - focus(a) || p.units.filter((x) => x.unitId === b.unitId && x.star === b.star).length - p.units.filter((x) => x.unitId === a.unitId && x.star === a.star).length || unitPower(b) - unitPower(a))[0];
+      // a fast player keeps deluxe copiers for its 4- / 5-gold carry
+      if (it === "dup5" && (p.style === "fast" || (p.style === "econ" && carryRank(m.rankStep))) && !p.focus?.length && m.stage < 5) continue;
+      if (!goal) continue;
+      if (freeBench(p) < 0) sellWorst(m, p, goal.unitId); // make room for the copy
+      giveItem(m, p, i, goal.uid);
       continue;
     }
     if (isComponent(it) && p.items.filter(isComponent).length >= 2 && m.stage < 4) continue; // wait for a pair
@@ -1070,7 +1229,8 @@ function cpuPlace(m: MatchState, p: Player) {
   chosen.sort((a, b) => roleOrder(a) - roleOrder(b));
   for (const o of chosen) {
     const u = arenaUnit(o.unitId)!;
-    const rows = u.role === "assassin" ? [7, 6] : RANGED.includes(u.role) ? [7, 6, 5] : [4, 5, 6];
+    // weak players put units anywhere; the others put tanks in front and casters behind
+    const rows = p.grade === "weak" && rnd(m) < 0.6 ? shuffle(m, [4, 5, 6, 7]) : u.role === "assassin" ? [7, 6] : RANGED.includes(u.role) ? [7, 6, 5] : [4, 5, 6];
     const xs = u.role === "assassin" ? [0, 6, 1, 5] : frontXs;
     let spot: { x: number; y: number } | null = null;
     for (const y of rows) { const x = xs.find((xx) => free(xx, y)); if (x !== undefined) { spot = { x, y }; break; } }
