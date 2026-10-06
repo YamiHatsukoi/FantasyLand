@@ -907,6 +907,7 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
       const counts = M.boardTraits(q);
       mm.body.append(...nn(
         h("p", null, `❤ ${Math.max(0, q.hp)} · Cấp ${q.level} · 💰 ${q.cpu ? "?" : q.gold} · chuỗi ${q.streak > 0 ? `${q.streak} thắng` : q.streak < 0 ? `${-q.streak} thua` : "—"}${q.place ? ` · hạng ${q.place}` : ""}`),
+        q.cpu && q.grade && q.style ? h("p", { class: "muted small" }, `🧠 ${M.GRADE_NAMES[q.grade]} · lối chơi: ${M.STYLE_NAMES[q.style]}`) : null,
         h("div", { class: "ar-final" }, M.onBoard(q).map((o) => { const u = arenaUnit(o.unitId)!; return h("button", { class: "ar-mini", onclick: () => { const pv = M.unitPreview(q, o.uid); openUnitInfo(o.unitId, o.star, { items: o.items, now: pv?.now, base: pv?.base, enemy: q.cpu }); } }, unitImg(u, 3), stars(o.star), h("span", { class: "ar-mini-items" }, o.items.map((i) => itemIcon(i, "ar-iimg xs")))); })),
         h("div", { class: "ar-trait-list" }, Object.entries(counts).filter(([t, n]) => traitTier(t, n) >= 0).map(([t, n]) => h("span", { class: "ar-chip", style: `border-color:${TRAITS[t].color}` }, `${TRAITS[t].icon} ${TRAITS[t].name} ${n}`))),
         q.augments.length ? h("p", { class: "muted small" }, `Lõi: ${q.augments.map((a) => AUGMENT_BY_ID[a].name).join(", ")}`) : null,

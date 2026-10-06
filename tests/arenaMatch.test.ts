@@ -12,7 +12,7 @@ function check(m: M.MatchState) {
     if (m.phase !== "combat") expect(M.onBoard(p).length, p.name).toBeLessThanOrEqual(M.boardSize(p));
     const bench = M.onBench(p).map((u) => u.bench);
     expect(new Set(bench).size).toBe(bench.length);
-    for (const b of bench) expect(b).toBeLessThan(M.BENCH);
+    for (const b of bench) expect(b).toBeLessThan(M.benchSize(p));
     const hexes = M.onBoard(p).map((u) => `${u.x},${u.y}`);
     expect(new Set(hexes).size).toBe(hexes.length);
     for (const u of p.units) {
