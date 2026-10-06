@@ -41,6 +41,8 @@ export interface Fighter {
   x: number; y: number; // logical hex
   fx: number; fy: number; // drawn position (glides between hexes)
   moveFrom: Hex | null; moveT: number;
+  /** The current move is a leap (drawn as a hop), e.g. an assassin jumping behind the enemy line. */
+  leap?: boolean;
   hp: number; maxHp: number; mana: number; maxMana: number;
   baseAd: number; ad: number; ap: number; armor: number; mr: number; as: number; range: number;
   crit: number; critDmg: number; dodge: number; omnivamp: number; amp: number; reduce: number;
@@ -114,6 +116,15 @@ export class ArenaBattle {
     for (const [t, s] of Object.entries(seen)) out[t] = s.size;
     if (bonus) for (const t of Object.keys(out)) if (TRAITS[t].group !== "unique" && traitTier(t, out[t]) >= 0) out[t] += bonus;
     return out;
+  }
+
+  /**
+   * A unit's stats as they would be at the start of a fight with this team (items, traits,
+   * augments and earned stats all counted), for unit cards. `ref` picks the unit.
+   */
+  static preview(team: TeamSetup, ref: number): Fighter | undefined {
+    const b = new ArenaBattle(team, { units: [] }, 1);
+    return b.fighters.find((f) => f.ref === ref && !f.summoned);
   }
 
   private setupTeam(team: TeamSetup, side: 0 | 1) {
@@ -224,7 +235,8 @@ export class ArenaBattle {
       for (let dy = 0; dy < 3; dy++) for (let x = 0; x < COLS; x++) { const y = f.side === 0 ? backRow + dy : backRow - dy; if (!this.occupied(x, y)) spots.push({ x, y }); }
       spots.sort((a, b) => Math.abs(a.x - f.x) - Math.abs(b.x - f.x));
       const s = spots[0];
-      if (s) { this.events.push({ t: "vfx", kind: "leap", at: s, from: { x: f.x, y: f.y }, el: "physical", radius: 0 }); f.x = s.x; f.y = s.y; f.fx = s.x; f.fy = s.y; }
+      // it stands where it was placed and hops over at the first steps of the fight
+      if (s) { this.events.push({ t: "vfx", kind: "leap", at: s, from: { x: f.x, y: f.y }, el: "physical", radius: 0 }); f.moveFrom = { x: f.x, y: f.y }; f.moveT = 0; f.leap = true; f.x = s.x; f.y = s.y; }
     }
   }
 
@@ -250,6 +262,8 @@ export class ArenaBattle {
   }
   byUid(uid: number | null) { return uid === null ? undefined : this.fighters.find((f) => f.uid === uid); }
 
+  /** Attack speed right now, with every stacking and timed boost (Guinsoo stacks, haste, chill...). */
+  attackSpeed(f: Fighter) { return this.effAs(f); }
   private effAs(f: Fighter) {
     let as = f.as * (1 + (f.haste > this.time ? f.hasteV : 0) + (f.rally > this.time ? f.rallyV : 0) + (f.fxs.has("guinsoo") ? f.stacks * 0.05 : 0));
     if (f.fxs.has("quicksilver")) as *= 1 + 0.05 * Math.min(10, Math.floor(this.time / 2));
@@ -275,7 +289,7 @@ export class ArenaBattle {
       // drawn position
       if (f.moveFrom) {
         f.moveT += DT / MOVE_TIME;
-        if (f.moveT >= 1) { f.moveFrom = null; f.fx = f.x; f.fy = f.y; }
+        if (f.moveT >= 1) { f.moveFrom = null; f.leap = false; f.fx = f.x; f.fy = f.y; }
         else { f.fx = f.moveFrom.x + (f.x - f.moveFrom.x) * f.moveT; f.fy = f.moveFrom.y + (f.y - f.moveFrom.y) * f.moveT; }
       }
     }
@@ -942,6 +956,7 @@ export class ArenaBattle {
 
   /** Moves a fighter to a hex (gliding when `glide`). */
   private place(u: Fighter, h: Hex, glide: boolean) {
+    u.leap = false;
     if (glide) { u.moveFrom = { x: u.x, y: u.y }; u.moveT = 0; }
     else { u.moveFrom = null; u.fx = h.x; u.fy = h.y; }
     u.x = h.x; u.y = h.y;

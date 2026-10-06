@@ -8,20 +8,21 @@ import { app } from "../app";
 import { playMusic } from "../audio/music";
 import { sfx } from "../audio/sfx";
 import { AUGMENT_BY_ID, AUGMENTS } from "../arena/augments";
-import { DT, type ArenaBattle } from "../arena/combat";
+import { DT, type ArenaBattle, type Fighter } from "../arena/combat";
 import { mirror } from "../arena/hex";
-import { ITEMS, combine, isComponent } from "../arena/items";
+import { ITEMS, combine, isComponent, isTool, itemStatText } from "../arena/items";
 import * as M from "../arena/match";
 import { starValues } from "../arena/spells";
-import { DIVS, POINTS_PER_DIV, TIERS, applyResult, matchReward, newRank, rankIcon, rankName, tierOf, tierReward } from "../arena/rank";
+import { DIVS, POINTS_PER_DIV, TIERS, applyResult, lpDelta, matchReward, newRank, rankIcon, rankName, tierOf, tierReward } from "../arena/rank";
 import { TRAITS, traitDesc, traitTier } from "../arena/traits";
 import type { ArenaUnit, Star } from "../arena/types";
-import { STAR_MULT, arenaUnit, arenaUnits, starBoost } from "../arena/units";
+import { arenaUnit, arenaUnits } from "../arena/units";
 import { addItem } from "../core/state";
 import { hashString as hashStr } from "../core/rng";
 import { getFloor } from "../world/floors";
 import { getItem } from "../data/items";
 import { ArenaView, COST_COL, STAR_COL } from "../render/arenaView";
+import { arenaItemURL } from "../render/arenaIcons";
 import { spriteURL } from "../render/pixel";
 import { confirmBox, h, nn, openModal, toast, type ModalHandle } from "../ui/dom";
 
@@ -86,6 +87,9 @@ export function attachTip(el: HTMLElement, make: () => Node | string) {
     const y = r.top - t.height - 8 > 6 ? r.top - t.height - 8 : r.bottom + 8;
     tipEl.style.left = `${x}px`;
     tipEl.style.top = `${y}px`;
+    // the element can be redrawn away under the mouse (shop refresh, modal closed): drop its card too
+    const mine = tipEl;
+    const watch = window.setInterval(() => { if (tipEl !== mine) clearInterval(watch); else if (!el.isConnected) { hide(); clearInterval(watch); } }, 250);
   });
   const hide = () => { tipEl?.remove(); tipEl = null; };
   el.addEventListener("pointerleave", hide);
@@ -127,45 +131,77 @@ export function unitTip(unitId: string, star: Star = 1): HTMLElement {
     h("div", { class: "small" }, spellText(u.spell.desc, star)));
 }
 
-export interface LiveStats { hp: number; maxHp: number; mana: number; maxMana: number; ad: number; ap: number; armor: number; mr: number; as: number }
+/** A small pixel icon of an arena item. */
+export function itemIcon(id: string, cls = "ar-iimg"): HTMLImageElement {
+  return h("img", { class: `pix ${cls}`, src: arenaItemURL(id, 2), alt: ITEMS[id]?.name ?? "", draggable: false });
+}
+/** An item's name, stats and effect, for tooltips and cards. */
+export function itemCard(id: string): HTMLElement {
+  const it = ITEMS[id];
+  const st = itemStatText(id);
+  return h("div", { class: "ar-icard" },
+    h("div", { class: "row" }, itemIcon(id, "ar-iimg big"), h("b", null, it.name)),
+    st ? h("div", { class: "ar-istat" }, st) : null,
+    it.component && st ? null : h("div", { class: "small" }, it.desc)); // a component's text is just its stats
+}
 
-/** A unit's card: health and mana bars, stats at a star, traits (tap for details), the spell at every star, items. */
-export function openUnitInfo(unitId: string, star: Star = 1, o: { items?: string[]; bonus?: Record<string, number>; sell?: () => void; live?: LiveStats; enemy?: boolean; pick?: { label: string; fn: () => void } } = {}) {
+/**
+ * A unit's card: health and mana bars, the stats it has now (items, traits, augments and
+ * earned stats counted, with what they add shown in green), traits (tap for details), the
+ * spell at every star, items. `now` is the unit as it stands (a live fighter during a fight);
+ * `base` the bare unit to compare with.
+ */
+export function openUnitInfo(unitId: string, star: Star = 1, o: { items?: string[]; bonus?: Record<string, number>; sell?: () => void; now?: Fighter; base?: Fighter; battle?: ArenaBattle; enemy?: boolean; pick?: { label: string; fn: () => void } } = {}) {
   const u = arenaUnit(unitId);
   if (!u) return;
-  const s = u.stats;
-  const boost = starBoost(u.cost, star);
-  const adStar = [0, 1, 1.5, 2.25, 3.4][star];
-  const maxHp = o.live?.maxHp ?? Math.round(s.hp * STAR_MULT[star] * boost[0]);
-  const hp = o.live?.hp ?? maxHp;
-  const maxMana = o.live?.maxMana ?? s.mana;
-  const mana = o.live?.mana ?? s.startMana;
+  const base = o.base ?? M.bareFighter(unitId, star);
+  const f = o.now ?? M.bareFighter(unitId, star, o.items ?? []) ?? base;
+  if (!f || !base) return;
+  const live = !!o.battle;
+  const asNow = o.battle ? o.battle.attackSpeed(f) : f.as;
+  const vampNow = f.omnivamp + (o.battle && f.vampT > o.battle.time ? f.vampV : 0);
   const m = openModal(`${o.enemy ? "⚔️ " : ""}${u.name}`);
-  const row = (k: string, v: string | number) => h("div", { class: "ar-stat" }, h("span", null, k), h("b", null, String(v)));
+  const fmt = (v: number) => Math.round(v).toLocaleString("vi-VN");
+  const pct = (v: number) => `${Math.round(v * 100)}%`;
+  /** A stat with what items, traits and augments add on top of the bare unit. */
+  const row = (k: string, v: string, add?: string, tip?: string) => h("div", { class: "ar-stat", title: tip ?? "" }, h("span", null, k), h("b", null, v, add ? h("small", { class: "ar-add" }, ` ${add}`) : null));
+  const plus = (now: number, was: number, f2: (x: number) => string) => (Math.abs(now - was) >= 0.005 ? `${now > was ? "+" : "−"}${f2(Math.abs(now - was))}` : undefined);
   const bar = (cls: string, v: number, max: number, label: string) => h("div", { class: `ar-sbar ${cls}` }, h("i", { style: `width:${Math.max(0, Math.min(100, (v / Math.max(1, max)) * 100))}%` }), h("span", null, label));
+  const hp = live ? f.hp : f.maxHp;
+  const mana = f.mana;
+  const items = o.items ?? f.items;
   m.body.append(...nn(
     h("div", { class: "ar-info-head" },
       h("div", { class: "ar-info-pic", style: `border-color:${COST_COL[u.cost]}` }, unitImg(u, 6)),
       h("div", { class: "grow" },
         h("div", null, stars(star), " ", h("span", { class: "ar-cost", style: `background:${COST_COL[u.cost]}` }, `${u.cost} 💰`), u.boss ? " 👑 Trùm" : ""),
-        h("div", { class: "muted small" }, `${ROLE_NAMES[u.role]} · ${s.range > 1 ? `Đánh xa ${s.range} ô` : "Cận chiến"} · Tầng ${u.floor}`),
-        bar("hp", hp, maxHp, `❤ ${Math.round(hp).toLocaleString("vi-VN")} / ${maxHp.toLocaleString("vi-VN")}`),
-        u.spell.passive ? bar("passive", 1, 1, "Nội tại — không cần năng lượng") : bar("mp", mana, maxMana, `💧 ${Math.round(mana)} / ${maxMana}`),
+        h("div", { class: "muted small" }, `${ROLE_NAMES[u.role]} · ${f.range > 1 ? `Đánh xa ${f.range} ô` : "Cận chiến"} · Tầng ${u.floor}`),
+        bar("hp", hp, f.maxHp, `❤ ${fmt(hp)} / ${fmt(f.maxHp)}${f.maxHp !== base.maxHp ? ` (gốc ${fmt(base.maxHp)})` : ""}`),
+        u.spell.passive ? bar("passive", 1, 1, "Nội tại — không cần năng lượng") : bar("mp", mana, f.maxMana, `💧 ${fmt(mana)} / ${f.maxMana}`),
         h("div", { class: "ar-trait-list" }, u.traits.map((t) => {
           const chip = h("button", { class: "ar-chip", style: `border-color:${TRAITS[t].color}`, onclick: () => openTraitInfo(t) }, `${TRAITS[t].icon} ${TRAITS[t].name}`);
           attachTip(chip, () => traitCard(t));
           return chip;
         })))),
     h("div", { class: "ar-stats" },
-      row("⚔ Sát thương", Math.round(o.live?.ad ?? s.ad * adStar * boost[1])), row("🔮 Sức mạnh phép", Math.round(o.live?.ap ?? s.ap)),
-      row("🛡 Giáp", Math.round(o.live?.armor ?? s.armor)), row("🧿 Kháng phép", Math.round(o.live?.mr ?? s.mr)),
-      row("⚡ Tốc đánh", (o.live?.as ?? s.as).toFixed(2)), row("💥 Chí mạng", `${Math.round(s.crit * 100)}%`)),
+      row("⚔ Sát thương", fmt(f.ad), plus(f.ad, base.ad, fmt)),
+      row("🔮 Sức mạnh phép", fmt(f.ap), plus(f.ap, base.ap, fmt)),
+      row("🛡 Giáp", fmt(f.armor), plus(f.armor, base.armor, fmt)),
+      row("🧿 Kháng phép", fmt(f.mr), plus(f.mr, base.mr, fmt)),
+      row("⚡ Tốc đánh", asNow.toFixed(2), asNow > base.as + 0.005 ? `+${Math.round((asNow / base.as - 1) * 100)}%` : undefined, live ? "Tốc đánh lúc này, tính cả mọi cộng dồn trong trận" : "Tốc đánh khi vào trận (đã tính trang bị, tộc hệ, Lõi)"),
+      row("💥 Chí mạng", pct(f.crit), plus(f.crit, base.crit, pct)),
+      row("💢 ST chí mạng", pct(f.critDmg), plus(f.critDmg, base.critDmg, pct)),
+      row("🩸 Hút máu", pct(vampNow), plus(vampNow, base.omnivamp, pct), "Hồi máu theo sát thương gây ra (từ trang bị, Lõi, tộc hệ)"),
+      f.dodge > 0 ? row("💨 Né tránh", pct(f.dodge), plus(f.dodge, base.dodge, pct)) : null,
+      f.amp > 1.001 ? row("✨ Tăng sát thương", `+${pct(f.amp - 1)}`) : null,
+      f.reduce > 0 ? row("🪨 Giảm sát thương nhận", pct(f.reduce)) : null,
+      live && f.stacks > 0 && f.fxs.has("guinsoo") ? row("🌀 Cộng dồn", `${f.stacks} lần`) : null),
     h("div", { class: "ar-spell" },
       h("div", null, h("b", null, `${u.spell.icon} ${u.spell.name}`), u.spell.passive ? h("span", { class: "ar-tag" }, "Nội tại") : null, u.spell.ult ? h("span", { class: "ar-tag gold" }, "Tối thượng") : null),
       h("p", null, spellText(u.spell.desc, star)),
       h("p", { class: "muted small" }, `Số theo ★1 / ★2 / ★3 / ★4 (đang ★${star}), ${u.spell.physical ? "tăng theo sát thương" : "tăng theo sức mạnh phép"}.`)),
     o.bonus && Object.keys(o.bonus).length ? h("p", { class: "ar-bonus" }, "Đã tích lũy: ", Object.entries(o.bonus).map(([k, v]) => `${k === "ap" ? `+${v} sức mạnh phép` : k === "ad" ? `+${Math.round(v * 100)}% sát thương` : k === "hp" ? `+${Math.round(v * 100)}% máu` : `+${v} ${k}`}`).join(", ")) : null,
-    o.items?.length ? h("div", { class: "ar-items-info" }, o.items.map((i) => h("div", null, h("b", null, `${ITEMS[i].icon} ${ITEMS[i].name}`), " — ", ITEMS[i].desc))) : null,
+    items.length ? h("div", { class: "ar-items-info" }, items.map((i) => itemCard(i))) : null,
     h("div", { class: "row end" },
       o.sell ? h("button", { class: "btn danger", onclick: () => { m.close(); o.sell!(); } }, "Bán") : null,
       o.pick ? h("button", { class: "btn primary", onclick: () => { m.close(); o.pick!.fn(); } }, o.pick.label) : null,
@@ -200,7 +236,8 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
         h("div", { class: "grow" },
           h("div", { class: "ar-rank-name" }, rankName(r.step)),
           h("div", { class: "ar-lp" }, h("div", { style: `width:${Math.min(100, r.lp)}%` }), h("span", null, `${r.lp} / ${POINTS_PER_DIV} điểm hạng`)),
-          h("div", { class: "muted small" }, `Bậc ${tierOf(r.step) + 1}/${TIERS} · cao nhất: ${rankName(r.best)} · đã đấu ${ar.played} trận · top 1: ${ar.top1} · top 4: ${ar.top4}`))),
+          h("div", { class: "muted small" }, `Bậc ${tierOf(r.step) + 1}/${TIERS} · cao nhất: ${rankName(r.best)} · đã đấu ${ar.played} trận · top 1: ${ar.top1} · top 4: ${ar.top4}`),
+          h("button", { class: "btn small", onclick: openJourney }, "🗺️ Hành trình rank"))),
       h("div", { class: "ar-card" },
         h("div", { class: "row between" }, h("b", null, "🃏 Bể tướng"), h("span", null, `Đã mở ${unlocked.length}/700 tướng`)),
         h("div", { class: "ar-quota" }, [1, 2, 3, 4, 5].map((c) => h("div", { style: `border-color:${COST_COL[c]}` }, h("b", null, `${c}💰`), h("span", null, `${Math.min(byCost[c - 1], M.DECK_QUOTA[c])}/${M.DECK_QUOTA[c]}`), h("small", null, `có ${byCost[c - 1]}`)))),
@@ -221,6 +258,30 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
     ));
   }
 
+  /** Every tier from the bottom to the top: where you are, the best you reached, rewards. */
+  function openJourney() {
+    const r = arenaSave().rank;
+    const cur = tierOf(r.step), best = tierOf(r.best);
+    const mm = openModal("🗺️ Hành trình rank", { wide: true });
+    mm.body.append(
+      h("p", { class: "muted small" }, `${TIERS} bậc, mỗi bậc 3 hạng (III → II → I), mỗi hạng ${POINTS_PER_DIV} điểm. Top 4 được cộng điểm, hạng 5–8 bị trừ; bậc càng cao cộng càng ít, trừ càng nhiều. Lần đầu lên một bậc nhận thưởng.`),
+      h("div", { class: "ar-journey" }, Array.from({ length: TIERS }, (_, i) => TIERS - 1 - i).map((t) => {
+        const here = t === cur;
+        const state = here ? "now" : t <= best ? "done" : "lock";
+        const rw = tierReward(t);
+        return h("div", { class: `ar-jt ${state}` },
+          h("div", { class: "ic" }, rankIcon(t * DIVS)),
+          h("div", { class: "grow" },
+            h("b", null, `${t + 1}. ${rankName(t * DIVS).replace(/ III$/, "")}`),
+            here ? h("span", { class: "ar-tag gold" }, `Bạn: ${rankName(r.step)} · ${r.lp}/${POINTS_PER_DIV}`) : t === best && best !== cur ? h("span", { class: "ar-tag" }, "Cao nhất") : null,
+            h("div", { class: "muted small" }, t === 0 ? "Bậc khởi đầu" : `Thưởng lần đầu: ${rewardText(rw)}`),
+            h("div", { class: "muted small" }, `Top 1: +${lpDelta(t * DIVS, 1)} · top 4: +${lpDelta(t * DIVS, 4)} · hạng 8: ${lpDelta(t * DIVS, 8)} điểm`)),
+          h("div", { class: "st" }, state === "done" && !here ? "✓" : state === "lock" ? "🔒" : "▶"));
+      })),
+    );
+    requestAnimationFrame(() => mm.body.querySelector(".ar-jt.now")?.scrollIntoView({ block: "center" }));
+  }
+
   function rewardText(r: { gold: number; items: Record<string, number> }) {
     return [`${r.gold} 💰`, ...Object.entries(r.items).map(([id, n]) => `${getItem(id).name} ×${n}`)].join(", ");
   }
@@ -230,10 +291,12 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
     m.body.append(...[
       "8 người chơi (bạn và 7 đối thủ) cùng mua tướng, xếp đội hình và để tướng tự đánh. Mỗi lần thua bạn mất máu; còn trụ lại cuối cùng là thắng.",
       "Mỗi giai đoạn gồm các vòng: ⚔️ giao đấu với người khác, 👾 đánh quái (rơi trang bị, vàng), 🎠 Chợ Tướng (chọn 1 tướng kèm trang bị). Ở vòng 2-1, 3-2 và 4-2 bạn chọn 1 Lõi tăng sức mạnh.",
-      "Kinh tế: mỗi vòng nhận 5 vàng + lãi (1 vàng mỗi 10 vàng đang có, tối đa 5) + thưởng chuỗi thắng/thua. Đổi cửa hàng 2 vàng, mua 4 kinh nghiệm 4 vàng. Cấp càng cao càng ra nhiều tướng đắt và được đặt nhiều tướng hơn.",
+      "Kinh tế: mỗi vòng nhận 5 vàng + lãi (1 vàng mỗi 10 vàng đang có, tối đa 5) + thưởng chuỗi thắng hoặc thua liên tiếp (2–3 trận +1, 4 trận +2, từ 5 trận +3); mỗi trận thắng thêm 1 vàng. Chạm 💰 để xem chi tiết. Đổi cửa hàng 2 vàng, mua 4 kinh nghiệm 4 vàng. Cấp càng cao càng ra nhiều tướng đắt và được đặt nhiều tướng hơn.",
       "Ghép 3 tướng giống nhau cùng sao thành 1 tướng sao cao hơn (tối đa ★4). Tướng 4–5 vàng ở ★3 cực kỳ mạnh.",
       "Trang bị: 2 mảnh ghép thành 1 món hoàn chỉnh. Ấn Trắng + 1 mảnh = Ấn tộc hệ. Mỗi tướng mang tối đa 3 món. Kéo trang bị vào tướng, hoặc chạm trang bị rồi chạm tướng.",
       "Tộc hệ: đủ số tướng khác nhau cùng tộc/hệ thì kích hoạt sức mạnh. Chạm vào dải tộc hệ để xem chi tiết.",
+      "Đồ dùng: Nam Châm tháo hết trang bị của một tướng. Máy Sao Chép (rơi khi đánh quái hoặc ở Chợ Tướng) tạo thêm 1 bản sao ★1 của tướng giá 1–3 vàng; Máy Sao Chép Thượng Hạng chép được mọi tướng, kể cả 4–5 vàng. Kéo thả vào tướng để dùng.",
+      "Thẻ trong cửa hàng sáng lên khi bạn đã có tướng đó, và hiện ★★ / ★★★ khi mua là tướng lên sao.",
       "Kéo tướng để đặt lên sân (nửa dưới) hoặc hàng chờ; kéo tướng vào cửa hàng để bán. Chạm vào tướng để xem chỉ số và chiêu.",
     ].map((t) => h("p", null, t)));
   }
@@ -386,7 +449,7 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
       if (!alive) return;
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      if (battle && battle.winner === null) {
+      if (battle && battle.winner === null && view.introT <= 0) { // the fight starts once the enemy team has dropped in
         acc += dt;
         while (acc >= DT && battle.winner === null) { battle.step(); acc -= DT; view.takeEvents(); }
         view.alpha = acc / DT;
@@ -501,10 +564,17 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
       celebrateStars();
       view.plan.enemy = m.pve && !battle ? m.pve.units.map((e) => ({ ...e, ...mirror({ x: e.x, y: e.y }) })) : [];
       // items (left of the bench in TFT; a row here)
-      itemsRow.replaceChildren(h("span", { class: "lbl" }, "🎒"), ...(p.items.length ? p.items.map((it, i) => {
-        const b = h("button", { class: `ar-item ${isComponent(it) ? "" : "done"}` }, ITEMS[it].icon);
+      // tools (magnets, copiers) stack into one slot each with a count
+      const slots: { it: string; i: number; n: number }[] = [];
+      p.items.forEach((it, i) => {
+        const same = isTool(it) ? slots.find((x) => x.it === it) : undefined;
+        if (same) same.n++; else slots.push({ it, i, n: 1 });
+      });
+      slots.sort((a, b) => Number(isTool(a.it)) - Number(isTool(b.it)));
+      itemsRow.replaceChildren(h("span", { class: "lbl" }, "🎒"), ...(slots.length ? slots.map(({ it, i, n }) => {
+        const b = h("button", { class: `ar-item ${isComponent(it) ? "" : isTool(it) ? "tool" : "done"}` }, itemIcon(it), n > 1 ? h("span", { class: "n" }, `×${n}`) : null);
         bindItem(b, i);
-        attachTip(b, () => h("div", null, h("b", null, `${ITEMS[it].icon} ${ITEMS[it].name}`), h("div", { class: "small" }, ITEMS[it].desc)));
+        attachTip(b, () => itemCard(it));
         return b;
       }) : [h("span", { class: "muted small" }, "Trang bị rơi từ quái và Chợ Tướng")]));
       // hint
@@ -514,29 +584,33 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
       // shop bar, TFT style: level + odds | gold (+interest) | lock, ready; then XP | 5 cards | reroll
       const need = M.XP_NEXT[p.level] || 0;
       const odds = M.ODDS[p.level];
-      const interest = Math.min(p.interestCap, Math.floor(p.gold / 10));
-      const streak = p.streak >= 2 ? `🔥${p.streak}` : p.streak <= -2 ? `❄️${-p.streak}` : "";
+      const interest = M.interestOf(p);
+      const sGold = M.streakGold(p.streak);
+      const streak = p.streak >= 1 ? h("span", { class: "ar-streak win", title: `Chuỗi ${p.streak} trận thắng` }, `🔥${p.streak}`, sGold ? h("small", null, `+${sGold}💰`) : null)
+        : p.streak <= -1 ? h("span", { class: "ar-streak lose", title: `Chuỗi ${-p.streak} trận thua` }, `❄️${-p.streak}`, sGold ? h("small", null, `+${sGold}💰`) : null) : null;
+      const onB = M.onBoard(p).length, cap = M.boardSize(p);
       shopInfo.replaceChildren(...nn(
         h("div", { class: "lvl" }, h("b", null, `Cấp ${p.level}`), need ? h("span", { class: "xpb" }, h("i", { style: `width:${(p.xp / need) * 100}%` }), h("small", null, `${p.xp}/${need}`)) : h("small", null, " tối đa"),
-          h("span", { class: "cap" }, `👥 ${M.onBoard(p).length}/${M.boardSize(p)}`)),
+          h("span", { class: `cap ${onB < cap && planning ? "warn" : ""}`, title: onB < cap ? `Sân còn trống ${cap - onB} ô` : "" }, `${onB < cap && planning ? "⚠ " : "👥 "}${onB}/${cap}`)),
         h("div", { class: "odds", title: "Tỉ lệ ra tướng theo giá ở cấp hiện tại" }, odds.map((o, i) => h("span", { style: `color:${COST_COL[i + 1]}` }, `${o}%`))),
-        h("div", { class: "gold" }, `💰 ${p.gold}`, h("small", null, ` +${interest} lãi`), streak ? h("small", null, ` ${streak}`) : null),
+        h("button", { class: "gold", title: "Xem thu nhập mỗi vòng", onclick: openIncome }, `💰 ${p.gold}`, h("small", null, ` +${interest} lãi`), streak),
         h("div", { class: "hpme" }, `❤ ${Math.max(0, p.hp)}`),
         battle ? h("div", { class: "ar-timer" }, "⏱ 0s")
           : h("button", { class: `lock ${p.locked ? "on" : ""}`, disabled: !planning, title: "Khóa cửa hàng", onclick: () => { M.toggleLock(m, p); changed(); } }, p.locked ? "🔒" : "🔓"),
-        battle ? null : h("button", { class: "btn primary ready", disabled: !planning, onclick: startFight }, "▶ Đấu"),
+        battle ? null : h("button", { class: "btn primary ready", disabled: !planning, onclick: tryStartFight }, "▶ Đấu"),
       ));
-      const owned = (id: string) => p.units.filter((u) => u.unitId === id && u.star === 1).length;
       const cards = p.shop.map((id, s) => {
         if (!id) return h("div", { class: "ar-scard empty" });
         const u = arenaUnit(id)!;
-        const c = owned(id);
-        const card = h("button", { class: `ar-scard ${c >= 2 ? "up" : c ? "have" : ""}`, style: `border-color:${COST_COL[u.cost]}`, disabled: !planning },
+        const have = p.units.some((o) => o.unitId === id);
+        // buying every copy on offer: the star it would reach (★2, ★3...), if any
+        const up = M.starAfterBuying(p, id, p.shop.filter((x) => x === id).length);
+        const card = h("button", { class: `ar-scard ${up ? "up" : have ? "have" : ""}`, style: `border-color:${COST_COL[u.cost]}`, disabled: !planning },
           unitImg(u, 3),
           h("div", { class: "nm" }, u.name),
           h("div", { class: "tr" }, u.traits.map((t) => TRAITS[t].icon).join("")),
           h("div", { class: "cs", style: `background:${COST_COL[u.cost]}` }, `${u.cost}`),
-          c ? h("div", { class: "own" }, c >= 2 ? "★2!" : `×${c}`) : null);
+          up ? h("div", { class: "own up", style: `color:${STAR_COL[up]}` }, "★".repeat(up)) : have ? h("div", { class: "own" }, `có ${p.units.filter((o) => o.unitId === id).length}`) : null);
         card.addEventListener("click", () => { act(M.buy(m, p, s), "coin"); });
         card.addEventListener("contextmenu", (e) => { e.preventDefault(); openUnitInfo(id); });
         card.append(h("span", { class: "info", onclick: (e: Event) => { e.stopPropagation(); openUnitInfo(id); } }, "i"));
@@ -552,9 +626,17 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
     }
 
     // ------------------------------------------------ phases
+    let incomeShown = M.roundLabel(m);
     function afterChange() {
       saveMatch(m);
       refresh();
+      // a new round: what it paid, streak bonus included
+      const inc = me().lastIncome;
+      if ((m.phase === "plan" || m.phase === "augment") && incomeShown !== M.roundLabel(m) && inc) {
+        incomeShown = M.roundLabel(m);
+        const st = me().streak;
+        toast(`+${inc.total} 💰 (${inc.base} cơ bản + ${inc.interest} lãi${inc.streak ? ` + ${inc.streak} chuỗi ${st > 0 ? "thắng 🔥" : "thua ❄️"}` : ""}${inc.extra ? ` + ${inc.extra} Lõi` : ""})`, "good");
+      }
       modal?.close();
       modal = null;
       if (m.phase === "augment") openAugments();
@@ -563,6 +645,41 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
       else if (m.phase === "result") { M.nextRound(m); afterChange(); }
       else if (m.phase === "combat" && !battle) beginFight();
       else if (m.phase === "plan") maybeTutorial();
+    }
+
+    /** "▶ Đấu": warns first when the board has empty places. */
+    async function tryStartFight() {
+      if (m.phase !== "plan") return;
+      const p = me();
+      const free = M.boardSize(p) - M.onBoard(p).length;
+      if (free > 0) {
+        const bench = M.onBench(p).length;
+        const ok = await confirmBox("⚠ Sân còn trống",
+          `Sân còn trống ${free} ô (đang có ${M.onBoard(p).length}/${M.boardSize(p)} tướng).` + (bench ? ` Tướng ở hàng chờ sẽ tự lên sân lấp chỗ trống.` : " Hàng chờ không còn tướng: mua thêm tướng ở cửa hàng để lấp chỗ."),
+          "Vẫn đấu");
+        if (!ok) return;
+      }
+      startFight();
+    }
+
+    /** What each round pays: base, interest, the streak bonus. */
+    function openIncome() {
+      const p = me();
+      const now = M.roundIncome(m, p);
+      const mm = openModal("💰 Thu nhập mỗi vòng");
+      const line = (k: string, v: number, sub = "") => h("div", { class: "ar-stat" }, h("span", null, k, sub ? h("small", { class: "muted" }, ` ${sub}`) : null), h("b", null, `+${v}`));
+      const st = p.streak;
+      mm.body.append(...nn(
+        h("p", { class: "muted small" }, "Đầu mỗi vòng bạn nhận:"),
+        h("div", { class: "ar-stats one" },
+          line("Cơ bản", now.base),
+          line("Lãi", now.interest, `(1 vàng mỗi 10 vàng đang có, tối đa ${p.interestCap})`),
+          line(st > 0 ? `Chuỗi thắng 🔥${st}` : st < 0 ? `Chuỗi thua ❄️${-st}` : "Chuỗi thắng / thua", now.streak, "(2–3 trận: +1 · 4: +2 · 5+: +3)"),
+          now.extra ? line("Lõi", now.extra) : null,
+          h("div", { class: "ar-stat total" }, h("span", null, "Vòng sau nhận"), h("b", null, `+${now.total} 💰`))),
+        p.lastIncome ? h("p", { class: "muted small" }, `Vòng này đã nhận: ${p.lastIncome.base} cơ bản + ${p.lastIncome.interest} lãi + ${p.lastIncome.streak} chuỗi${p.lastIncome.extra ? ` + ${p.lastIncome.extra} Lõi` : ""} = ${p.lastIncome.total} 💰`) : null,
+        h("p", { class: "muted small" }, "Thắng còn được thêm 1 vàng mỗi trận. Thắng hay thua liên tiếp đều được thưởng chuỗi; hòa thì mất chuỗi."),
+      ));
     }
 
     function startFight() {
@@ -668,19 +785,19 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
             sfx("pickup");
             modal?.close();
             modal = null;
-            toast(`Bạn nhận ${u.name} và ${it.icon} ${it.name}`, "good");
+            toast(`Bạn nhận ${u.name} và ${it.name}`, "good");
             afterChange();
             showBanner(`Vòng ${M.roundLabel(m)}`, KIND_NAME[M.currentKind(m)]);
           };
           // tap: the unit's full card, with a button to take it (no picking by mistake)
-          const card = h("button", { class: `ar-cslot ${taken ? "taken" : ""}`, style: `border-color:${COST_COL[u.cost]}`, disabled: taken, onclick: () => openUnitInfo(u.id, 1, { items: [slot.item], pick: { label: `Chọn ${u.name} + ${it.icon}`, fn: take } }) },
+          const card = h("button", { class: `ar-cslot ${taken ? "taken" : ""}`, style: `border-color:${COST_COL[u.cost]}`, disabled: taken, onclick: () => openUnitInfo(u.id, 1, { items: [slot.item], now: isTool(slot.item) ? undefined : M.bareFighter(u.id, 1, [slot.item]), pick: { label: `Chọn ${u.name} + ${it.name}`, fn: take } }) },
             h("span", { class: "cs", style: `background:${COST_COL[u.cost]}` }, `${u.cost}💰`),
             unitImg(u, 3),
             h("div", { class: "nm" }, u.name),
             h("div", { class: "tr" }, u.traits.map((t) => TRAITS[t].icon).join(" ")),
-            h("div", { class: "it" }, `${it.icon} ${it.name}`),
+            h("div", { class: "it" }, itemIcon(slot.item, "ar-iimg sm"), ` ${it.name}`),
             taken ? h("div", { class: "by" }, m.players[slot.takenBy!].name) : null);
-          attachTip(card, () => h("div", null, unitTip(u.id), h("div", { class: "small", style: "margin-top:4px" }, h("b", null, `${it.icon} ${it.name}`), `: ${it.desc}`)));
+          attachTip(card, () => h("div", null, unitTip(u.id), h("div", { style: "margin-top:6px" }, itemCard(slot.item))));
           return card;
         })),
       );
@@ -764,23 +881,23 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
       const id = p.items[index];
       if (!id) return;
       const it = ITEMS[id];
-      const mm = openModal(`${it.icon} ${it.name}`);
+      const mm = openModal(it.name);
       const comps = ["sword", "bow", "rod", "tear", "vest", "cloak", "belt", "glove", "seal"];
       const planning = (m.phase === "plan" || m.phase === "augment") && !battle;
       mm.body.append(...nn(
-        h("p", null, it.desc),
-        h("p", { class: "muted small" }, "Kéo trang bị thả vào tướng để gắn; kéo thả lên mảnh khác để ghép."),
+        itemCard(id),
+        h("p", { class: "muted small" }, isTool(id) ? "Kéo thả vào tướng để dùng." : "Kéo trang bị thả vào tướng để gắn; kéo thả lên mảnh khác để ghép."),
         isComponent(id) ? h("div", { class: "ar-recipes" }, comps.map((c) => {
           const made = combine(id, c);
           if (!made) return null;
           const r = ITEMS[made];
           const j = p.items.findIndex((x, k) => x === c && k !== index);
           return h("div", { class: j >= 0 ? "have" : "" },
-            h("span", null, `+ ${ITEMS[c].icon} = ${r.icon}`), h("b", null, r.name),
+            h("span", { class: "ar-rec" }, "+ ", itemIcon(c, "ar-iimg sm"), " = ", itemIcon(made, "ar-iimg sm")), h("b", null, r.name),
             j >= 0 && planning ? h("button", { class: "btn small good", onclick: () => { mm.close(); act(M.craft(m, p, index, j), "craft"); } }, "Ghép") : null,
-            h("small", null, r.desc));
+            h("small", null, [itemStatText(made), r.desc].filter(Boolean).join(" · ")));
         })) : null,
-        it.parts ? h("p", { class: "muted small" }, `Ghép từ ${ITEMS[it.parts[0]].icon} ${ITEMS[it.parts[0]].name} + ${ITEMS[it.parts[1]].icon} ${ITEMS[it.parts[1]].name}`) : null,
+        it.parts ? h("p", { class: "muted small ar-rec" }, "Ghép từ ", itemIcon(it.parts[0], "ar-iimg sm"), ` ${ITEMS[it.parts[0]].name} + `, itemIcon(it.parts[1], "ar-iimg sm"), ` ${ITEMS[it.parts[1]].name}`) : null,
         h("div", { class: "row end" }, h("button", { class: "btn small", onclick: () => mm.close() }, "Đóng")),
       ));
     }
@@ -790,7 +907,7 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
       const counts = M.boardTraits(q);
       mm.body.append(...nn(
         h("p", null, `❤ ${Math.max(0, q.hp)} · Cấp ${q.level} · 💰 ${q.cpu ? "?" : q.gold} · chuỗi ${q.streak > 0 ? `${q.streak} thắng` : q.streak < 0 ? `${-q.streak} thua` : "—"}${q.place ? ` · hạng ${q.place}` : ""}`),
-        h("div", { class: "ar-final" }, M.onBoard(q).map((o) => { const u = arenaUnit(o.unitId)!; return h("button", { class: "ar-mini", onclick: () => openUnitInfo(o.unitId, o.star, { items: o.items }) }, unitImg(u, 3), stars(o.star), h("small", null, o.items.map((i) => ITEMS[i].icon).join(""))); })),
+        h("div", { class: "ar-final" }, M.onBoard(q).map((o) => { const u = arenaUnit(o.unitId)!; return h("button", { class: "ar-mini", onclick: () => { const pv = M.unitPreview(q, o.uid); openUnitInfo(o.unitId, o.star, { items: o.items, now: pv?.now, base: pv?.base, enemy: q.cpu }); } }, unitImg(u, 3), stars(o.star), h("span", { class: "ar-mini-items" }, o.items.map((i) => itemIcon(i, "ar-iimg xs")))); })),
         h("div", { class: "ar-trait-list" }, Object.entries(counts).filter(([t, n]) => traitTier(t, n) >= 0).map(([t, n]) => h("span", { class: "ar-chip", style: `border-color:${TRAITS[t].color}` }, `${TRAITS[t].icon} ${TRAITS[t].name} ${n}`))),
         q.augments.length ? h("p", { class: "muted small" }, `Lõi: ${q.augments.map((a) => AUGMENT_BY_ID[a].name).join(", ")}`) : null,
       ));
@@ -805,7 +922,7 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
       // during a fight: any unit on the board (yours or the enemy's) shows its live card
       if (battle && view.benchAt(pt.x, pt.y) < 0) {
         const f = view.fighterAt(pt.x, pt.y);
-        if (f) openUnitInfo(f.unit.id, f.star, { items: f.items, enemy: f.side === 1, live: { hp: f.hp, maxHp: f.maxHp, mana: f.mana, maxMana: f.maxMana, ad: f.ad, ap: f.ap, armor: f.armor, mr: f.mr, as: f.as } });
+        if (f) openUnitInfo(f.unit.id, f.star, { items: f.items, enemy: f.side === 1, now: f, battle });
         return;
       }
       const u = view.unitAt(pt.x, pt.y);
@@ -842,7 +959,7 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
       shopRow.classList.remove("sell");
       const own = me().units.find((u) => u.uid === d.uid);
       if (!own) return;
-      if (!d.moved) { openUnitInfo(own.unitId, own.star, { items: own.items, bonus: own.bonus, sell: (m.phase === "plan" || m.phase === "augment") && !battle ? () => act(M.sell(m, me(), own.uid), "coin") : undefined }); return; }
+      if (!d.moved) { const pv = M.unitPreview(me(), own.uid); openUnitInfo(own.unitId, own.star, { items: own.items, bonus: own.bonus, now: pv?.now, base: pv?.base, sell: (m.phase === "plan" || m.phase === "augment") && !battle ? () => act(M.sell(m, me(), own.uid), "coin") : undefined }); return; }
       const planning = (m.phase === "plan" || m.phase === "augment") && !battle;
       if (planning && overShop(e)) act(M.sell(m, me(), own.uid), "coin");
       else if (hx) act(M.moveUnit(m, me(), own.uid, hx), "click");
@@ -861,7 +978,7 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
       b.addEventListener("pointermove", (e) => {
         if (!start) return;
         if (!ghost && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 8) return;
-        if (!ghost) { ghost = h("div", { class: "ar-ghost" }, b.textContent ?? ""); document.body.append(ghost); }
+        if (!ghost) { ghost = h("div", { class: "ar-ghost" }, itemIcon(me().items[i] ?? "", "ar-iimg big")); document.body.append(ghost); }
         ghost.style.left = `${e.clientX}px`; ghost.style.top = `${e.clientY}px`;
         const r = view.cv.getBoundingClientRect();
         const u = view.unitAt(e.clientX - r.left, e.clientY - r.top);
@@ -877,7 +994,13 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
         if (!planning) { toast("Chỉ gắn trang bị lúc chuẩn bị.", "bad"); return; }
         const r = view.cv.getBoundingClientRect();
         const u = view.unitAt(e.clientX - r.left, e.clientY - r.top);
-        if (u) { act(M.giveItem(m, p, i, u.uid), "craft"); return; }
+        if (u) {
+          const it = p.items[i];
+          const err = M.giveItem(m, p, i, u.uid);
+          if (!err && ITEMS[it]?.fx === "dup") toast(`🖨️ Đã sao chép ${arenaUnit(u.unitId)!.name}!`, "good");
+          act(err, "craft");
+          return;
+        }
         // dropped on another item: craft
         const other = (document.elementsFromPoint(e.clientX, e.clientY).find((x) => (x as HTMLElement).dataset?.i !== undefined && x !== b) as HTMLElement | undefined)?.dataset.i;
         if (other !== undefined) act(M.craft(m, p, i, Number(other)), "craft");

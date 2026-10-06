@@ -6,10 +6,10 @@
  * below change it. Fights are deterministic: the screen replays the human's fight from
  * `fightSetup` while `resolveCombat` runs every fight to get the results.
  */
-import { ArenaBattle, type PlacedUnit, type TeamMods, type TeamSetup } from "./combat";
+import { ArenaBattle, type Fighter, type PlacedUnit, type TeamMods, type TeamSetup } from "./combat";
 import { AUGMENTS, type AugTier, type Augment } from "./augments";
 import { COLS, HALF, ROWS } from "./hex";
-import { EMBLEMS, FINISHED, ITEMS, combine, isComponent } from "./items";
+import { EMBLEMS, FINISHED, ITEMS, combine, isComponent, isTool } from "./items";
 import { tierOf } from "./rank";
 import { TRAITS, traitTier } from "./traits";
 import type { ArenaUnit, Star } from "./types";
@@ -88,10 +88,14 @@ export interface Player {
   place: number; // 0 while alive
   lastOpp: number[];
   stats: PlayerStats;
+  /** What the last round paid, part by part (for the screen). */
+  lastIncome?: Income;
   /** CPU personality. */
   style?: "econ" | "reroll" | "fast";
   skill?: number; // 0..1
 }
+
+export interface Income { base: number; interest: number; streak: number; extra: number; total: number }
 
 export interface CarouselSlot { unitId: string; item: string; takenBy: number | null }
 
@@ -195,11 +199,12 @@ export function newMatch(o: NewMatchOpts): MatchState {
   m.players[0].items.push("magnet", "magnet", "magnet"); // 3 magnetic removers to start
   const names = shuffle(m, [...CPU_NAMES]);
   const maxFloor = cpuMaxFloor(o.rankStep);
-  const skill = Math.min(1, 0.25 + tierOf(o.rankStep) / 40);
+  // even the lowest ranks get CPUs that play properly; higher ranks play close to perfectly
+  const skill = cpuSkill(o.rankStep);
   for (let i = 1; i < PLAYERS; i++) {
     const p = newPlayer(m, i, names[i - 1], pick(m, CPU_ICONS), true, randomDeck(maxFloor, () => rnd(m)));
     p.style = pick(m, ["econ", "econ", "reroll", "fast"] as const);
-    p.skill = Math.max(0, Math.min(1, skill + (rnd(m) - 0.5) * 0.3));
+    p.skill = Math.max(0.45, Math.min(1, skill + (rnd(m) - 0.5) * 0.2));
     m.players.push(p);
   }
   // the augment tier of each augment round is the same for everyone, like in TFT
@@ -207,6 +212,9 @@ export function newMatch(o: NewMatchOpts): MatchState {
   startRound(m);
   return m;
 }
+
+/** How well CPUs play at a rank step (0..1). */
+export const cpuSkill = (step: number) => Math.min(1, 0.6 + (tierOf(step) / 39) * 0.4);
 
 export const human = (m: MatchState) => m.players[0];
 export const alivePlayers = (m: MatchState) => m.players.filter((p) => !p.place);
@@ -227,6 +235,30 @@ export function placed(p: Player): PlacedUnit[] {
 /** Trait counts of the board as it stands. */
 export function boardTraits(p: Player): Record<string, number> {
   return ArenaBattle.traitCounts(placed(p), p.mods.traitBonus ?? 0);
+}
+
+/**
+ * A unit's fight-start stats with the board as it stands (items, traits, augments, earned
+ * stats), and its bare stats (no items, augments or team traits) to show what was added.
+ * A bench unit is counted as if it stood on the board.
+ */
+export function unitPreview(p: Player, uid: number): { now: Fighter; base: Fighter } | null {
+  const o = p.units.find((u) => u.uid === uid);
+  if (!o) return null;
+  const team = placed(p);
+  if (o.bench >= 0) {
+    let spot = { x: 3, y: ROWS - 1 };
+    for (let y = ROWS - 1; y >= HALF; y--) for (let x = 0; x < COLS; x++) if (!unitAt(p, x, y)) spot = { x, y };
+    team.push({ unitId: o.unitId, star: o.star, x: spot.x, y: spot.y, items: o.items, ref: o.uid, bonus: o.bonus });
+  }
+  const now = ArenaBattle.preview({ units: team, mods: p.mods }, uid);
+  const base = bareFighter(o.unitId, o.star);
+  return now && base ? { now, base } : null;
+}
+
+/** A unit alone at a star, with the given items and nothing else (shop, carousel and collection cards). */
+export function bareFighter(unitId: string, star: Star, items: string[] = []): Fighter | undefined {
+  return ArenaBattle.preview({ units: [{ unitId, star, x: 3, y: ROWS - 1, items, ref: 1 }] }, 1);
 }
 
 function addUnit(m: MatchState, p: Player, unitId: string, star: Star = 1, items: string[] = []): Owned | null {
@@ -265,6 +297,16 @@ export function combineStars(m: MatchState, p: Player): Owned[] {
     }
   }
   return made;
+}
+
+/** The highest star buying `n` more copies of a unit would reach (0 when it would not star up). */
+export function starAfterBuying(p: Player, unitId: string, n: number): number {
+  const c = [0, 0, 0, 0, 0];
+  for (const u of p.units) if (u.unitId === unitId) c[u.star]++;
+  c[1] += n;
+  let best = 0;
+  for (let st = 1; st < 4; st++) while (c[st] >= 3) { c[st] -= 3; c[st + 1]++; best = st + 1; }
+  return best;
 }
 
 // ------------------------------------------------------------ actions (shared by the human and CPUs)
@@ -348,6 +390,9 @@ export function canEquip(p: Player, o: Owned, item: string): string | null {
   void p;
   const it = ITEMS[item];
   if (!it) return "Không có trang bị này.";
+  // tools are used on the unit, not worn (see giveItem)
+  if (it.fx === "magnet") return o.items.length ? null : "Tướng này không mang trang bị nào.";
+  if (it.fx === "dup") return item === "dup3" && arenaUnit(o.unitId)!.cost > 3 ? "Máy Sao Chép chỉ chép được tướng 1–3 vàng." : null;
   if (o.items.includes("thief")) return "Găng Đạo Tặc chiếm cả 3 ô.";
   if (item === "thief" && o.items.length) return "Găng Đạo Tặc cần tướng chưa mang gì.";
   // a component combines with any component the unit already carries (even with 3 items on)
@@ -392,6 +437,12 @@ export function giveItem(_m: MatchState, p: Player, index: number, uid: number):
     o.items = [];
     return null;
   }
+  if (ITEMS[item].fx === "dup") {
+    const why = copyUnit(_m, p, o, item);
+    if (why) return why;
+    p.items.splice(index, 1);
+    return null;
+  }
   const why = canEquip(p, o, item);
   if (why) return why;
   equip(p, o, item);
@@ -399,10 +450,25 @@ export function giveItem(_m: MatchState, p: Player, index: number, uid: number):
   return null;
 }
 
+/** A copier's work: a one-star copy of the unit joins the bench (or completes a star-up straight away). */
+function copyUnit(m: MatchState, p: Player, o: Owned, item: string): string | null {
+  const u = arenaUnit(o.unitId)!;
+  if (item === "dup3" && u.cost > 3) return "Máy Sao Chép chỉ chép được tướng 1–3 vàng.";
+  if (freeBench(p) < 0) {
+    const same = p.units.filter((x) => x.unitId === o.unitId && x.star === 1).length;
+    if (same < 2) return "Hàng chờ đã đầy.";
+    p.units.push({ uid: m.nextUid++, unitId: o.unitId, star: 1, items: [], x: 0, y: 0, bench: -2 });
+    combineStars(m, p);
+  } else addUnit(m, p, o.unitId);
+  if (p.pool[o.unitId] > 0) p.pool[o.unitId]--;
+  return null;
+}
+
 /** Combines two components on the item bench. */
 export function craft(_m: MatchState, p: Player, i: number, j: number): string | null {
   if (i === j) return "Chọn 2 mảnh khác nhau.";
   const a = p.items[i], b = p.items[j];
+  if (isTool(a) || isTool(b)) return "Hai món này không ghép được.";
   const made = a && b && isComponent(a) && isComponent(b) ? combine(a, b) : undefined;
   if (!made) return "Hai món này không ghép được.";
   p.items = p.items.filter((_, k) => k !== i && k !== j);
@@ -513,9 +579,10 @@ function startRound(m: MatchState) {
   for (const p of alivePlayers(m)) {
     // income for the round just finished (not before the very first)
     if (!(m.stage === 1 && m.round === 1)) {
-      const income = roundIncome(m, p);
-      p.gold += income;
-      p.stats.goldEarned += income;
+      const inc = roundIncome(m, p);
+      p.lastIncome = inc;
+      p.gold += inc.total;
+      p.stats.goldEarned += inc.total;
       gainXp(p, 2 + p.xpRound); // 2 experience every round
     }
     p.freeRollsLeft = p.freeRolls + (p.bonusRolls ?? 0);
@@ -542,12 +609,16 @@ function startRound(m: MatchState) {
   }
 }
 
-function roundIncome(m: MatchState, p: Player): number {
+/** Gold for a win or loss streak of a length (either sign): 2–3 → 1, 4 → 2, 5+ → 3. */
+export const streakGold = (streak: number) => { const s = Math.abs(streak); return s >= 5 ? 3 : s === 4 ? 2 : s >= 2 ? 1 : 0; };
+export const interestOf = (p: Player) => Math.min(p.interestCap, Math.floor(p.gold / 10));
+
+/** Gold at the start of a round: 5, interest, the win / loss streak bonus and augment income. */
+export function roundIncome(_m: MatchState, p: Player): Income {
   const base = 5; // every round, before interest and streaks
-  const interest = Math.min(p.interestCap, Math.floor(p.gold / 10));
-  const s = Math.abs(p.streak);
-  const streak = s >= 5 ? 3 : s === 4 ? 2 : s >= 2 ? 1 : 0;
-  return base + interest + streak + p.income;
+  const interest = interestOf(p);
+  const streak = streakGold(p.streak);
+  return { base, interest, streak, extra: p.income, total: base + interest + streak + p.income };
 }
 
 /** The player has finished planning: CPUs plan, fights are made, combat begins. */
@@ -741,7 +812,9 @@ function setupCarousel(m: MatchState) {
     const src = pick(m, alivePlayers(m)).deck.filter((d) => arenaUnit(d)!.cost === cost);
     const unitId = (src.length ? pick(m, src) : null) ?? poolUnit(m, h, cost)!;
     const r = rnd(m);
-    const item = s >= 4 && r < 0.15 ? randomEmblem(m) : s >= 3 && r < (s >= 4 ? 0.55 : 0.3) ? randomFinished(m) : randomComponent(m);
+    const r2 = rnd(m);
+    const item = s >= 2 && r2 < (s >= 4 ? 0.04 : 0.06) ? "dup3" : s >= 4 && r2 < 0.07 ? "dup5"
+      : s >= 4 && r < 0.15 ? randomEmblem(m) : s >= 3 && r < (s >= 4 ? 0.55 : 0.3) ? randomFinished(m) : randomComponent(m);
     slots.push({ unitId, item, takenBy: null });
   }
   m.carousel = slots;
@@ -825,6 +898,10 @@ function pveLoot(m: MatchState, won: boolean): Loot {
   else if (m.stage === 3) { l.items.push(randomComponent(m), randomComponent(m)); if (r < 0.25) l.items.push(randomEmblem(m)); }
   else if (m.stage === 4) { l.items.push(randomFinished(m), randomComponent(m)); if (r < 0.15) l.items.push("thief"); }
   else { l.items.push(randomFinished(m)); if (r < 0.5) l.items.push(randomEmblem(m)); else l.gold += 5; }
+  // now and then a unit copier: the basic one from stage 2, the deluxe one (any price) from stage 4
+  const c = rnd(m);
+  if (m.stage >= 4 && c < 0.12) l.items.push("dup5");
+  else if (c < (m.stage >= 4 ? 0.3 : 0.22)) l.items.push("dup3");
   return l;
 }
 
@@ -838,7 +915,7 @@ function grantLoot(m: MatchState, p: Player, l: Loot) {
 // ------------------------------------------------------------ CPU players
 function unitPower(o: Owned): number {
   const u = arenaUnit(o.unitId)!;
-  return u.cost * 3 ** (o.star - 1) * (1 + o.items.length * 0.25);
+  return u.cost * 3 ** (o.star - 1) * (1 + o.items.filter((i) => !isComponent(i)).length * 0.35 + o.items.filter(isComponent).length * 0.15);
 }
 
 function cpuPickAugment(m: MatchState, p: Player) {
@@ -890,8 +967,11 @@ export function cpuPlan(m: MatchState, p: Player) {
   const skill = p.skill ?? 0.5;
   const rolldown = p.style === "reroll" ? m.stage === 3 && m.round === 2 : p.style === "fast" ? m.stage === 4 && m.round === 2 : m.stage === 4 && m.round === 1;
   const desperate = p.hp < 35;
+  // losing again and again in the mid game: spend to get stronger before it is too late
+  const stabilise = m.stage >= 3 && p.streak <= -2 && p.hp < 75 && skill >= 0.5;
   let reserve = m.stage <= 1 ? 0 : m.stage === 2 ? 20 : 50;
   if (p.style === "reroll" && m.stage >= 3) reserve = 30;
+  if (stabilise) reserve = Math.min(reserve, 20);
   if (rolldown || desperate) reserve = 10;
   // level up
   const want = targetLevel(m, p);
@@ -911,7 +991,7 @@ export function cpuPlan(m: MatchState, p: Player) {
   };
   shop();
   let rolls = 0;
-  const maxRolls = rolldown ? 30 : desperate ? 15 : 3;
+  const maxRolls = rolldown ? 30 : desperate ? 15 : stabilise ? 8 : 2 + Math.round(skill * 3);
   while (p.gold - REROLL_COST >= reserve && rolls < maxRolls && p.level >= want - (p.style === "reroll" ? 1 : 0)) {
     reroll(m, p);
     shop();
@@ -950,6 +1030,13 @@ function cpuItems(m: MatchState, p: Player) {
   for (let i = p.items.length - 1; i >= 0; i--) {
     const it = p.items[i];
     if (it === "magnet") continue; // CPUs keep their items on
+    if (ITEMS[it].fx === "dup") {
+      // copy the unit closest to its next star (dearest first)
+      const goal = [...p.units].filter((o) => o.star < 4 && !canEquip(p, o, it))
+        .sort((a, b) => p.units.filter((x) => x.unitId === b.unitId && x.star === b.star).length - p.units.filter((x) => x.unitId === a.unitId && x.star === a.star).length || unitPower(b) - unitPower(a))[0];
+      if (goal) giveItem(m, p, i, goal.uid);
+      continue;
+    }
     if (isComponent(it) && p.items.filter(isComponent).length >= 2 && m.stage < 4) continue; // wait for a pair
     const defensive = ["vest", "cloak", "belt"].some((c) => ITEMS[it].parts?.includes(c)) && !["sword", "bow", "rod", "glove"].some((c) => ITEMS[it].parts?.includes(c));
     const order = defensive

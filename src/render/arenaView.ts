@@ -10,7 +10,7 @@
 import { DT, MOVE_TIME, type ArenaBattle, type CombatEvent, type Fighter } from "../arena/combat";
 import type { PlacedUnit } from "../arena/combat";
 import { COLS, ROWS, HALF } from "../arena/hex";
-import { ITEMS } from "../arena/items";
+import { arenaItemCanvas } from "./arenaIcons";
 import { arenaUnit } from "../arena/units";
 import type { Star } from "../arena/types";
 import type { Element } from "../combat/types";
@@ -24,6 +24,9 @@ import { Rng, hashString } from "../core/rng";
 const SQ3 = Math.sqrt(3);
 export const STAR_COL = ["", "#d49a5a", "#d8e4f0", "#ffd84a", "#ff8af0"];
 export const COST_COL = ["", "#9aa4b0", "#4ac06a", "#4a9aff", "#c060ff", "#ffb020"];
+
+/** Seconds the enemy team takes to drop into place at the start of a fight. */
+export const INTRO = 1.1;
 
 export interface PlanUnit { uid: number; unitId: string; star: Star; items: string[]; x: number; y: number; bench: number }
 
@@ -229,13 +232,23 @@ export class ArenaView {
     if (!f.moveFrom) return to;
     const from = this.hexCenter(f.moveFrom.x, f.moveFrom.y);
     // even speed across hexes (no stop at each one), advanced between engine steps
-    const t = Math.min(1, f.moveT + (this.battle && this.battle.winner === null ? this.alpha * (DT / MOVE_TIME) : 0));
-    return { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t };
+    const t = Math.min(1, f.moveT + (this.battle && this.battle.winner === null && this.introT <= 0 ? this.alpha * (DT / MOVE_TIME) : 0));
+    // a leap is drawn as a high hop
+    const hop = f.leap ? Math.sin(t * Math.PI) * this.s * 2.2 : 0;
+    return { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t - hop };
   }
 
   // ------------------------------------------------------------ fights
+  /** Seconds left of the enemy team's entrance (the fight waits for it). */
+  introT = 0;
+  private introOrder = new Map<number, number>();
+  private landed = new Set<number>();
   setBattle(b: ArenaBattle | null) {
     this.battle = b;
+    this.introT = b ? INTRO : 0;
+    this.introOrder.clear();
+    this.landed.clear();
+    if (b) b.fighters.filter((f) => f.side === 1).sort((a, c) => a.y - c.y || a.x - c.x).forEach((f, i) => this.introOrder.set(f.uid, i));
     this.evIndex = 0;
     this.deadAt.clear();
     this.flash.clear();
@@ -284,7 +297,7 @@ export class ArenaView {
         if (!t || e.amount <= 0) return;
         const p = this.fighterPt(t);
         const col = e.trueDmg ? "#ffffff" : e.magic ? "#6ab8ff" : "#ffb04a";
-        this.texts.push({ x: p.x + (Math.random() - 0.5) * this.s * 0.6, y: p.y - this.s * 0.9, text: e.crit ? `${e.amount}!` : String(e.amount), col, size: (e.crit ? 17 : 12) * k, t: 0, max: e.crit ? 0.9 : 0.7, vy: -this.s * (e.crit ? 1.6 : 1.2), stroke: "#1a0e08" });
+        this.texts.push({ x: p.x + (Math.random() - 0.5) * this.s * 0.6, y: p.y - this.s * 0.9, text: e.crit ? `${e.amount}!` : String(e.amount), col, size: (e.crit ? 12 : 8.5) * k, t: 0, max: e.crit ? 0.45 : 0.35, vy: -this.s * (e.crit ? 1.8 : 1.5), stroke: "#1a0e08" });
         this.flash.set(t.uid, 0.12);
         this.sparks(p, e.magic ? "#9ad0ff" : elColor(e.el), e.crit ? 9 : 4, e.crit ? 1.4 : 1);
         if (e.crit) { this.shake = Math.max(this.shake, 0.14); sfx("crit"); } else sfx("hit");
@@ -292,14 +305,14 @@ export class ArenaView {
       }
       case "miss": {
         const t = this.byUid(b, e.uid);
-        if (t) { const p = this.fighterPt(t); this.texts.push({ x: p.x, y: p.y - this.s, text: "Né", col: "#cfd6e0", size: 11 * k, t: 0, max: 0.6, vy: -this.s }); sfx("miss"); }
+        if (t) { const p = this.fighterPt(t); this.texts.push({ x: p.x, y: p.y - this.s, text: "Né", col: "#cfd6e0", size: 8.5 * k, t: 0, max: 0.3, vy: -this.s * 1.4 }); sfx("miss"); }
         break;
       }
       case "heal": {
         const t = this.byUid(b, e.uid);
         if (!t || e.amount < 5) return;
         const p = this.fighterPt(t);
-        this.texts.push({ x: p.x, y: p.y - this.s * 1.1, text: `+${e.amount}`, col: "#7dff8a", size: 11 * k, t: 0, max: 0.7, vy: -this.s, stroke: "#0a2a10" });
+        this.texts.push({ x: p.x, y: p.y - this.s * 1.1, text: `+${e.amount}`, col: "#7dff8a", size: 8.5 * k, t: 0, max: 0.35, vy: -this.s * 1.4, stroke: "#0a2a10" });
         for (let i = 0; i < 4; i++) this.parts.push({ x: p.x + (Math.random() - 0.5) * this.s, y: p.y, vx: 0, vy: -this.s * (1 + Math.random()), life: 0.7, max: 0.7, size: 2 * k, col: "#9dffa0", grav: 0, kind: "star" });
         break;
       }
@@ -317,7 +330,7 @@ export class ArenaView {
         const col = elColor(sp.el);
         const p = this.fighterPt(f);
         this.banners = this.banners.filter((x) => x.uid !== f.uid);
-        this.banners.push({ uid: f.uid, text: `${sp.icon} ${sp.name}`, col, t: 0, max: sp.ult ? 1.8 : 1.2, ult: !!sp.ult });
+        this.banners.push({ uid: f.uid, text: `${sp.icon} ${sp.name}`, col, t: 0, max: sp.ult ? 0.9 : 0.6, ult: !!sp.ult });
         this.parts.push({ x: p.x, y: p.y - this.s * 0.4, vx: 0, vy: 0, life: 0.5, max: 0.5, size: this.s * 1.3, col, grav: 0, kind: "ring" });
         this.parts.push({ x: p.x, y: p.y - this.s * 0.4, vx: 0, vy: 0, life: 0.5, max: 0.5, size: this.s * 1.4, col, grav: 0, kind: "glow" });
         if (sp.ult) { this.screenFlash = { col, t: 0.35 }; this.shake = Math.max(this.shake, 0.3); sfx("charge"); }
@@ -387,7 +400,7 @@ export class ArenaView {
         };
         const [txt, col] = NAMES[e.s] ?? [e.s, "#ffffff"];
         if (e.s === "burn" || e.s === "poison" || e.s === "bleed") return; // shown as marks, not words
-        this.texts.push({ x: p.x, y: p.y - this.s * 1.45, text: txt, col, size: 9.5 * k, t: 0, max: 0.8, vy: -this.s * 0.4, stroke: "#000" });
+        this.texts.push({ x: p.x, y: p.y - this.s * 1.45, text: txt, col, size: 7.5 * k, t: 0, max: 0.4, vy: -this.s * 0.6, stroke: "#000" });
         if (e.s === "buff" || e.s === "frenzy") sfx("buff");
         else if (e.s === "stun") sfx("debuff");
         break;
@@ -463,6 +476,7 @@ export class ArenaView {
   // ------------------------------------------------------------ frame
   frame(dt: number) {
     this.time += dt;
+    if (this.introT > 0) this.introT = Math.max(0, this.introT - dt);
     if (this.W < 10 || this.H < 10) return; // not laid out yet
     const g = this.g;
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -596,12 +610,25 @@ export class ArenaView {
   }
 
   /** One unit: shadow, sprite, star pips, items; bars when fighting. */
-  private drawUnit(unitId: string, star: Star, items: string[], p: Pt, o: { alpha?: number; flip?: boolean; flash?: number; ally?: boolean; scale?: number; ring?: string } = {}) {
+  private drawUnit(unitId: string, star: Star, items: string[], p: Pt, o: { alpha?: number; flip?: boolean; flash?: number; ally?: boolean; scale?: number; ring?: string; plate?: boolean } = {}) {
     const u = arenaUnit(unitId);
     if (!u) return;
     const g = this.g;
     const size = this.hw * 0.92 * (u.cost === 5 ? 1.15 : 1) * (1 + (star - 1) * 0.07) * (o.scale ?? 1);
     g.globalAlpha = o.alpha ?? 1;
+    // bench units stand on a plate in their price's colour (grey, green, blue, purple, gold)
+    if (o.plate) {
+      const col = COST_COL[u.cost];
+      const py = p.y + this.s * 0.36;
+      g.fillStyle = hexA(col, 0.42);
+      g.beginPath(); g.ellipse(p.x, py, size * 0.46, size * 0.17, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = col;
+      g.lineWidth = 2;
+      g.stroke();
+      g.strokeStyle = hexA("#ffffff", 0.35);
+      g.lineWidth = 1;
+      g.beginPath(); g.ellipse(p.x, py - 1, size * 0.36, size * 0.11, 0, Math.PI, Math.PI * 2); g.stroke();
+    }
     // shadow
     g.fillStyle = "rgba(0,0,0,0.35)";
     g.beginPath();
@@ -630,10 +657,13 @@ export class ArenaView {
     }
     // items
     if (items.length) {
-      g.font = `${Math.round(this.s * 0.42)}px system-ui, sans-serif`;
-      g.textAlign = "center";
-      g.textBaseline = "middle";
-      items.forEach((it, i) => g.fillText(ITEMS[it]?.icon ?? "?", p.x + (i - (items.length - 1) / 2) * this.s * 0.5, p.y + this.s * 0.62));
+      const is = Math.max(10, Math.round(this.s * 0.46 * Math.min(1, o.scale ?? 1)));
+      items.forEach((it, i) => {
+        const cx = p.x + (i - (items.length - 1) / 2) * is * 1.05, cy = p.y + this.s * 0.62;
+        g.fillStyle = "rgba(10,10,20,0.75)";
+        g.fillRect(cx - is / 2 - 1, cy - is / 2 - 1, is + 2, is + 2);
+        g.drawImage(arenaItemCanvas(it, 2), cx - is / 2, cy - is / 2, is, is);
+      });
     }
     g.globalAlpha = 1;
   }
@@ -649,7 +679,7 @@ export class ArenaView {
       if (this.drag?.uid === u.uid) continue;
       const p = u.bench < 0 ? this.hexCenter(u.x, u.y) : this.benchCenter(u.bench);
       const bench = u.bench >= 0;
-      this.drawUnit(u.unitId, u.star, u.items, bench ? { x: p.x, y: p.y - this.slot * 0.08 } : p, { scale: bench ? Math.min(1, this.slot / this.hw) * 0.92 : 1, ring: this.itemTarget === u.uid ? "#ffe08a" : bench ? undefined : "rgba(120,180,255,0.55)" });
+      this.drawUnit(u.unitId, u.star, u.items, bench ? { x: p.x, y: p.y - this.slot * 0.08 } : p, { scale: bench ? Math.min(1, this.slot / this.hw) * 0.92 : 1, plate: bench, ring: this.itemTarget === u.uid ? "#ffe08a" : bench ? undefined : "rgba(120,180,255,0.55)" });
     }
     if (this.drag) {
       const u = this.plan.mine.find((m) => m.uid === this.drag!.uid);
@@ -667,7 +697,7 @@ export class ArenaView {
     const t = b.time;
     for (const u of this.plan.mine) if (u.bench >= 0) {
       const p = this.benchCenter(u.bench);
-      this.drawUnit(u.unitId, u.star, u.items, { x: p.x, y: p.y - this.slot * 0.08 }, { scale: Math.min(1, this.slot / this.hw) * 0.92, alpha: 0.8 });
+      this.drawUnit(u.unitId, u.star, u.items, { x: p.x, y: p.y - this.slot * 0.08 }, { scale: Math.min(1, this.slot / this.hw) * 0.92, alpha: 0.8, plate: true });
     }
     const list = [...b.fighters].sort((a, c) => this.fighterPt(a).y - this.fighterPt(c).y);
     for (const f of list) {
@@ -678,6 +708,22 @@ export class ArenaView {
       if (f.stealth > t) alpha *= 0.4;
       const base = this.fighterPt(f);
       const p = { ...base };
+      // the enemy team's entrance: one by one they drop from above into place
+      const order = this.introOrder.get(f.uid);
+      if (order !== undefined && !this.landed.has(f.uid)) {
+        const since = INTRO - this.introT - order * 0.07;
+        const k = Math.max(0, Math.min(1, since / 0.42));
+        if (k <= 0) continue;
+        if (k >= 1) {
+          this.landed.add(f.uid);
+          this.burst(base, "#e8dcc8", 8, 0.7);
+          this.parts.push({ x: base.x, y: base.y + this.s * 0.3, vx: 0, vy: 0, life: 0.35, max: 0.35, size: this.hw * 0.7, col: "#ff8a8a", grav: 0, kind: "ring" });
+          if (order === 0) sfx("spawn");
+        } else {
+          p.y -= (1 - k * k) * this.s * 7;
+          alpha *= Math.min(1, k * 2);
+        }
+      }
       const l = this.lunge.get(f.uid);
       if (l) {
         l.t += dt;
@@ -736,13 +782,13 @@ export class ArenaView {
       const f = b.fighters.find((x) => x.uid === bn.uid);
       if (!f) continue;
       const p = this.fighterPt(f);
-      const a = Math.min(1, (bn.max - bn.t) * 4, bn.t * 10);
+      const a = Math.min(1, (bn.max - bn.t) * 6, bn.t * 14);
       if (a <= 0) continue;
       g.globalAlpha = a;
-      const size = Math.round(this.s * (bn.ult ? 0.56 : 0.44));
+      const size = Math.round(this.s * (bn.ult ? 0.42 : 0.32));
       g.font = `bold ${size}px system-ui, sans-serif`;
       const w = g.measureText(bn.text).width + size;
-      const x = Math.max(w / 2 + 2, Math.min(this.W - w / 2 - 2, p.x)), y = p.y - this.s * (bn.ult ? 2.3 : 1.95) - bn.t * this.s * 0.2;
+      const x = Math.max(w / 2 + 2, Math.min(this.W - w / 2 - 2, p.x)), y = p.y - this.s * (bn.ult ? 2.1 : 1.85) - bn.t * this.s * 0.3;
       g.fillStyle = bn.ult ? "rgba(40,20,0,0.85)" : "rgba(10,12,20,0.8)";
       roundRect(g, x - w / 2, y - size * 0.8, w, size * 1.6, size * 0.5);
       g.fill();
@@ -878,7 +924,7 @@ export class ArenaView {
       g.globalAlpha = Math.max(0, Math.min(1, (1 - k) * 2.5));
       g.font = `900 ${Math.round(t.size * pop)}px system-ui, sans-serif`;
       const y = t.y + t.vy * t.t * (1 - k * 0.5);
-      if (t.stroke) { g.strokeStyle = t.stroke; g.lineWidth = 3; g.strokeText(t.text, t.x, y); }
+      if (t.stroke) { g.strokeStyle = t.stroke; g.lineWidth = Math.max(2, t.size * 0.22); g.strokeText(t.text, t.x, y); }
       g.fillStyle = t.col;
       g.fillText(t.text, t.x, y);
     }

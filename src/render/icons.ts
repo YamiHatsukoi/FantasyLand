@@ -444,6 +444,59 @@ const D: Record<string, Drawer> = {
     p.ellipse(8, 10, 6, 4, p.ad); p.ellipse(7, 9, 5, 3, p.a);
     p.rect(5, 7, 2, 2, p.e); p.rect(9, 9, 2, 2, p.e); p.px(5, 7, "#ffffff");
   },
+
+  // ------------------------------------------------------------ arena items
+  a_tear: (p) => {
+    for (let i = 0; i < 6; i++) p.rect(8 - Math.floor(i / 2), 2 + i, Math.floor(i / 2) * 2 + 1, 1, p.a);
+    p.ball(8, 10, 4, p.a); p.px(6, 9, "#ffffff"); p.px(6, 8, p.al); p.px(10, 12, p.ad); p.px(8, 1, p.e);
+  },
+  a_cloak: (p) => {
+    p.rect(6, 1, 4, 2, p.c); p.rect(5, 3, 6, 2, p.a);
+    for (let i = 0; i < 10; i++) p.rect(5 - Math.floor(i / 3), 5 + i, 6 + Math.floor(i / 3) * 2, 1, i % 4 === 3 ? p.ad : p.a);
+    p.line(8, 5, 8, 14, p.al); p.px(4, 7, p.al); p.px(8, 3, p.e);
+  },
+  a_belt: (p) => {
+    p.rect(1, 6, 14, 5, p.a); p.rect(1, 6, 14, 1, p.al); p.rect(1, 10, 14, 1, p.ad);
+    p.rect(6, 5, 5, 7, p.c); p.rect(7, 6, 3, 5, p.cd); p.rect(8, 7, 1, 3, p.e); p.px(3, 8, p.ad); p.px(13, 8, p.ad);
+  },
+  a_seal: (p) => {
+    p.disc(8, 8, 6, p.ad); p.disc(8, 8, 5, p.a); p.disc(8, 8, 3, p.al);
+    p.rect(7, 4, 2, 8, p.c); p.rect(4, 7, 8, 2, p.c); p.px(8, 8, p.e); p.px(5, 4, "#ffffff");
+  },
+  a_heart: (p) => {
+    p.disc(5, 6, 3, p.a); p.disc(11, 6, 3, p.a);
+    for (let i = 0; i < 7; i++) p.rect(2 + i, 7 + i, 12 - i * 2, 1, p.a);
+    p.px(4, 5, "#ffffff"); p.px(5, 4, p.al); p.px(11, 11, p.ad); p.px(8, 7, p.e);
+  },
+  a_emblem: (p) => {
+    for (let i = 0; i < 6; i++) p.rect(3 + i, 9 + i, 10 - i * 2, 1, p.a);
+    p.rect(3, 2, 10, 7, p.a); p.rect(3, 2, 10, 1, p.al); p.rect(12, 3, 1, 6, p.ad);
+    p.rect(5, 4, 6, 6, p.c); p.disc(8, 7, 2, p.e); p.px(7, 6, "#ffffff");
+  },
+  a_crown: (p) => {
+    p.rect(2, 8, 12, 5, p.a); p.rect(2, 12, 12, 1, p.ad); p.rect(2, 8, 12, 1, p.al);
+    for (const x of [2, 7, 12]) { p.rect(x, 4, 2, 4, p.a); p.px(x, 3, p.al); }
+    p.rect(4, 6, 2, 2, p.a); p.rect(10, 6, 2, 2, p.a);
+    p.px(4, 10, p.e); p.px(8, 10, p.c); p.px(11, 10, p.e); p.px(7, 2, "#ffffff");
+  },
+  a_magnet: (p) => {
+    // a red-and-silver horseshoe
+    for (let i = 0; i <= 12; i++) { const a = Math.PI * (i / 12); p.disc(8 + Math.cos(a) * 4.5, 9 + Math.sin(a) * 4, 1, i > 3 && i < 9 ? p.ad : p.a); }
+    p.rect(2, 2, 3, 7, p.a); p.rect(11, 2, 3, 7, p.a); p.rect(2, 2, 1, 7, p.al);
+    p.rect(2, 1, 3, 2, p.c); p.rect(11, 1, 3, 2, p.c); p.px(2, 1, p.cl); p.px(11, 1, p.cl);
+    p.px(6, 0, p.e); p.px(9, 0, p.e); p.px(0, 3, p.e); p.px(15, 3, p.e);
+  },
+  a_copier: (p) => {
+    // a little machine: a body, a lit window with a figure, a slot and a dial
+    p.rect(2, 3, 12, 11, p.a); p.rect(2, 3, 12, 1, p.al); p.rect(2, 13, 12, 1, p.ad); p.rect(13, 4, 1, 9, p.ad);
+    p.rect(4, 5, 6, 6, "#1b2a3a"); p.rect(6, 6, 2, 2, p.e); p.rect(5, 8, 4, 2, p.e);
+    p.disc(12, 7, 1, p.c); p.px(12, 10, p.c); p.px(12, 11, p.c);
+    p.rect(5, 1, 6, 2, p.c); p.px(7, 0, p.e); p.px(8, 0, "#ffffff");
+  },
+  a_sword2: (p) => {
+    p.line(14, 1, 5, 10, p.al, 1); p.line(13, 1, 4, 10, p.a, 1); p.line(14, 2, 5, 11, p.a, 1); p.line(14, 3, 6, 11, p.ad, 1);
+    p.line(2, 8, 8, 14, p.c, 2); p.line(4, 12, 1, 15, p.cd, 2); p.px(5, 11, p.e); p.px(12, 3, "#ffffff");
+  },
 };
 
 function clearCenter(p: Pen, x: number, y: number) {
