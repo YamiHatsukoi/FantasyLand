@@ -34,6 +34,9 @@ const ROLE: Record<Role, RoleTemplate> = {
   mage: { hp: 0.75, ad: 0.7, armor: 20, mr: 25, as: 0.65, range: 4, mana: 70, start: 20, crit: 0.1 },
   support: { hp: 0.85, ad: 0.7, armor: 25, mr: 30, as: 0.65, range: 3, mana: 80, start: 30, crit: 0.1 },
 };
+/** A unit's mana against its role's usual, and how full it starts. */
+const MANA_K = [0.55, 0.7, 0.85, 1, 1.15, 1.35, 1.6];
+const START_SHARE = [0, 0.15, 0.3, 0.45, 0.6];
 export const RANGED: Role[] = ["marksman", "mage", "support"];
 
 // ------------------------------------------------------------ what each monster is
@@ -76,6 +79,9 @@ function build(def: EnemyDef, floor: number, cost: Cost, el: Element): ArenaUnit
   const h = hashString(def.id);
   const tilt = (k: number) => 0.92 + ((h >>> k) % 17) / 100;
   const b = def.base;
+  // every unit has its own mana bar: cheap spells come often, dear ones hit hard (spells.ts scales them)
+  const mh = hashString(`mana:${def.id}`);
+  const mana = Math.max(30, Math.round((r.mana * MANA_K[mh % MANA_K.length]) / 5) * 5) + (boss ? 20 : 0);
   const tough = Math.min(1.12, Math.max(0.9, (b.def + b.res) / Math.max(1, b.atk + b.mag)));
   const stats: UnitStats = {
     hp: Math.round(COST_HP[cost] * r.hp * tilt(0) * (tough > 1 ? 1.04 : 1) / 10) * 10,
@@ -85,8 +91,8 @@ function build(def: EnemyDef, floor: number, cost: Cost, el: Element): ArenaUnit
     mr: Math.round(r.mr * tough),
     as: Math.round(r.as * tilt(10) * 100) / 100,
     range: r.range,
-    mana: r.mana + (boss ? 20 : 0),
-    startMana: r.start,
+    mana,
+    startMana: Math.round((mana * START_SHARE[(mh >>> 8) % START_SHARE.length]) / 5) * 5,
     crit: r.crit,
   };
   const kind = kindOf(def);
@@ -113,7 +119,7 @@ function all() {
     const boss = f.boss.map((id) => ENEMIES[id]).find((d) => d?.boss);
     if (boss) list.push(build(boss, n, 5, el));
   }
-  const spells = assignSpells(list.map((u) => ({ id: u.id, role: u.role, cost: u.cost, el: u.origin, boss: u.boss })), (c) => COST_SPELL[c], (c) => [1, 2, 3, 4].map((st) => STAR_SPELL[st] * starBoost(c, st)[2]));
+  const spells = assignSpells(list.map((u) => ({ id: u.id, role: u.role, cost: u.cost, el: u.origin, boss: u.boss, manaK: u.stats.mana / (ROLE[u.role].mana + (u.boss ? 20 : 0)) })), (c) => COST_SPELL[c], (c) => [1, 2, 3, 4].map((st) => STAR_SPELL[st] * starBoost(c, st)[2]));
   list.forEach((u, i) => { u.spell = spells[i]; });
   cache = { list, byId: Object.fromEntries(list.map((u) => [u.id, u])) };
   return cache;

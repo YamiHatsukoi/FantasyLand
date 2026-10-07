@@ -5,7 +5,7 @@ import { COMPONENTS, ITEMS, combine, EMBLEMS, FINISHED } from "../src/arena/item
 import { AUGMENTS } from "../src/arena/augments";
 import { TIERS, applyResult, lpDelta, newRank, rankName, tierReward } from "../src/arena/rank";
 import { getItem } from "../src/data/items";
-import { BASE_SPELLS, ULTIMATES } from "../src/arena/spells";
+import { BASE_SPELLS, TWIST, TWISTS, ULTIMATES } from "../src/arena/spells";
 
 describe("arena units", () => {
   const us = arenaUnits();
@@ -185,6 +185,32 @@ describe("arena combat", async () => {
       if (bt.events.some((e) => e.t === "cast" && e.spell.base === u.spell.base)) castBy.add(u.spell.base);
     }
     expect(castBy.size).toBeGreaterThan(195);
+  });
+  it("spells vary: mana bars, damage types across every role, a twist on every unit", () => {
+    const manas = new Set(us.map((u) => u.stats.mana));
+    expect(manas.size).toBeGreaterThan(10);
+    for (const role of ["tank", "brute", "assassin", "marksman", "mage", "support"]) {
+      const of = us.filter((u) => u.role === role);
+      const kinds = new Set(of.map((u) => (u.spell.trueDmg ? "t" : u.spell.physical ? "p" : "m")));
+      expect(kinds.size, role).toBe(3);
+    }
+    for (const u of us) {
+      expect(TWIST[u.spell.twist!], u.id).toBeTruthy();
+      expect(u.spell.desc, u.id).toContain("Biến số");
+      expect(u.stats.startMana).toBeLessThan(u.stats.mana);
+    }
+    expect(new Set(us.map((u) => u.spell.twist)).size).toBe(TWISTS.length);
+    // the same base spell plays differently on its three units
+    const sameBase = us.filter((u) => u.spell.base === us[0].spell.base);
+    expect(new Set(sameBase.map((u) => `${u.stats.mana}|${u.spell.twist}|${u.spell.physical}`)).size).toBeGreaterThan(1);
+  });
+  it("an echo recasts its spell at reduced power", () => {
+    const echo = us.find((u) => u.spell.twist === "echo" && !u.spell.passive && u.spell.fx.some((e) => e.k === "dmg"))!;
+    const bt = new ArenaBattle({ units: [{ unitId: echo.id, star: 2, x: 3, y: 5, items: [] }] }, { units: team(1, 3, 3, new Rng(2)) }, 2);
+    bt.fighters[0].mana = bt.fighters[0].maxMana;
+    for (let i = 0; i < 50; i++) bt.step(); // 2.5s
+    const casts = bt.events.filter((e) => e.t === "cast" && e.uid === bt.fighters[0].uid).length;
+    expect(casts).toBeGreaterThanOrEqual(2);
   });
   it("passives go off without mana; Veigar-style stacks are kept; spells pick up loot", () => {
     const by = (base: string) => us.find((u) => u.spell.base === base && u.spell.variant === 1)!;

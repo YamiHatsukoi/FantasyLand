@@ -536,7 +536,81 @@ function widen(fx: Fx[]): { fx: Fx[]; label: string } {
   return { fx: out, label: "Che Chở" };
 }
 
-export interface SpellInput { id: string; role: Role; cost: Cost; el: Element; boss: boolean }
+export interface SpellInput { id: string; role: Role; cost: Cost; el: Element; boss: boolean; /** Mana cost against the role's usual (1 = usual). */ manaK?: number }
+
+// ------------------------------------------------------------ mana, damage type, twists
+/**
+ * Dearer spells (more mana) hit harder, cheap ones come often but softly: amounts follow the
+ * mana a little more than linearly (a dear spell may not come at all in a short fight), crowd control and
+ * buffs last a bit longer or shorter.
+ */
+function scaleMana(fx: Fx[], k: number): Fx[] {
+  if (Math.abs(k - 1) < 0.01) return fx;
+  const pk = Math.pow(k, 1.25), dk = Math.pow(k, 0.5);
+  return fx.map((e) => {
+    if (POWER_KEYS.has(e.k)) return { ...e, p: Math.round(e.p! * pk * 100) / 100 };
+    if ((e.k === "cc" || e.k === "buff" || e.k === "stealth" || e.k === "taunt") && e.dur) return { ...e, dur: Math.round(e.dur * dk * 4) / 4 };
+    return e;
+  });
+}
+
+/** What a unit's spell deals: physical, magic or true. Every role can roll every type. */
+const DTYPE_ODDS: Record<Role, [phys: number, magic: number]> = {
+  tank: [45, 45], brute: [55, 30], assassin: [45, 40], marksman: [50, 35], mage: [25, 60], support: [35, 55],
+};
+export function damageType(u: { id: string; role: Role }): "p" | "m" | "t" {
+  const r = hashString(`dt:${u.id}`) % 100;
+  const [p, m] = DTYPE_ODDS[u.role];
+  return r < p ? "p" : r < p + m ? "m" : "t";
+}
+
+/**
+ * Twists: each unit's spell gets one, so two units with the same spell still play differently.
+ * `comp` trims the spell's own amounts to pay for the twist; `fx` twists are written in the
+ * spell language (HW = whoever the spell harms first), the rest are handled by the engine.
+ */
+export interface Twist { id: string; name: string; icon: string; comp: number; desc?: string; fx?: string; needs?: "harm" | "dmg"; cast?: boolean }
+export const TWISTS: Twist[] = [
+  { id: "echo", name: "Dư Âm", icon: "🔁", comp: 0.74, cast: true, desc: "1,5s sau, chiêu tự thi triển lại với 40% sức mạnh" },
+  { id: "refund", name: "Hoàn Năng", icon: "♻️", comp: 0.97, cast: true, needs: "harm", desc: "Mỗi kẻ địch bị chiêu hạ gục hoàn lại 40% năng lượng" },
+  { id: "siphon", name: "Hút Sinh Lực", icon: "🩸", comp: 0.7, needs: "dmg", desc: "30% sát thương chiêu gây ra hồi máu cho đồng minh yếu máu nhất" },
+  { id: "crit", name: "Chiêu Chí Mạng", icon: "💥", comp: 0.97, needs: "dmg", desc: "Chiêu có thể chí mạng" },
+  { id: "growth", name: "Tích Tụ", icon: "📈", comp: 0.98, cast: true, desc: "Mỗi lần thi triển, sức mạnh chiêu tăng thêm 15% tới hết giao tranh" },
+  { id: "overload", name: "Bộc Phát", icon: "⚡", comp: 0.96, desc: "Cứ lần thi triển thứ 3 lại mạnh gấp đôi" },
+  { id: "pierce", name: "Xuyên Phá", icon: "🗡️", comp: 0.92, needs: "dmg", desc: "Sát thương của chiêu xuyên 40% giáp/kháng" },
+  { id: "haste", name: "Thần Tốc", icon: "💨", comp: 0.85, cast: true, desc: "Thi triển xong được hoàn ngay 25% năng lượng" },
+  { id: "frenzy", name: "Cuồng Nộ", icon: "😤", comp: 0.92, fx: "buff a:me as 0.3 3" },
+  { id: "ward", name: "Hộ Thân", icon: "🔰", comp: 0.72, fx: "shield a:me 0.35 3" },
+  { id: "mark", name: "Đánh Dấu", icon: "🎯", comp: 0.93, needs: "harm", fx: "cc HW mark 3" },
+  { id: "frost", name: "Băng Chướng", icon: "❄️", comp: 0.89, needs: "harm", fx: "cc HW chill 2" },
+  { id: "spark", name: "Tiếp Năng", icon: "🔋", comp: 0.86, fx: "mana a:carry 15" },
+];
+export const TWIST: Record<string, Twist> = Object.fromEntries(TWISTS.map((t) => [t.id, t]));
+
+/** Picks a unit's twist and folds it into the spell. */
+function addTwist(sp: SpellDef, seed: string) {
+  const hw = harmWho(sp.fx), dmg = sp.fx.some((e) => ["dmg", "chain", "multi"].includes(e.k));
+  const ok = TWISTS.filter((t) => (t.needs !== "harm" || hw) && (t.needs !== "dmg" || dmg) && (!t.cast || !sp.passive) && !(t.id === "pierce" && sp.fx.some((e) => e.o.pierce)));
+  const tw = ok[hashString(`tw:${seed}`) % ok.length];
+  sp.twist = tw.id;
+  sp.fx = scalePower(sp.fx, tw.comp);
+  if (tw.id === "pierce") sp.fx = sp.fx.map((e) => (e.k === "dmg" ? { ...e, o: { ...e.o, pierce: "1" } } : e));
+  if (tw.fx) { const extra = parseFx(tw.fx.replace("HW", hw ?? "t")); sp.fx = [...sp.fx, ...extra]; sp.twistFx = extra.length; }
+}
+
+/** Fills in a spell's damage type, mana scaling and twist, then its text. */
+function finish(sp: SpellDef, u: SpellInput, base: number, mults: number[]) {
+  const dt = damageType(u);
+  const physRole = u.role === "tank" || u.role === "brute" || u.role === "assassin" || u.role === "marksman";
+  sp.physical = dt === "p" || (dt === "t" && physRole);
+  sp.trueDmg = dt === "t" || undefined;
+  // true damage ignores resistances: a little less of it
+  if (dt === "t") sp.fx = scalePower(sp.fx, 0.78);
+  if (!sp.passive) sp.fx = scaleMana(sp.fx, u.manaK ?? 1);
+  addTwist(sp, u.id);
+  sp.desc = describe(sp, base, mults);
+  return sp;
+}
 
 /**
  * Hands out the spells: each of the 600 ordinary units gets one base spell of its role in one
@@ -574,7 +648,7 @@ export function assignSpells(units: SpellInput[], spellBase: (cost: Cost) => num
       if (chosen) break;
     }
     if (!chosen) throw new Error(`no spell left for ${u.id}`);
-    out[i] = makeVariant(chosen.base, chosen.variant, u, physicalRole(u.role), spellBase(u.cost), starMult(u.cost));
+    out[i] = finish(makeVariant(chosen.base, chosen.variant, u, physicalRole(u.role), spellBase(u.cost), starMult(u.cost)), u, spellBase(u.cost), starMult(u.cost));
   }
   // ------------------------------------------------ bosses
   const left = new Set(ULTIMATES.map((x) => x[0]));
@@ -590,8 +664,7 @@ export function assignSpells(units: SpellInput[], spellBase: (cost: Cost) => num
     left.delete(ult[0]);
     const fx = scalePower(normalise(parseFx(ult[4]), 3), TUNE[ult[0]] ?? 1);
     const sp: SpellDef = { id: ult[0], name: ult[1], icon: ult[2], el: u.el, physical: physicalRole(u.role), fx, ult: true, base: ult[0], variant: 0, desc: "" };
-    sp.desc = describe(sp, spellBase(u.cost), starMult(u.cost));
-    out[i] = sp;
+    out[i] = finish(sp, u, spellBase(u.cost), starMult(u.cost));
   }
   return out;
 }
@@ -679,61 +752,68 @@ const secs = (n: number) => `${String(n).replace(".", ",")}s`;
 /** Spell text with the numbers at one star (100 AP); they grow with stars. */
 /** Spell text. Amounts are written "{a|b|c|d}" (one per star) when `mults` has several stars; see starValues(). */
 export function describe(sp: SpellDef, base: number, mults: number[] = [1]): string {
-  const kind = sp.physical ? "sát thương vật lý" : "sát thương phép";
-  const parts: string[] = [];
-  for (const e of sp.fx) {
-    const w = e.w ? whoText(e.w) : "";
-    const amt = e.p !== undefined ? (mults.length > 1 ? `{${mults.map((k) => fmt(base * e.p! * k)).join("|")}}` : fmt(base * e.p)) : "";
-    const x = Number(e.o.x ?? 1);
-    switch (e.k) {
-      case "dmg": {
-        const type = e.o.type === "t" ? "sát thương chuẩn" : e.o.type === "m" ? "sát thương phép" : e.o.type === "p" ? "sát thương vật lý" : kind;
-        let s = `${e.o.delay ? `Sau ${secs(Number(e.o.delay))}, g` : "G"}ây ${x > 1 ? `${x} lần ${amt}` : amt} ${type} cho ${w}`;
-        if (e.o.pierce) s += ", xuyên 40% giáp/kháng";
-        if (e.o.ls) s += `, hồi máu bằng ${Math.round(Number(e.o.ls) * 100)}% sát thương gây ra`;
-        parts.push(s);
-        break;
-      }
-      case "dot": parts.push(`${DOT_NAMES[e.id!]} ${w}: ${amt} sát thương trong ${secs(e.dur!)}`); break;
-      case "cc": parts.push(`${CC_NAMES[e.id!][0].toUpperCase()}${CC_NAMES[e.id!].slice(1)} ${w} ${secs(e.dur!)}`); break;
-      case "heal": parts.push(`Hồi ${x > 1 ? `${x} lần ${amt}` : amt} máu cho ${w}`); break;
-      case "hpct": parts.push(`Hồi ${Math.round(e.v! * 100)}% máu tối đa cho ${w}`); break;
-      case "shield": parts.push(`Tạo khiên ${amt} cho ${w} trong ${secs(e.dur!)}`); break;
-      case "buff": parts.push(`${w[0].toUpperCase()}${w.slice(1)} ${BUFF_NAMES[e.id!]?.(e.v!) ?? e.id}${e.id === "ap" || e.id === "ad" ? "" : ` trong ${secs(e.dur!)}`}`); break;
-      case "stack": parts.push(`${sp.passive ? "Cộng dồn" : "Mỗi lần dùng chiêu: cộng dồn"} ${STACK_NAMES[e.id!]?.(e.v!) ?? e.id} đến hết giao tranh`); break;
-      case "dash": parts.push(`Lướt tới ${w}`); break;
-      case "blink": parts.push(`Dịch chuyển ra sau lưng ${w}`); break;
-      case "knock": parts.push(`Đẩy lùi ${w} ${e.n} ô`); break;
-      case "pull": parts.push(`Kéo ${w} lại gần`); break;
-      case "swap": parts.push(`Đổi chỗ với ${w}`); break;
-      case "mana": parts.push(e.v! > 0 ? `${w[0].toUpperCase()}${w.slice(1)} nhận ${e.v} năng lượng` : `Đốt ${-e.v!} năng lượng của ${w}`); break;
-      case "zone": parts.push(`${e.o.heal ? "Tạo vùng hồi phục" : "Tạo vùng nguy hiểm"} ${e.w === "all" ? "phủ toàn bàn" : `bán kính ${e.r} ô quanh ${whoText(e.w!.replace(/@\d+$/, ""))}`} trong ${secs(e.dur!)}: mỗi giây ${e.o.heal ? `hồi ${amt} máu cho đồng minh` : `gây ${amt} ${kind}`}${e.o.slow ? `, làm chậm ${Math.round(Number(e.o.slow) * 100)}%` : ""}`); break;
-      case "chain": parts.push(`Phóng tia nảy qua ${e.n} kẻ địch bắt đầu từ ${w}, mỗi lần gây ${amt} ${kind}`); break;
-      case "multi": parts.push(`Tung ${e.n} đòn vào kẻ địch ngẫu nhiên, mỗi đòn ${amt} ${kind}`); break;
-      case "summon": parts.push(`Triệu hồi ${e.n} thuộc hạ cùng tầng`); break;
-      case "revive": parts.push(`Hồi sinh một đồng minh đã gục với ${Math.round(e.v! * 100)}% máu`); break;
-      case "cleanse": parts.push(`Giải mọi hiệu ứng xấu cho ${w}`); break;
-      case "taunt": parts.push(`Khiêu khích kẻ địch trong ${e.r} ô suốt ${secs(e.dur!)}`); break;
-      case "stealth": parts.push(`Tàng hình ${secs(e.dur!)}`); break;
-      case "reflect": parts.push(`Phản lại ${Math.round(e.v! * 100)}% sát thương nhận vào trong ${secs(e.dur!)}`); break;
-      case "steal": parts.push(`Cướp ${e.v} ${e.id === "armor" ? "giáp" : e.id === "ad" ? "sát thương" : "năng lượng"} của ${w}`); break;
-      case "exec": parts.push(`Kết liễu ${w} nếu còn dưới ${Math.round(e.v! * 100)}% máu`); break;
-      case "hurt": parts.push(`Hy sinh ${Math.round(e.v! * 100)}% máu tối đa của bản thân`); break;
-      case "perm": parts.push(`${e.o.kill ? "Nếu hạ gục được: v" : "V"}ĩnh viễn ${PERM_NAMES[e.id!]?.(e.v!) ?? e.id} (giữ suốt cả ván đấu)`); break;
-      case "loot": {
-        const what = e.id === "gold" ? `${e.n} vàng` : e.id === "xp" ? `${e.n} kinh nghiệm` : `${e.n} lượt đổi cửa hàng miễn phí`;
-        parts.push(`${e.o.kill ? "Nếu hạ gục được: " : ""}${e.v! >= 1 ? "nhận" : `${Math.round(e.v! * 100)}% cơ hội nhận`} ${what}`);
-        break;
-      }
-      case "transform": {
-        const bits = [e.o.as && `+${Math.round(Number(e.o.as) * 100)}% tốc đánh`, e.o.amp && `+${Math.round(Number(e.o.amp) * 100)}% sát thương`, e.o.vamp && `hút máu ${Math.round(Number(e.o.vamp) * 100)}%`].filter(Boolean);
-        parts.push(`Hóa cuồng ${secs(e.dur!)}: ${bits.join(", ")}`);
-        break;
+  const kind = sp.trueDmg ? "sát thương chuẩn" : sp.physical ? "sát thương vật lý" : "sát thương phép";
+  const own = sp.twistFx ? sp.fx.slice(0, -sp.twistFx) : sp.fx;
+  const say = (list: Fx[]): string[] => {
+    const parts: string[] = [];
+    for (const e of list) {
+      const w = e.w ? whoText(e.w) : "";
+      const amt = e.p !== undefined ? (mults.length > 1 ? `{${mults.map((k) => fmt(base * e.p! * k)).join("|")}}` : fmt(base * e.p)) : "";
+      const x = Number(e.o.x ?? 1);
+      switch (e.k) {
+        case "dmg": {
+          const type = e.o.type === "t" ? "sát thương chuẩn" : e.o.type === "m" ? "sát thương phép" : e.o.type === "p" ? "sát thương vật lý" : kind;
+          let s = `${e.o.delay ? `Sau ${secs(Number(e.o.delay))}, g` : "G"}ây ${x > 1 ? `${x} lần ${amt}` : amt} ${type} cho ${w}`;
+          if (e.o.pierce) s += ", xuyên 40% giáp/kháng";
+          if (e.o.ls) s += `, hồi máu bằng ${Math.round(Number(e.o.ls) * 100)}% sát thương gây ra`;
+          parts.push(s);
+          break;
+        }
+        case "dot": parts.push(`${DOT_NAMES[e.id!]} ${w}: ${amt} sát thương trong ${secs(e.dur!)}`); break;
+        case "cc": parts.push(`${CC_NAMES[e.id!][0].toUpperCase()}${CC_NAMES[e.id!].slice(1)} ${w} ${secs(e.dur!)}`); break;
+        case "heal": parts.push(`Hồi ${x > 1 ? `${x} lần ${amt}` : amt} máu cho ${w}`); break;
+        case "hpct": parts.push(`Hồi ${Math.round(e.v! * 100)}% máu tối đa cho ${w}`); break;
+        case "shield": parts.push(`Tạo khiên ${amt} cho ${w} trong ${secs(e.dur!)}`); break;
+        case "buff": parts.push(`${w[0].toUpperCase()}${w.slice(1)} ${BUFF_NAMES[e.id!]?.(e.v!) ?? e.id}${e.id === "ap" || e.id === "ad" ? "" : ` trong ${secs(e.dur!)}`}`); break;
+        case "stack": parts.push(`${sp.passive ? "Cộng dồn" : "Mỗi lần dùng chiêu: cộng dồn"} ${STACK_NAMES[e.id!]?.(e.v!) ?? e.id} đến hết giao tranh`); break;
+        case "dash": parts.push(`Lướt tới ${w}`); break;
+        case "blink": parts.push(`Dịch chuyển ra sau lưng ${w}`); break;
+        case "knock": parts.push(`Đẩy lùi ${w} ${e.n} ô`); break;
+        case "pull": parts.push(`Kéo ${w} lại gần`); break;
+        case "swap": parts.push(`Đổi chỗ với ${w}`); break;
+        case "mana": parts.push(e.v! > 0 ? `${w[0].toUpperCase()}${w.slice(1)} nhận ${e.v} năng lượng` : `Đốt ${-e.v!} năng lượng của ${w}`); break;
+        case "zone": parts.push(`${e.o.heal ? "Tạo vùng hồi phục" : "Tạo vùng nguy hiểm"} ${e.w === "all" ? "phủ toàn bàn" : `bán kính ${e.r} ô quanh ${whoText(e.w!.replace(/@\d+$/, ""))}`} trong ${secs(e.dur!)}: mỗi giây ${e.o.heal ? `hồi ${amt} máu cho đồng minh` : `gây ${amt} ${kind}`}${e.o.slow ? `, làm chậm ${Math.round(Number(e.o.slow) * 100)}%` : ""}`); break;
+        case "chain": parts.push(`Phóng tia nảy qua ${e.n} kẻ địch bắt đầu từ ${w}, mỗi lần gây ${amt} ${kind}`); break;
+        case "multi": parts.push(`Tung ${e.n} đòn vào kẻ địch ngẫu nhiên, mỗi đòn ${amt} ${kind}`); break;
+        case "summon": parts.push(`Triệu hồi ${e.n} thuộc hạ cùng tầng`); break;
+        case "revive": parts.push(`Hồi sinh một đồng minh đã gục với ${Math.round(e.v! * 100)}% máu`); break;
+        case "cleanse": parts.push(`Giải mọi hiệu ứng xấu cho ${w}`); break;
+        case "taunt": parts.push(`Khiêu khích kẻ địch trong ${e.r} ô suốt ${secs(e.dur!)}`); break;
+        case "stealth": parts.push(`Tàng hình ${secs(e.dur!)}`); break;
+        case "reflect": parts.push(`Phản lại ${Math.round(e.v! * 100)}% sát thương nhận vào trong ${secs(e.dur!)}`); break;
+        case "steal": parts.push(`Cướp ${e.v} ${e.id === "armor" ? "giáp" : e.id === "ad" ? "sát thương" : "năng lượng"} của ${w}`); break;
+        case "exec": parts.push(`Kết liễu ${w} nếu còn dưới ${Math.round(e.v! * 100)}% máu`); break;
+        case "hurt": parts.push(`Hy sinh ${Math.round(e.v! * 100)}% máu tối đa của bản thân`); break;
+        case "perm": parts.push(`${e.o.kill ? "Nếu hạ gục được: v" : "V"}ĩnh viễn ${PERM_NAMES[e.id!]?.(e.v!) ?? e.id} (giữ suốt cả ván đấu)`); break;
+        case "loot": {
+          const what = e.id === "gold" ? `${e.n} vàng` : e.id === "xp" ? `${e.n} kinh nghiệm` : `${e.n} lượt đổi cửa hàng miễn phí`;
+          parts.push(`${e.o.kill ? "Nếu hạ gục được: " : ""}${e.v! >= 1 ? "nhận" : `${Math.round(e.v! * 100)}% cơ hội nhận`} ${what}`);
+          break;
+        }
+        case "transform": {
+          const bits = [e.o.as && `+${Math.round(Number(e.o.as) * 100)}% tốc đánh`, e.o.amp && `+${Math.round(Number(e.o.amp) * 100)}% sát thương`, e.o.vamp && `hút máu ${Math.round(Number(e.o.vamp) * 100)}%`].filter(Boolean);
+          parts.push(`Hóa cuồng ${secs(e.dur!)}: ${bits.join(", ")}`);
+          break;
+        }
       }
     }
-  }
+    return parts;
+  };
+  const parts = say(own);
+  const tw = sp.twist ? TWIST[sp.twist] : undefined;
+  const twText = tw ? ` ✦ Biến số ${tw.icon} ${tw.name}: ${tw.desc ?? say(sp.fx.slice(own.length)).join(". ")}.` : "";
   const head = sp.passive ? `Nội tại (không cần năng lượng) — ${TRIGGER_TEXT(sp.passive)}: ` : "";
-  return head + parts.join(". ") + "." + (sp.ult ? " (Tối thượng)" : "");
+  return head + parts.join(". ") + "." + (sp.ult ? " (Tối thượng)" : "") + twText;
 }
 
 /** Splits a description into text and per-star amounts ({a|b|c|d}) for display. */
