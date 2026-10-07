@@ -1458,3 +1458,8 @@ img.iicon.lg { width: 48px; height: 48px; }
 .dummy-table th:nth-child(-n+2), .dummy-table td:nth-child(-n+2) { text-align: left; }
 .dummy-scroll { max-height: 40vh; overflow: auto; }
 .dummy-table.turns td:nth-child(4), .dummy-table.turns th:nth-child(4) { text-align: left; }
+.ar-pool { display: grid; gap: 10px; }
+.ar-pool-h { font-weight: 700; margin: 2px 0 4px; }
+.ar-pool-go { position: sticky; bottom: -1px; padding: 8px 0 2px; background: var(--panel, #1b1f27); }
+.ar-pool .ar-dcard .nm { height: auto; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.ar-pool .ar-dcard .cs { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
