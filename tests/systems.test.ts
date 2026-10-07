@@ -279,6 +279,10 @@ describe("sanctuary ground cover and layout", () => {
       expect(d.walkable, d.id).toBe(d.floor !== "water" || ["stepping_stones", "boardwalk"].includes(d.id));
     }
     expect(BUILDINGS.wall.first).toEqual({ stone: 6, brick: 3, mortar: 2 });
+    // every land floor has its own art, including the plain painted colours (black, white...)
+    const { PATHS } = await import("../src/render/floors");
+    for (const d of floors) if (d.floor !== "water") expect(PATHS[d.floor!], d.id).toBeTruthy();
+    for (const c of ["black", "white", "red", "blue", "green", "yellow"]) expect(BUILDINGS[`paint_${c}`]?.category, c).toBe("floor");
     // farm plots have no cap: as many as the territory holds
     const { buildLimitReason } = await import("../src/world/sanctuary");
     const g = newGame("A", "warrior", 7);

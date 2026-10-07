@@ -117,6 +117,22 @@ type Floor = [id: string, name: string, icon: string, rank: number, family: stri
  * with banks that follow their outline (people walk round, or over the stepping stones and
  * boardwalk).
  */
+/** Plain painted floors: [key, colour name, icon, colour, description]. */
+export const PAINT_FLOORS: [string, string, string, string, string][] = [
+  ["black", "Đen", "⬛", "#26262b", "Sàn sơn đen tuyền, bóng nhẹ."],
+  ["white", "Trắng", "⬜", "#ecebe4", "Sàn sơn trắng sạch sẽ."],
+  ["grey", "Xám", "🩶", "#8c8c90", "Sàn xám trung tính, hợp mọi kiểu."],
+  ["red", "Đỏ", "🟥", "#c0392b", "Sàn sơn đỏ rực."],
+  ["orange", "Cam", "🟧", "#e67e22", "Sàn sơn cam ấm áp."],
+  ["yellow", "Vàng", "🟨", "#f1c40f", "Sàn sơn vàng tươi."],
+  ["green", "Xanh Lá", "🟩", "#3fa34d", "Sàn sơn xanh lá."],
+  ["teal", "Xanh Ngọc", "💠", "#1aa89a", "Sàn sơn xanh ngọc."],
+  ["blue", "Xanh Dương", "🟦", "#2e6fd0", "Sàn sơn xanh dương."],
+  ["purple", "Tím", "🟪", "#8e44ad", "Sàn sơn tím."],
+  ["pink", "Hồng", "🌸", "#e88aa8", "Sàn sơn hồng phấn."],
+  ["brown", "Nâu", "🟫", "#7a5230", "Sàn sơn nâu gỗ."],
+];
+
 const FLOORS: Floor[] = [
   ["dirt_road", "Đường Đất Nện", "🟫", 1, "dirt_road", { stone: 1 }, "Đường đất nện chặt, có vệt bánh xe."],
   ["gravel", "Lối Sỏi", "🪨", 1, "gravel", { stone: 2 }, "Sỏi nhỏ lạo xạo dưới chân."],
@@ -133,6 +149,8 @@ const FLOORS: Floor[] = [
   ["red_carpet", "Thảm Đỏ", "🟥", 3, "red_carpet", { cloth_forest: 2, dye: 1 }, "Thảm đỏ viền vàng, đón khách quý."],
   ["mosaic", "Sàn Khảm Hoa Văn", "🔷", 4, "mosaic", { stone: 2, mortar: 1, glass: 1 }, "Đá khảm xanh lam và vàng thành hoa văn."],
   ["starlight", "Gạch Ánh Sao", "✨", 5, "starlight", { glass: 2, mortar: 1, dye: 1 }, "Gạch thủy tinh tối lấp lánh như trời sao."],
+  // plain painted floors, one family per colour (same colours join up)
+  ...PAINT_FLOORS.map(([key, name, icon, , desc]): Floor => [`paint_${key}`, `Sàn ${name}`, icon, 1, `paint_${key}`, { stone: 2 }, desc]),
   // water: one family, so lotus, koi and reeds join into the same pond
   ["pond_water", "Nước Ao", "💧", 1, "water", { clay: 2 }, "Ô nước trong. Ghép nhiều ô thành ao hồ; bờ tự uốn theo hình.", false],
   ["lotus_water", "Nước Có Sen", "🪷", 1, "water", { clay: 2, herb: 2 }, "Lá sen và hoa sen hồng trên mặt nước.", false],

@@ -1,5 +1,5 @@
 import type { GameState } from "../core/state";
-import { BUILDINGS } from "../data/buildings";
+import { BUILDINGS, PAINT_FLOORS } from "../data/buildings";
 import { SZ_W, layoutKey } from "../world/sanctuary";
 import { cell } from "./houses";
 import { hs, makeCanvas, mix } from "./palette";
@@ -62,7 +62,14 @@ function stones(i: number, j: number, size: 4 | 8, s: number) {
 type Style = "soft" | "kerb" | "trim" | "board" | "glass";
 interface PathDef { style: Style; R: number; px: (i: number, j: number, v: number) => string }
 
+/** A plain painted floor: an even colour with a faint grain and soft tile joints. */
+const paint = (col: string): PathDef => ({ style: "kerb", R: 0, px: (i, j, v) => {
+  if (i % 8 === 7 || j % 8 === 7) return hs(col, -0.06); // faint joints between painted boards
+  return vary(col, i, j, v, 0.025);
+} });
+
 export const PATHS: Record<string, PathDef> = {
+  ...Object.fromEntries(PAINT_FLOORS.map(([key, , , col]) => [`paint_${key}`, paint(col)])),
   dirt_road: { style: "soft", R: 3, px: (i, j, v) => {
     const base = "#a8805a";
     if (n1(i, j, v + 1) > 0.94) return "#c8a880";
@@ -284,8 +291,9 @@ function waterTile(type: string, mask: number, same: number, v: number): HTMLCan
 const cache = new Map<string, HTMLCanvasElement>();
 export function floorTile(type: string, mask: number, same: number, v: number): HTMLCanvasElement {
   const water = WATERS.has(type);
-  // paths only care about their four sides (inner corners matter to water alone)
-  const m = water ? mask : mask & 15;
+  // paths only care about their four sides (inner corners matter to water alone): treat the
+  // diagonals as filled so four tiles meeting at a point show no corner dot
+  const m = water ? mask : (mask & 15) | NE | SE | SW | NW;
   const key = `${type}|${m}|${type === "boardwalk" ? same & 271 : 0}|${v}`;
   let c = cache.get(key);
   if (!c) {
