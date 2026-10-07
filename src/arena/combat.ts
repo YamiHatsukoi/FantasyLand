@@ -31,7 +31,7 @@ export interface TeamSetup { units: PlacedUnit[]; mods?: TeamMods }
 
 interface Dot { kind: "burn" | "poison" | "bleed"; dps: number; until: number; src: number }
 interface Shield { amt: number; until: number; tag?: string }
-interface Zone { side: 0 | 1; at: Hex; radius: number; dps: number; until: number; src: number; el: Element; physical: boolean; slow?: number; heal?: boolean }
+interface Zone { side: 0 | 1; at: Hex; radius: number; dps: number; until: number; src: number; el: Element; physical: boolean; trueDmg?: boolean; slow?: number; heal?: boolean }
 
 export interface Fighter {
   uid: number;
@@ -61,6 +61,8 @@ export interface Fighter {
   flags: Set<string>; stacks: number; revived: boolean;
   /** Fight stats: damage dealt and taken, damage stopped by own armor / resist / shields, healing and shields given, armor buffs given. */
   dealt: number; taken: number; healed: number; blocked: number; shielded: number; guarded: number;
+  /** Spell twists: how strong the effects being run are, and how many casts so far. */
+  castMult: number; casts: number;
 }
 
 export type CombatEvent =
@@ -155,7 +157,7 @@ export class ArenaBattle {
       frenzy: 0, haste: 0, hasteV: 0, critUp: 0, rally: 0, rallyV: 0, guard: 0, guardV: 0,
       perm: {}, struck: 0,
       critV: 0, ampT: 0, ampV: 0, vampT: 0, vampV: 0, dodgeT: 0, dodgeV: 0, mirrorV: 0.6,
-      dots: [], shields: [], flags: new Set(), stacks: 0, revived: false, dealt: 0, taken: 0, healed: 0, blocked: 0, shielded: 0, guarded: 0,
+      dots: [], shields: [], flags: new Set(), stacks: 0, revived: false, dealt: 0, taken: 0, healed: 0, blocked: 0, shielded: 0, guarded: 0, castMult: 1, casts: 0,
     };
     f.ad = f.baseAd;
     // items: flat stats
@@ -342,7 +344,7 @@ export class ArenaBattle {
       if (z.heal) { for (const a of this.fighters) if (a.alive && a.side === z.side && dist(a, z.at) <= z.radius) this.heal(a, z.dps, src ?? a); continue; }
       this.events.push({ t: "vfx", kind: "zone", at: z.at, el: z.el, radius: z.radius });
       for (const e of this.fighters) if (e.alive && e.side !== z.side && dist(e, z.at) <= z.radius) {
-        this.damage(src ?? e, e, z.dps, z.physical ? "phys" : "magic", { spell: true });
+        this.damage(src ?? e, e, z.dps, z.trueDmg ? "true" : z.physical ? "phys" : "magic", { spell: true });
         if (z.slow) { e.chill = t + 1.2; e.chillV = Math.max(e.chillV, z.slow); }
       }
     }
@@ -561,8 +563,8 @@ export class ArenaBattle {
   private spellPower(f: Fighter, mult = 1): { amt: number; crit: boolean } {
     const sp = f.unit.spell;
     let amt = spellBase(f.unit) * STAR_SPELL[f.star] * starBoost(f.unit.cost, f.star)[2] * mult;
-    amt *= sp.physical ? f.ad / Math.max(1, f.baseAd) : f.ap / 100;
-    const canCrit = f.fxs.has("infinity") || f.fxs.has("jeweled");
+    amt *= (sp.physical ? f.ad / Math.max(1, f.baseAd) : f.ap / 100) * f.castMult;
+    const canCrit = f.fxs.has("infinity") || f.fxs.has("jeweled") || sp.twist === "crit";
     const crit = canCrit && this.rng.next() < f.crit;
     if (crit) amt *= f.critDmg;
     return { amt, crit };
@@ -573,9 +575,10 @@ export class ArenaBattle {
     if (!tg.alive || !f.alive) return 0;
     const sp = f.unit.spell;
     const { amt, crit } = this.spellPower(f, mult);
-    const kind = o.type === "t" ? "true" : o.type === "m" ? "magic" : o.type === "p" ? "phys" : sp.physical ? "phys" : "magic";
+    const kind = o.type === "t" ? "true" : o.type === "m" ? "magic" : o.type === "p" ? "phys" : sp.trueDmg ? "true" : sp.physical ? "phys" : "magic";
     const dealt = this.damage(f, tg, amt, kind, { crit, spell: true, pierce: o.pierce });
     if (o.ls) this.heal(f, dealt * o.ls, f);
+    if (sp.twist === "siphon" && dealt > 0) { const low = this.allies(f).filter((a) => !a.decoy).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0]; if (low) this.heal(low, dealt * 0.3, f); }
     if (f.traits.o_fire) this.addDot(tg, "burn", tg.maxHp * f.traits.o_fire, 3, f);
     if (f.traits.o_poison) { this.addDot(tg, "poison", tg.maxHp * f.traits.o_poison, 3, f); tg.griev = this.time + 3; }
     if (f.fxs.has("morello")) { this.addDot(tg, "burn", tg.maxHp * 0.01, 3, f); tg.griev = this.time + 3; }
@@ -646,10 +649,8 @@ export class ArenaBattle {
   private trigger(f: Fighter, why: string) {
     if (!f.alive) return;
     const sp = f.unit.spell;
-    const cache = new Map<string, Fighter[]>();
-    const targets = new Set<number>();
-    let at: Hex | undefined;
-    for (const e of sp.fx) { const r = this.runFx(f, e, cache, targets); at ??= r ?? undefined; }
+    f.casts++;
+    const { targets, at } = this.runSpell(f, sp.twist === "overload" && f.casts % 3 === 0 ? 2 : 1);
     // every-attack passives are too frequent for a banner
     if (why !== "attack") this.events.push({ t: "cast", uid: f.uid, spell: sp, targets: [...targets], at });
   }
@@ -678,15 +679,34 @@ export class ArenaBattle {
     // ionic spark: enemies near an ionic carrier get struck when they cast
     for (const e of this.enemies(f)) if (e.fxs.has("ionic") && dist(e, f) <= 2) this.damage(e, f, 60, "magic", {});
     if (!f.alive) return;
+    f.casts++;
+    // twists: growing, every third cast doubled, kills and haste give mana back, an echo
+    let mult = 1;
+    if (sp.twist === "growth") mult *= 1 + 0.15 * (f.casts - 1);
+    if (sp.twist === "overload" && f.casts % 3 === 0) mult *= 2;
+    const foes = sp.twist === "refund" ? this.enemies(f).length : 0;
+    const { targets, at } = this.runSpell(f, mult);
+    if (f.fxs.has("blue")) f.mana = Math.min(f.maxMana, f.mana + 10);
+    if (sp.twist === "refund") f.mana = Math.min(f.maxMana - 1, f.mana + f.maxMana * 0.4 * Math.max(0, foes - this.enemies(f).length));
+    if (sp.twist === "haste") f.mana = Math.min(f.maxMana - 1, f.mana + f.maxMana * 0.25);
+    this.events.push({ t: "cast", uid: f.uid, spell: sp, targets: [...targets], at });
+    if (sp.twist === "echo") this.pending.push({ at: this.time + 1.5, fn: () => {
+      if (!f.alive || !this.enemies(f).length) return;
+      const r = this.runSpell(f, mult * 0.4);
+      this.events.push({ t: "cast", uid: f.uid, spell: sp, targets: [...r.targets], at: r.at });
+    } });
+  }
+
+  /** Runs every effect of a unit's spell at `mult` of its power (delayed hits keep it). */
+  private runSpell(f: Fighter, mult: number): { targets: Set<number>; at: Hex | undefined } {
     const cache = new Map<string, Fighter[]>();
     const targets = new Set<number>();
     let at: Hex | undefined;
-    for (const e of sp.fx) {
-      const r = this.runFx(f, e, cache, targets);
-      at ??= r ?? undefined;
-    }
-    if (f.fxs.has("blue")) f.mana = Math.min(f.maxMana, f.mana + 10);
-    this.events.push({ t: "cast", uid: f.uid, spell: sp, targets: [...targets], at });
+    f.castMult = mult;
+    try {
+      for (const e of f.unit.spell.fx) { const r = this.runFx(f, e, cache, targets); at ??= r ?? undefined; }
+    } finally { f.castMult = 1; }
+    return { targets, at };
   }
 
   /** Runs one effect of a spell (now, or later for delayed and repeated ones). */
@@ -697,7 +717,12 @@ export class ArenaBattle {
     const x = Math.max(1, Number(e.o.x ?? 1));
     const gap = Number(e.o.gap ?? 0.25);
     const delay = Number(e.o.delay ?? 0);
-    const later = (i: number, fn: () => void) => { const d = delay + i * gap; if (d <= 0) fn(); else this.pending.push({ at: t + d, fn: () => { if (f.alive) fn(); } }); };
+    const cm = f.castMult;
+    const later = (i: number, fn: () => void) => {
+      const d = delay + i * gap;
+      if (d <= 0) fn();
+      else this.pending.push({ at: t + d, fn: () => { if (!f.alive) return; const was = f.castMult; f.castMult = cm; try { fn(); } finally { f.castMult = was; } } });
+    };
     const vfx = (kind: string, to: Hex, radius = 0, from?: Hex) => this.events.push({ t: "vfx", kind, at: to, el: sp.el, radius, from });
     const radiusOf = (w: string) => { const p = parseWho(w); return p.base === "all" ? 9 : Math.max(0, p.r); };
     switch (e.k) {
@@ -828,7 +853,7 @@ export class ArenaBattle {
         const ally = e.w!.startsWith("a:");
         const { at } = ally ? { at: hexOf(f) } : this.pick(f, e.w!, cache);
         const centre = e.w === "all" ? { x: 3, y: 3 } : at ?? hexOf(f);
-        this.zones.push({ side: f.side, at: centre, radius: e.w === "all" ? 9 : e.r!, dps: this.spellPower(f, e.p!).amt, until: t + e.dur!, src: f.uid, el: sp.el, physical: sp.physical, slow: e.o.slow ? Number(e.o.slow) : undefined, heal: !!e.o.heal || ally });
+        this.zones.push({ side: f.side, at: centre, radius: e.w === "all" ? 9 : e.r!, dps: this.spellPower(f, e.p!).amt, until: t + e.dur!, src: f.uid, el: sp.el, physical: sp.physical, trueDmg: sp.trueDmg, slow: e.o.slow ? Number(e.o.slow) : undefined, heal: !!e.o.heal || ally });
         vfx(e.o.heal || ally ? "pillar" : "ring", centre, e.w === "all" ? 4 : e.r!);
         return centre;
       }

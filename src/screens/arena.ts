@@ -12,10 +12,10 @@ import { DT, type ArenaBattle, type Fighter } from "../arena/combat";
 import { mirror } from "../arena/hex";
 import { ITEMS, combine, isComponent, isTool, itemStatText } from "../arena/items";
 import * as M from "../arena/match";
-import { starValues } from "../arena/spells";
+import { TWIST, starValues } from "../arena/spells";
 import { DIVS, POINTS_PER_DIV, TIERS, applyResult, lpDelta, matchReward, newRank, rankIcon, rankName, tierOf, tierReward } from "../arena/rank";
 import { TRAITS, traitDesc, traitTier } from "../arena/traits";
-import type { ArenaUnit, Star } from "../arena/types";
+import type { ArenaUnit, SpellDef, Star } from "../arena/types";
 import { arenaUnit, arenaUnits } from "../arena/units";
 import { addItem } from "../core/state";
 import { hashString as hashStr } from "../core/rng";
@@ -134,13 +134,19 @@ export function openTraitInfo(id: string, n?: number) {
   m.body.append(traitCard(id, n));
 }
 
+/** What a spell deals: physical, magic or true damage. */
+function dmgTag(sp: SpellDef): HTMLElement {
+  const [cls, text] = sp.trueDmg ? ["true", "⚪ Chuẩn"] : sp.physical ? ["phys", "🗡️ Vật lý"] : ["magic", "🔮 Phép"];
+  return h("span", { class: `ar-tag dmg-${cls}` }, text);
+}
+
 /** A small hover card for a unit (shop, carousel). */
 export function unitTip(unitId: string, star: Star = 1): HTMLElement {
   const u = arenaUnit(unitId)!;
   return h("div", { class: "ar-utip" },
     h("div", { class: "row" }, unitImg(u, 2), h("b", null, u.name), h("span", { class: "ar-cost", style: `background:${COST_COL[u.cost]}` }, `${u.cost}💰`)),
     h("div", { class: "muted small" }, `${ROLE_NAMES[u.role]} · ${u.stats.range > 1 ? `đánh xa ${u.stats.range} ô` : "cận chiến"} · ${u.traits.map((t) => `${TRAITS[t].icon} ${TRAITS[t].name}`).join(" ")}`),
-    h("div", { class: "small" }, h("b", null, `${u.spell.icon} ${u.spell.name}`), u.spell.passive ? " (nội tại)" : ""),
+    h("div", { class: "small" }, h("b", null, `${u.spell.icon} ${u.spell.name}`), u.spell.passive ? " (nội tại)" : ` · 💧${u.stats.mana}`, " ", dmgTag(u.spell)),
     h("div", { class: "small" }, spellText(u.spell.desc, star)));
 }
 
@@ -210,7 +216,9 @@ export function openUnitInfo(unitId: string, star: Star = 1, o: { items?: string
       f.reduce > 0 ? row("🪨 Giảm sát thương nhận", pct(f.reduce)) : null,
       live && f.stacks > 0 && f.fxs.has("guinsoo") ? row("🌀 Cộng dồn", `${f.stacks} lần`) : null),
     h("div", { class: "ar-spell" },
-      h("div", null, h("b", null, `${u.spell.icon} ${u.spell.name}`), u.spell.passive ? h("span", { class: "ar-tag" }, "Nội tại") : null, u.spell.ult ? h("span", { class: "ar-tag gold" }, "Tối thượng") : null),
+      h("div", null, h("b", null, `${u.spell.icon} ${u.spell.name}`), u.spell.passive ? h("span", { class: "ar-tag" }, "Nội tại") : null, u.spell.ult ? h("span", { class: "ar-tag gold" }, "Tối thượng") : null,
+        dmgTag(u.spell), u.spell.passive ? null : h("span", { class: "ar-tag", title: "Năng lượng cần để thi triển (bắt đầu trận với số trước dấu /)" }, `💧 ${u.stats.startMana}/${u.stats.mana}`),
+        u.spell.twist ? h("span", { class: "ar-tag twist", title: "Biến số riêng của tướng này" }, `${TWIST[u.spell.twist].icon} ${TWIST[u.spell.twist].name}`) : null),
       h("p", null, spellText(u.spell.desc, star)),
       h("p", { class: "muted small" }, `Số theo ★1 / ★2 / ★3 / ★4 (đang ★${star}), ${u.spell.physical ? "tăng theo sát thương" : "tăng theo sức mạnh phép"}.`)),
     o.bonus && Object.keys(o.bonus).length ? h("p", { class: "ar-bonus" }, "Đã tích lũy: ", Object.entries(o.bonus).map(([k, v]) => `${k === "ap" ? `+${v} sức mạnh phép` : k === "ad" ? `+${Math.round(v * 100)}% sát thương` : k === "hp" ? `+${Math.round(v * 100)}% máu` : `+${v} ${k}`}`).join(", ")) : null,
@@ -305,6 +313,7 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
       "8 người chơi (bạn và 7 đối thủ) cùng mua tướng, xếp đội hình và để tướng tự đánh. Mỗi lần thua bạn mất máu; còn trụ lại cuối cùng là thắng.",
       "Mỗi giai đoạn gồm các vòng: ⚔️ giao đấu với người khác, 👾 đánh quái (rơi trang bị, vàng), 🎠 Chợ Tướng (chọn 1 tướng kèm trang bị). Ở vòng 2-1, 3-2 và 4-2 bạn chọn 1 Lõi tăng sức mạnh.",
       "Kinh tế: mỗi vòng nhận 5 vàng + lãi (1 vàng mỗi 10 vàng đang có, tối đa 5) + thưởng chuỗi thắng hoặc thua liên tiếp (2–3 trận +1, 4 trận +2, từ 5 trận +3); mỗi trận thắng thêm 1 vàng. Chạm 💰 để xem chi tiết. Đổi cửa hàng 2 vàng, mua 4 kinh nghiệm 4 vàng. Cấp càng cao càng ra nhiều tướng đắt và được đặt nhiều tướng hơn.",
+      "Chiêu thức: mỗi tướng có thanh năng lượng riêng (chiêu tốn ít năng lượng ra nhanh nhưng nhẹ, chiêu tốn nhiều thì mạnh), loại sát thương riêng (🗡️ vật lý, 🔮 phép hoặc ⚪ chuẩn — không phụ thuộc hệ) và một Biến số riêng như Dư Âm, Bộc Phát, Hút Sinh Lực… Chạm vào tướng để xem.",
       "Ghép 3 tướng giống nhau cùng sao thành 1 tướng sao cao hơn (tối đa ★4). Tướng 4–5 vàng ở ★3 cực kỳ mạnh.",
       "Trang bị: 2 mảnh ghép thành 1 món hoàn chỉnh. Ấn Trắng + 1 mảnh = Ấn tộc hệ. Mỗi tướng mang tối đa 3 món. Kéo trang bị vào tướng, hoặc chạm trang bị rồi chạm tướng.",
       "Tộc hệ: đủ số tướng khác nhau cùng tộc/hệ thì kích hoạt sức mạnh. Chạm vào dải tộc hệ để xem chi tiết.",

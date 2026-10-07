@@ -1463,3 +1463,7 @@ img.iicon.lg { width: 48px; height: 48px; }
 .ar-pool-go { position: sticky; bottom: -1px; padding: 8px 0 2px; background: var(--panel, #1b1f27); }
 .ar-pool .ar-dcard .nm { height: auto; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .ar-pool .ar-dcard .cs { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ar-tag.dmg-phys { background: #6b3a2a; color: #ffd2b8; }
+.ar-tag.dmg-magic { background: #3a2f6b; color: #d8ccff; }
+.ar-tag.dmg-true { background: #e8e8e8; color: #222; }
+.ar-tag.twist { background: #2d5a4a; color: #c8ffe8; }

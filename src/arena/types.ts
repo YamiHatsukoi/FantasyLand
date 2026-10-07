@@ -36,7 +36,13 @@ export interface SpellDef {
   name: string;
   icon: string;
   el: Element;
-  physical: boolean; // scales with attack damage and is reduced by armor
+  physical: boolean; // scales with attack damage (else spell power) and, unless trueDmg, is reduced by armor
+  /** Deals true damage by default (ignores armor and magic resist). */
+  trueDmg?: boolean;
+  /** The unit's own twist on its spell (see TWISTS in spells.ts). */
+  twist?: string;
+  /** How many of the last effects in `fx` belong to the twist. */
+  twistFx?: number;
   fx: Fx[];
   ult?: boolean; // a boss's ultimate
   base: string; // base spell id
