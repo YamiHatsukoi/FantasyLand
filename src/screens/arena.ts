@@ -41,7 +41,7 @@ export function arenaGate(open: () => void) {
   const m = openModal("🏟️ Đấu Trường Quái Vật");
   m.body.append(
     h("p", null, "Đấu Trường đang khóa."),
-    h("p", null, `Cần ghi nhận ít nhất ${ARENA_UNLOCK} loài quái vật trong Sổ tay quái vật để mở. Mỗi loài bạn từng chạm mặt ở Vực Sâu sẽ thành một tướng bạn dùng được trong Đấu Trường.`),
+    h("p", null, `Cần ghi nhận ít nhất ${ARENA_UNLOCK} loài quái vật trong Sổ tay quái vật để mở. Khi mở, toàn bộ tướng trong Đấu Trường đều dùng được ngay.`),
     h("div", { class: "ar-lockbar" }, h("div", { style: `width:${Math.min(100, (n / ARENA_UNLOCK) * 100)}%` }), h("span", null, `${n} / ${ARENA_UNLOCK} loài`)),
     h("p", { class: "muted" }, "Mẹo: xuống những tầng mới để gặp nhiều loài khác nhau; mỗi tầng có 6 loài thường và 1 trùm."),
     h("div", { class: "row end" }, h("button", { class: "btn primary", onclick: () => m.close() }, "Đã hiểu")),
@@ -62,7 +62,20 @@ function saveMatch(m: M.MatchState | null) {
   try { if (m && m.phase !== "end") localStorage.setItem(matchKey(), JSON.stringify(m)); else localStorage.removeItem(matchKey()); } catch { /* storage full or blocked: the match just won't resume */ }
 }
 
-const unlockedUnits = () => { const dex = app.game.dex ?? {}; return arenaUnits().filter((u) => dex[u.id]); };
+/** Every unit is open to play; each match draws its own deck from all of them. */
+const unlockedUnits = () => arenaUnits();
+
+/** A match's deck at a glance: every unit grouped by price, tap one for its spell. */
+function poolView(deck: string[]): HTMLElement {
+  const units = deck.map((id) => arenaUnit(id)!).sort((a, b) => a.cost - b.cost || a.name.localeCompare(b.name));
+  return h("div", { class: "ar-pool" }, [1, 2, 3, 4, 5].map((c) => {
+    const at = units.filter((u) => u.cost === c);
+    return at.length ? h("div", null,
+      h("div", { class: "ar-pool-h", style: `color:${COST_COL[c]}` }, `${c}💰 · ${at.length} tướng`),
+      h("div", { class: "ar-deck-grid" }, at.map((u) => h("div", { class: "ar-dcard on", style: `border-color:${COST_COL[c]}`, onclick: () => openUnitInfo(u.id) },
+        unitImg(u, 3), h("div", { class: "nm" }, u.name), h("div", { class: "cs" }, `${u.traits.map((t) => TRAITS[t].icon).join("")} ${u.spell.name}`))))) : null;
+  }));
+}
 
 const ROLE_NAMES: Record<string, string> = { tank: "Đỡ đòn", brute: "Đấu sĩ", assassin: "Sát thủ", marksman: "Xạ thủ", mage: "Pháp sư", support: "Hỗ trợ" };
 const KIND_ICON: Record<string, string> = { carousel: "🎠", pve: "👾", pvp: "⚔️" };
@@ -239,10 +252,10 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
           h("div", { class: "muted small" }, `Bậc ${tierOf(r.step) + 1}/${TIERS} · cao nhất: ${rankName(r.best)} · đã đấu ${ar.played} trận · top 1: ${ar.top1} · top 4: ${ar.top4}`),
           h("button", { class: "btn small", onclick: openJourney }, "🗺️ Hành trình rank"))),
       h("div", { class: "ar-card" },
-        h("div", { class: "row between" }, h("b", null, "🃏 Bể tướng"), h("span", null, `Đã mở ${unlocked.length}/700 tướng`)),
+        h("div", { class: "row between" }, h("b", null, "🃏 Bể tướng"), h("span", null, `${unlocked.length} tướng`)),
         h("div", { class: "ar-quota" }, [1, 2, 3, 4, 5].map((c) => h("div", { style: `border-color:${COST_COL[c]}` }, h("b", null, `${c}💰`), h("span", null, `${Math.min(byCost[c - 1], M.DECK_QUOTA[c])}/${M.DECK_QUOTA[c]}`), h("small", null, `có ${byCost[c - 1]}`)))),
-        h("p", { class: "muted small" }, `Mỗi trận tự bốc ngẫu nhiên ${M.DECK_SIZE} tướng từ những tướng bạn đã mở: 12 tướng 1 vàng, 11 tướng 2 vàng, 10 tướng 3 vàng, 9 tướng 4 vàng, 8 tướng 5 vàng. Thiếu giá nào thì bù bằng tướng giá khác. Gặp thêm quái ở Vực Sâu để mở thêm tướng.`),
-        h("button", { class: "btn small", onclick: openCollection }, "Xem bộ sưu tập tướng")),
+        h("p", { class: "muted small" }, `Mọi tướng đều đã mở. Mỗi trận bốc ngẫu nhiên ${M.DECK_SIZE} tướng từ toàn bộ ${unlocked.length} tướng: 12 tướng 1 vàng, 11 tướng 2 vàng, 10 tướng 3 vàng, 9 tướng 4 vàng, 8 tướng 5 vàng. Trước khi vào trận bạn được xem cả bể tướng và chiêu của từng con.`),
+        h("button", { class: "btn small", onclick: openCollection }, "Xem tất cả tướng")),
       saved
         ? h("div", { class: "ar-card" },
           h("b", null, `Trận đang dở: vòng ${saved.stage}-${saved.round}, ❤ ${M.human(saved).hp}`),
@@ -307,21 +320,18 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
     const open = new Set(unlockedUnits().map((u) => u.id));
     let cost = 0;
     let q = "";
-    let onlyOpen = false;
     const m = openModal("🃏 Bộ sưu tập tướng", { wide: true });
     const render = () => {
-      const list = all.filter((u) => (!cost || u.cost === cost) && (!onlyOpen || open.has(u.id)) && (!q || (open.has(u.id) && (u.name.toLowerCase().includes(q) || u.spell.name.toLowerCase().includes(q)))));
-      list.sort((a, b) => Number(open.has(b.id)) - Number(open.has(a.id)) || a.cost - b.cost || a.floor - b.floor);
+      const list = all.filter((u) => (!cost || u.cost === cost) && (!q || u.name.toLowerCase().includes(q) || u.spell.name.toLowerCase().includes(q)));
+      list.sort((a, b) => a.cost - b.cost || a.floor - b.floor);
       m.body.replaceChildren(...nn(
-        h("div", { class: "ar-deck-bar" }, h("b", null, `Đã mở ${open.size}/700`), " · chạm tướng để xem chiêu"),
+        h("div", { class: "ar-deck-bar" }, h("b", null, `${open.size} tướng`), " · chạm tướng để xem chiêu"),
         h("div", { class: "ar-filters" },
           [0, 1, 2, 3, 4, 5].map((c) => h("button", { class: `btn small ${cost === c ? "primary" : ""}`, onclick: () => { cost = c; render(); } }, c ? `${c}💰` : "Tất cả")),
-          h("button", { class: `btn small ${onlyOpen ? "primary" : ""}`, onclick: () => { onlyOpen = !onlyOpen; render(); } }, "Đã mở"),
           h("input", { class: "ar-search", placeholder: "Tìm tên…", value: q, oninput: (e: Event) => { q = (e.target as HTMLInputElement).value.toLowerCase(); render(); requestAnimationFrame(() => { const i = m.body.querySelector(".ar-search") as HTMLInputElement | null; i?.focus(); i?.setSelectionRange(q.length, q.length); }); } })),
         h("div", { class: "ar-deck-grid" }, list.slice(0, 240).map((u) => {
-          const isOpen = open.has(u.id);
-          return h("div", { class: `ar-dcard on ${isOpen ? "" : "locked"}`, style: `border-color:${COST_COL[u.cost]}`, onclick: () => (isOpen ? openUnitInfo(u.id) : toast(`Chưa mở: gặp loài này ở Vực Sâu tầng ${u.floor} để mở.`)) },
-            unitImg(u, 3), h("div", { class: "nm" }, isOpen ? u.name : "???"), h("div", { class: "cs" }, `${u.cost}💰 · tầng ${u.floor}`));
+          return h("div", { class: "ar-dcard on", style: `border-color:${COST_COL[u.cost]}`, onclick: () => openUnitInfo(u.id) },
+            unitImg(u, 3), h("div", { class: "nm" }, u.name), h("div", { class: "cs" }, `${u.cost}💰 · ${u.spell.name}`));
         })),
         list.length > 240 ? h("p", { class: "muted small" }, `Đang hiện 240/${list.length}; lọc theo giá hoặc tìm tên để xem thêm.`) : null,
       ));
@@ -332,12 +342,24 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
   // ---------------------------------------------------------- match start / end
   function startMatch() {
     const unlocked = unlockedUnits();
-    if (unlocked.length < ARENA_UNLOCK) { toast(`Cần mở ít nhất ${ARENA_UNLOCK} tướng.`, "bad"); return; }
-    const deck = M.deckFrom(unlocked.map((u) => u.id), Math.random);
-    const hero = app.game.chars[app.game.heroId];
-    const m = M.newMatch({ deck, name: hero?.name ?? "Bạn", rankStep: arenaSave().rank.step, seed: (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0 });
-    saveMatch(m);
-    runMatch(m);
+    let deck = M.deckFrom(unlocked.map((u) => u.id), Math.random);
+    // look the draw over first: every unit of this match and its spell
+    const mm = openModal("🃏 Bể tướng trận này", { wide: true });
+    const draw = () => {
+      mm.body.replaceChildren(
+        h("p", { class: "muted small" }, `${deck.length} tướng sẽ xuất hiện trong cửa hàng của bạn trận này. Chạm vào tướng để xem chỉ số, tộc hệ và chiêu.`),
+        poolView(deck),
+        h("div", { class: "row end ar-pool-go" },
+          h("button", { class: "btn", onclick: () => { deck = M.deckFrom(unlocked.map((u) => u.id), Math.random); draw(); mm.body.scrollTop = 0; } }, "🎲 Bốc lại"),
+          h("button", { class: "btn primary", onclick: () => { mm.close(); begin(); } }, "⚔️ Bắt đầu")));
+    };
+    const begin = () => {
+      const hero = app.game.chars[app.game.heroId];
+      const m = M.newMatch({ deck, name: hero?.name ?? "Bạn", rankStep: arenaSave().rank.step, seed: (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0 });
+      saveMatch(m);
+      runMatch(m);
+    };
+    draw();
   }
 
   /** Applies the result once: rank points, gold, first-time tier rewards, counters. */
@@ -807,6 +829,7 @@ export function mountArena(root: HTMLElement, hooks: { leave: () => void }): Scr
       const mm = openModal("Menu");
       mm.body.append(
         h("button", { class: "btn block", onclick: () => { mm.close(); openRules(); } }, "📖 Cách chơi"),
+        h("button", { class: "btn block", onclick: () => { mm.close(); openModal("🃏 Bể tướng trận này", { wide: true }).body.append(poolView(me().deck)); } }, "🃏 Bể tướng trận này"),
         h("button", { class: "btn block", onclick: () => { mm.close(); openTraits(); } }, "🧬 Tộc hệ trên sân"),
         h("button", { class: "btn block", onclick: () => { mm.close(); openAugList(); } }, "✨ Lõi đã chọn"),
         h("button", { class: "btn block", onclick: () => { mm.close(); saveMatch(m); lobby(); } }, "⏸ Tạm rời (lưu trận)"),
