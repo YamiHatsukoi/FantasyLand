@@ -498,6 +498,20 @@ export const DECOR_DRAW: Record<string, Drawer> = {
     p.rect(2, 6, 12, 2, "#b87a3a"); p.rect(2, 6, 12, 1, hs("#b87a3a", 0.3)); p.rect(5, 2, 6, 4, "#b87a3a"); p.rect(5, 5, 6, 1, "#c83a3a");
     p.px(13, 4, "#2a2a30"); p.px(14, 4, "#3a3a44");
   },
+  training_dummy: (p) => {
+    shadow(p, 8, 30, 5, 1.5);
+    post(p, 7, 12, 30, "#7a5230", 2);
+    p.rect(6, 28, 4, 2, "#5a3a20"); // the foot
+    p.rect(1, 13, 14, 2, "#8a5a30"); p.rect(1, 13, 14, 1, hs("#8a5a30", 0.3)); // the cross bar
+    for (const x of [1, 14]) { p.px(x, 15, "#e0c060"); p.px(x, 16, "#c8a040"); } // straw hands
+    p.rect(4, 14, 8, 11, "#d8b868"); p.rect(4, 14, 8, 1, hs("#d8b868", 0.25)); p.rect(4, 24, 8, 1, outline("#d8b868")); // straw body
+    for (let i = 0; i < 10; i++) p.px(4 + Math.floor(cell(i, 31) * 8), 15 + Math.floor(cell(i, 32) * 9), cell(i, 33) > 0.5 ? "#c8a040" : "#f0d880");
+    p.blob(8, 19, 3, 3, "#d43a3a"); p.blob(8, 19, 2, 2, "#f4efe6"); p.blob(8, 19, 1, 1, "#d43a3a"); // the target
+    p.blob(8, 9, 3.5, 3.5, "#e8d8a8"); // sack head
+    p.px(6, 8, "#2a1a1a"); p.px(7, 9, "#2a1a1a"); p.px(7, 8, "#2a1a1a"); p.px(6, 9, "#2a1a1a"); // stitched X eye
+    p.px(10, 8, "#2a1a1a"); p.px(9, 9, "#2a1a1a"); p.px(9, 8, "#2a1a1a"); p.px(10, 9, "#2a1a1a");
+    p.rect(7, 11, 3, 1, "#8a5a2a");
+  },
   signpost: (p) => {
     shadow(p, 8, 30, 3, 1.5);
     post(p, 7, 7, 30, DARK, 2);

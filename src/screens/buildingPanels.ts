@@ -21,6 +21,7 @@ import {
   maxTerritory, plant, population, rankOf, residents, workersNeeded,
 } from "../world/town";
 import { openTavern } from "./tavern";
+import { runBattle } from "./combat";
 import { openEnhance } from "./enhance";
 import { marketKinds, openSanctuaryMarket } from "./settlement";
 import { SHOP_NAMES } from "../world/people";
@@ -48,6 +49,7 @@ export function openBuilding(b: PlacedBuilding, hooks: PanelHooks) {
       case "greenhouse": greenhouseBody(m, b, render); break;
       case "library": libraryBody(m, b, render); break;
       case "training": trainingBody(m, b, render); break;
+      case "training_dummy": dummyBody(m, b, hooks, render); break;
       case "tavern": m.body.append(h("button", { class: "btn primary block", onclick: () => openTavern(hooks.refresh) }, "🍺 Xem khách trong quán")); genericFooter(m, b, render); break;
       case "market":
         productionInfo(m, b);
@@ -644,6 +646,27 @@ function trainingBody(m: ModalHandle, b: PlacedBuilding, render: () => void) {
         },
       }, "Huấn luyện")));
   }
+  genericFooter(m, b, render);
+}
+
+/** The practice dummy: pick how much armour it wears, then the whole party wails on it. */
+function dummyBody(m: ModalHandle, b: PlacedBuilding, hooks: PanelHooks, render: () => void) {
+  const g = app.game;
+  const lvl = Math.max(1, ...g.party.map((id) => g.chars[id]?.level ?? 1));
+  // a typical monster of the party's level wears about this much
+  const mid = Math.round(8 * (1 + 0.14 * (lvl - 1)));
+  const armours: [string, string, number][] = [["🎯", "Không giáp", 0], ["🛡️", "Giáp vừa", mid], ["🏰", "Giáp dày", Math.round(mid * 2.5)]];
+  const fit = g.party.map((id) => g.chars[id]).filter((c) => c && c.hp > 0);
+  m.body.append(...nn(
+    h("p", { class: "small" }, "Bù nhìn không đánh trả và không bao giờ đổ. Mỗi đòn đều được ghi lại; đánh xong máu và năng lượng của cả đội trở về như cũ, không có thưởng."),
+    h("div", { class: "dummy-pick" }, armours.map(([icon, name, v]) => h("button", {
+      class: "btn block", disabled: !fit.length,
+      onclick: () => {
+        m.close();
+        void runBattle({ enemies: [{ id: "training_dummy", level: lvl }], floor: Math.max(1, g.maxFloor), biome: "forest", training: { def: v, res: v } }).then(() => hooks.refresh());
+      },
+    }, `${icon} ${name}`, h("small", { class: "muted" }, ` · Thủ/Kháng phép ${v}`)))),
+    fit.length ? null : h("p", { class: "bad small" }, "Cả đội đều đang kiệt sức.")));
   genericFooter(m, b, render);
 }
 

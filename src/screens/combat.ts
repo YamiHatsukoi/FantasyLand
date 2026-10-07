@@ -45,7 +45,12 @@ export interface BattleSetup {
   seed?: number;
   /** Resolves when the encounter wipe has cleared; the first turn waits for it. */
   ready?: Promise<void>;
+  /** Practice against the sanctuary's dummy: it never fights back, every hit is logged, nothing is won or lost. */
+  training?: { def: number; res: number };
 }
+
+/** One line of the practice log: who did what to the dummy, and for how much. */
+interface DummyRow { turn: number; who: string; what: string; dmg: number }
 
 export type BattleOutcome = "win" | "lose" | "flee";
 
@@ -130,6 +135,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   const rng = new Rng(Date.now() & 0xffffffff);
   const buffs = partyBuffs(g);
   const allies = g.party.map((id) => g.chars[id]).filter(Boolean).map((ch) => unitFromCharacter(ch, buffs));
+  const start = new Map(g.party.map((id) => g.chars[id]).filter(Boolean).map((ch) => [ch.id, { hp: ch.hp, mp: ch.mp }]));
   const enemies = setup.enemies.map((e, i) => unitFromEnemy(e.id, e.level, i));
   const battle = new Battle(allies, enemies, rng.int(1, 1e9));
   for (const u of allies) battle.enterAtSameShare(u);
@@ -165,11 +171,18 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
       for (const u of enemies) if (u.enemyId) { const l = (known0[u.enemyId] ??= []); for (const [el, v] of Object.entries(u.resist)) if ((v ?? 1) > 1 && !l.includes(el)) l.push(el); }
     }
   }
+  // the practice dummy: endless health, the armour the player picked, no tricks
+  const dummy = setup.training ? enemies[0] : undefined;
+  if (dummy && setup.training) {
+    dummy.base = { ...dummy.base, hp: DUMMY_HP, def: setup.training.def, res: setup.training.res, eva: 0 };
+    dummy.hp = DUMMY_HP;
+    dummy.intent = undefined;
+  }
   battle.drainEvents();
-  g.stats.battles++;
+  if (!dummy) g.stats.battles++;
   // the monster codex remembers everything the party has faced
   const dex = (g.dex ??= {});
-  for (const u of enemies) if (u.enemyId) { const d = (dex[u.enemyId] ??= { k: 0, f: Math.max(1, setup.floor) }); d.f = Math.min(d.f, Math.max(1, setup.floor)); }
+  if (!dummy) for (const u of enemies) if (u.enemyId) { const d = (dex[u.enemyId] ??= { k: 0, f: Math.max(1, setup.floor) }); d.f = Math.min(d.f, Math.max(1, setup.floor)); }
 
   const biome = BIOMES[setup.biome] ?? BIOMES.forest;
   let auto = pref.auto;
@@ -316,6 +329,8 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     const v = views.get(u.uid);
     if (!v) return;
     setBar(v.hp, u.hp, battle.maxHp(u));
+    // the practice dummy's health is bottomless
+    if (u === dummy) v.hp.querySelector(".cb-num")!.textContent = "∞";
     if (v.mp) setBar(v.mp, u.mp, battle.maxMp(u));
     v.st.replaceChildren(...u.statuses.map((s) => {
       const d = STATUSES[s.id];
@@ -679,7 +694,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     tabs.replaceChildren(...nn(
       h("button", { class: tab === "skills" ? "on" : "", onclick: () => { tab = "skills"; selected = null; clearTargets(); renderPanel(actor); } }, "⚔️ Kỹ năng"),
       h("button", { class: tab === "items" ? "on" : "", onclick: () => { tab = "items"; selected = null; clearTargets(); renderPanel(actor); } }, `🎒 Vật phẩm (${consumables().length})`),
-      setup.noFlee ? null : h("button", { onclick: () => { if (pending) { const p = pending; pending = null; clearTargets(); p.resolve({ kind: "flee" }); } } }, `🏃 Bỏ chạy (${Math.round(fleeChance() * 100)}%)`),
+      setup.noFlee ? null : h("button", { onclick: () => { if (pending) { const p = pending; pending = null; clearTargets(); p.resolve({ kind: "flee" }); } } }, dummy ? "🏁 Kết thúc tập" : `🏃 Bỏ chạy (${Math.round(fleeChance() * 100)}%)`),
     ));
     grid.replaceChildren();
     if (tab === "skills") {
@@ -777,7 +792,7 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
   let partyTurns = 0;
   async function petTurn() {
     partyTurns++;
-    for (const pet of pets) await onePetTurn(pet);
+    for (const pet of pets) { mark(); await onePetTurn(pet); tally(pet.name, "🐾 Thú cưng", partyTurns); }
   }
   async function onePetTurn(pet: (typeof pets)[number]) {
     const every = PET_EVERY[pet.hook];
@@ -803,6 +818,42 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     await playEvents();
   }
 
+  // ------------------------------------------------------------ practice log
+  const rows: DummyRow[] = [];
+  const turns = new Map<string, number>();
+  let hpMark = 0;
+  const turnOf = (u: Unit) => turns.get(u.uid) ?? 0;
+  const mark = () => { hpMark = dummy?.hp ?? 0; };
+  /** Credits whatever the dummy lost since the last mark, then tops it up so it never falls. */
+  function tally(who: string, what: string, turn: number, action = false) {
+    if (!dummy) return;
+    const dmg = Math.max(0, Math.round(hpMark - dummy.hp));
+    if (dmg > 0 || action) rows.push({ turn, who, what, dmg });
+    if (dummy.hp < DUMMY_HP * 0.5) { dummy.hp = DUMMY_HP; refresh(dummy); }
+    hpMark = dummy.hp;
+    renderLog();
+  }
+  async function logAction(actor: Unit, what: string) {
+    if (!dummy) return;
+    turns.set(actor.uid, turnOf(actor) + 1);
+    await playEvents();
+    tally(actor.name, what, turnOf(actor), true);
+  }
+  const skillLabel = (id: string, b: number) => { const sk = getSkill(id); return `${id === "attack" || id === "defend" ? "⚔️" : "✨"} ${sk.name}${b ? ` (🔥×${b})` : ""}`; };
+  const logBox = dummy ? h("div", { class: "dummy-log" }) : null;
+  if (logBox) stage.append(logBox);
+  // auto mode never stops for input, so practice always has a way out up top
+  let quit = false;
+  if (dummy) helpBtn.before(h("button", { class: "btn small", onclick: () => { quit = true; if (pending) { const p = pending; pending = null; clearTargets(); p.resolve({ kind: "flee" }); } } }, "🏁 Kết thúc"));
+  function renderLog() {
+    if (!logBox) return;
+    const total = rows.reduce((s, r) => s + r.dmg, 0);
+    logBox.replaceChildren(
+      h("div", { class: "dl-head" }, h("b", null, "🥊 Sát thương"), h("span", null, `Tổng ${total.toLocaleString("vi-VN")}`)),
+      ...rows.slice(-6).reverse().map((r) => h("div", { class: "dl-row" }, h("span", { class: "dl-who" }, `${r.turn ? `L${r.turn} ` : ""}${r.who.split(" ")[0]}`), h("span", { class: "dl-what" }, r.what), h("b", null, r.dmg.toLocaleString("vi-VN")))));
+  }
+  renderLog();
+
   // ------------------------------------------------------------ main loop
   const loop = async (): Promise<BattleOutcome> => {
     refreshAll();
@@ -816,13 +867,25 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
       await playEvents();
     }
     await delay(300);
-    for (let guard = 0; guard < 2000; guard++) {
+    for (let guard = 0; guard < (dummy ? 1e6 : 2000); guard++) {
+      if (quit) return "flee";
+      mark();
       const actor = battle.nextTurn();
       await playEvents();
       if (!actor) break;
+      // damage over time and the like land at the start of a turn
+      if (dummy) tally(actor === dummy ? "Hiệu ứng (độc, bỏng…)" : actor.name, actor === dummy ? "🩸 Sát thương theo lượt" : "⏳ Đầu lượt", actor === dummy ? 0 : turnOf(actor) + 1);
+      if (actor === dummy) {
+        // the dummy just stands there
+        actor.av = battle.avFor(actor);
+        actor.intent = undefined;
+        await delay(200);
+        continue;
+      }
       if (actor.side === "ally" && !auto && !battle.has(actor, "confuse")) {
         panel.classList.remove("idle");
         const c = await waitForPlayer(actor);
+        if (c.kind === "flee" && dummy) return "flee";
         if (c.kind === "flee") {
           if (rng.next() < fleeChance()) {
             log("Bỏ chạy thành công!");
@@ -839,8 +902,10 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
             if (g.inventory[it.id] <= 0) delete g.inventory[it.id];
             battle.useItem(actor, it.use, c.target, setup.floor, it.id);
           }
+          await logAction(actor, `${it.icon} ${it.name}`);
         } else {
           battle.act(actor, { skill: c.skill, target: c.target, boost });
+          await logAction(actor, skillLabel(c.skill, boost));
         }
         await petTurn();
       } else {
@@ -852,7 +917,11 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
         tabs.replaceChildren();
         await delay(actor.side === "enemy" ? 250 : 120);
         if (actor.side === "enemy") battle.enemyAct(actor);
-        else battle.act(actor, { ...chooseAction(battle, actor), boost: (actor.bp ?? 0) >= MAX_BP ? 1 : 0 });
+        else {
+          const a = chooseAction(battle, actor), b = (actor.bp ?? 0) >= MAX_BP ? 1 : 0;
+          battle.act(actor, { ...a, boost: b });
+          await logAction(actor, skillLabel(a.skill, b));
+        }
         if (actor.side === "ally") await petTurn();
       }
       await playEvents();
@@ -862,6 +931,21 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
 
   return loop().then(async (outcome) => {
     setActive(null);
+    if (dummy) {
+      // practice costs nothing: everyone walks away as they came in
+      for (const u of allies) {
+        const ch = g.chars[u.charId!];
+        const before = start.get(u.charId!);
+        if (ch && before) { ch.hp = before.hp; ch.mp = before.mp; }
+      }
+      fx.destroy();
+      el.remove();
+      uncover();
+      if (prevMusic) playMusic(prevMusic);
+      await openDummyReport(rows, allies.map((u) => u.name));
+      app.dirty();
+      return outcome;
+    }
     // write back HP/MP
     for (const u of allies) {
       const ch = g.chars[u.charId!];
@@ -991,5 +1075,34 @@ export function runBattle(setup: BattleSetup): Promise<BattleOutcome> {
     uncover();
     if (prevMusic) playMusic(prevMusic);
     return outcome;
+  });
+}
+
+const DUMMY_HP = 9_999_999;
+
+/** The practice summary: every logged hit, then each fighter's total, average and best turn. */
+function openDummyReport(rows: DummyRow[], names: string[]): Promise<void> {
+  return new Promise((done) => {
+    const m = openModal("🥊 Kết Quả Tập Luyện", { wide: true, onClose: done });
+    const fmt = (n: number) => n.toLocaleString("vi-VN");
+    const total = rows.reduce((s, r) => s + r.dmg, 0);
+    if (!rows.length) { m.body.append(h("p", { class: "muted" }, "Chưa ai đánh trúng bù nhìn.")); return; }
+    const who = [...new Set([...names, ...rows.map((r) => r.who)])].filter((n) => rows.some((r) => r.who === n));
+    const sum = who.map((n) => {
+      const rs = rows.filter((r) => r.who === n);
+      const dmg = rs.reduce((s, r) => s + r.dmg, 0);
+      const t = Math.max(1, new Set(rs.map((r) => r.turn)).size);
+      return { n, dmg, t, avg: Math.round(dmg / t), max: Math.max(...rs.map((r) => r.dmg)) };
+    }).sort((a, b) => b.dmg - a.dmg);
+    m.body.append(
+      h("p", null, h("b", null, `Tổng sát thương: ${fmt(total)}`)),
+      h("table", { class: "dummy-table" },
+        h("thead", null, h("tr", null, h("th", null, "Nhân vật"), h("th", null, "Tổng"), h("th", null, "%"), h("th", null, "Lượt"), h("th", null, "TB/lượt"), h("th", null, "Cao nhất"))),
+        h("tbody", null, sum.map((x) => h("tr", null, h("td", null, x.n), h("td", null, fmt(x.dmg)), h("td", null, `${Math.round((x.dmg / Math.max(1, total)) * 100)}%`), h("td", null, String(x.t)), h("td", null, fmt(x.avg)), h("td", null, fmt(x.max)))))),
+      h("h4", null, "Từng lượt"),
+      h("div", { class: "dummy-scroll" }, h("table", { class: "dummy-table turns" },
+        h("thead", null, h("tr", null, h("th", null, "#"), h("th", null, "Nhân vật"), h("th", null, "Lượt"), h("th", null, "Hành động"), h("th", null, "Sát thương"))),
+        h("tbody", null, rows.map((r, i) => h("tr", null, h("td", null, String(i + 1)), h("td", null, r.who), h("td", null, r.turn ? String(r.turn) : "—"), h("td", null, r.what), h("td", null, fmt(r.dmg))))))),
+      h("div", { class: "row end" }, h("button", { class: "btn primary", onclick: () => m.close() }, "Xong")));
   });
 }

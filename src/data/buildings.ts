@@ -56,6 +56,7 @@ const DECOR: Deco[] = [
   ["crates", "Chồng Thùng Hàng", "📦", [1, 1], 1, 0, { wood: 4 }, "Hàng hoá chờ chuyển đi."],
   ["hay_bale", "Kiện Rơm", "🌾", [1, 1], 1, 1, { fiber_forest: 3 }, "Rơm khô thơm mùi nắng."],
   ["scarecrow", "Bù Nhìn", "🧑‍🌾", [1, 1], 1, 1, { wood: 2, fiber_forest: 2 }, "Canh ruộng cho khỏi chim. Trông hơi đáng sợ."],
+  ["training_dummy", "Bù Nhìn Tập Luyện", "🥊", [1, 1], 1, 1, { wood: 4, fiber_forest: 3 }, "Chạm vào để đánh thử với cả đội: bù nhìn không đánh trả, ghi lại sát thương từng lượt của từng người."],
   ["signpost", "Cột Chỉ Đường", "🪧", [1, 1], 1, 1, { wood: 3 }, "Chỉ về Vực Sâu, Nhà Chính và... tầng 100?"],
   ["mailbox", "Hộp Thư", "📮", [1, 1], 2, 1, { wood: 2, copper_ingot: 1 }, "Chưa ai gửi thư. Chưa."],
   ["bird_bath", "Bể Tắm Chim", "🐦", [1, 1], 2, 2, { stone: 5 }, "Chim chóc hay ghé tắm vào buổi sáng."],
