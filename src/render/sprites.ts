@@ -50,6 +50,15 @@ export const SPRITES: Record<string, SpriteDef> = {
     pal: { k: K, g: "#5fcf5f", l: "#b8f59a", s: "#f4e6b8", e: K, m: "#c77a5a" },
   },
 
+  // a straw training dummy with a target on its chest (sanctuary practice)
+  training_dummy: {
+    rows: mirror([
+      "........", ".....kkk", "....kyyy", "...kykyy", "....kyyy", ".....kkk", "kkkkkkoo", "kooooookr",
+      "kkkkkrww", "....krwr", "....krww", ".....krr", "......ko", "......ko", ".....kko", "....kkkk",
+    ].map((r) => r.slice(0, 8))),
+    pal: { k: K, y: "#e8cc78", o: "#9a6a3a", r: "#d43a3a", w: "#f4efe6" },
+  },
+
   // ---------------------------------------------------------------- floor 1
   slime: {
     rows: mirror([

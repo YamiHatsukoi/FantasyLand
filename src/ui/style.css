@@ -1443,3 +1443,18 @@ img.iicon.lg { width: 48px; height: 48px; }
 .ar-jt.lock { opacity: 0.6; }
 .ar-jt.lock .ic { filter: grayscale(0.8); }
 .ar-jt .ar-tag { margin-left: 6px; }
+
+/* practice dummy: live damage log over the battlefield, and the summary tables */
+.dummy-log { position: absolute; left: 8px; top: 8px; z-index: 120; min-width: 180px; max-width: 46%; padding: 6px 8px; border-radius: 8px; background: rgba(12, 14, 22, 0.78); border: 1px solid rgba(255, 255, 255, 0.14); font-size: 12px; pointer-events: none; }
+.dummy-log .dl-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; color: #ffd76a; }
+.dummy-log .dl-row { display: flex; gap: 6px; align-items: baseline; line-height: 1.35; }
+.dummy-log .dl-row:first-of-type { color: #fff; }
+.dummy-log .dl-row:not(:first-of-type) { opacity: 0.7; }
+.dummy-log .dl-who { color: #9fd0ff; white-space: nowrap; }
+.dummy-log .dl-what { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dummy-pick { display: grid; gap: 6px; margin: 8px 0; }
+.dummy-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.dummy-table th, .dummy-table td { padding: 4px 6px; text-align: right; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.dummy-table th:nth-child(-n+2), .dummy-table td:nth-child(-n+2) { text-align: left; }
+.dummy-scroll { max-height: 40vh; overflow: auto; }
+.dummy-table.turns td:nth-child(4), .dummy-table.turns th:nth-child(4) { text-align: left; }

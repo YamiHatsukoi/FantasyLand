@@ -53,6 +53,8 @@ const list: EnemyDef[] = [
   { id: "bog_crab", name: "Cua Bùn Giáp Sắt", sprite: "crab", tags: ["beast"], base: st(88, 16, 17, 6, 22, 7, 80), resist: { lightning: 1.5, water: 0.5 }, skills: ["pincer", "shell_up"], passives: [], drops: [{ item: "bog_iron", ch: 0.6 }, { item: "pearl", ch: 0.05 }] },
   { id: "lantern_ghost", name: "Hồn Đèn Lồng", sprite: "ghost", tags: ["spirit", "undead"], base: st(62, 50, 6, 21, 7, 16, 100, 5, 10), resist: { physical: 0.6, dark: 0.3, light: 1.5 }, skills: ["lantern_soul", "hex"], passives: [], drops: [{ item: "soul_wax", ch: 0.6 }, { item: "mana_crystal", ch: 0.15 }] },
   { id: "drowned_queen", name: "Nữ Hoàng Chết Đuối Ysolde", sprite: "queen", tags: ["undead"], base: st(660, 140, 18, 24, 14, 20, 100, 6), resist: { water: 0.2, dark: 0.5, lightning: 1.3, fire: 1.2 }, skills: ["tidal_curse", "lantern_soul", "drown", "hex"], passives: ["e_boss"], boss: true, scale: 2, ai: "smart", drops: [{ item: "pearl", ch: 1, min: 2, max: 3 }, { item: "soul_wax", ch: 1, min: 3, max: 5 }, { item: "mana_crystal", ch: 1, min: 4, max: 5 }, { item: "monster_core", ch: 1, min: 3, max: 3 }, { item: "seed_lotus", ch: 1, min: 2, max: 2 }] },
+  // the sanctuary's practice dummy: never fights back (see runBattle's training mode)
+  { id: "training_dummy", name: "Bù Nhìn Tập Luyện", sprite: "training_dummy", tags: ["construct"], base: st(9999, 0, 0, 0, 0, 0, 60, 0, 0), resist: {}, skills: [], passives: [], drops: [] },
 ];
 
 export const ENEMIES: Record<string, EnemyDef> = Object.fromEntries(list.map((e) => [e.id, e]));
