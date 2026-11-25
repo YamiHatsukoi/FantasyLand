@@ -201,6 +201,28 @@ export function cachedSession(): Session | null {
   }
 }
 
+// ------------------------------------------------------------ Adventure (gamebook) saves, supabase/06_adventure.sql
+export interface AdvSlot {
+  slot: number;
+  data: unknown;
+  version: number;
+  updated_at?: string;
+}
+
+export async function advLoad(s: Session, book: string): Promise<AdvSlot[]> {
+  const r = await rpc<{ slots: AdvSlot[] }>("adv_load", { p_token: s.token, p_book: book });
+  return r.slots ?? [];
+}
+
+export async function advSave(s: Session, book: string, slot: number, data: unknown, baseVersion: number, force = false): Promise<number> {
+  const r = await rpc<{ version: number }>("adv_save", { p_token: s.token, p_book: book, p_slot: slot, p_data: data, p_base_version: baseVersion, p_force: force });
+  return r.version;
+}
+
+export async function advDelete(s: Session, book: string, slot: number): Promise<void> {
+  await rpc("adv_delete", { p_token: s.token, p_book: book, p_slot: slot });
+}
+
 export function cacheSession(s: Session) {
   try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch { /* storage unavailable */ }
 }
