@@ -41,7 +41,9 @@ interface Report {
 function hero(book: Book, rng: () => number): AdvState {
   const discs = [...discsOf(book)].sort(() => rng() - 0.5).slice(0, book.discCount) as Disc[];
   const picks = book.kit.picks.map((p) => p.mode === "random" ? [Math.floor(rng() * p.options.length)] : [...p.options.keys()].sort(() => rng() - 0.5).slice(0, p.count));
-  return newRun(book, { name: "Thử", csRoll: Math.floor(rng() * 10), epRoll: Math.floor(rng() * 10), disciplines: discs, weaponskillRoll: Math.floor(rng() * 10), goldRoll: Math.floor(rng() * 10), mastered: [], picks });
+  // Weaponmastery (Magnakai and later): the weapons chosen at the start
+  const mastered = book.rules === "kai" ? [] : [...new Set(book.weaponskill)].sort(() => rng() - 0.5).slice(0, 3);
+  return newRun(book, { name: "Thử", csRoll: Math.floor(rng() * 10), epRoll: Math.floor(rng() * 10), disciplines: discs, weaponskillRoll: Math.floor(rng() * 10), goldRoll: Math.floor(rng() * 10), mastered, picks });
 }
 
 /** Sections from which every way forward ends in death (book traps a careful reader avoids). */
@@ -79,7 +81,7 @@ function playOnce(book: Book, s: AdvState, rng: () => number, r: Report, careful
       const o = s.offers[i];
       if ("loseChoice" in o) {
         const pool = o.loseChoice === "weapon" ? s.weapons : o.loseChoice === "backpack" ? [...s.backpack, ...(s.meals ? ["Meal"] : [])] : [...s.weapons, ...s.backpack];
-        if (pool.length) takeOffer(book, s, i, pool[0]); else s.offers.splice(i, 1);
+        if (pool.length) takeOffer(book, s, i, pool[Math.floor(rng() * pool.length)]); else s.offers.splice(i, 1);
       } else if (rng() < 0.7) takeOffer(book, s, i);
     }
     const ph = phase(book, s);
@@ -177,7 +179,7 @@ describe.skipIf(!DIR)("adventure book packages (random play-throughs)", () => {
           s = prev && i % 2 ? continueRun(book, prev, {
             newDisc, newDiscs: need?.fresh ? discsOf(book).slice(0, book.discCount) : undefined,
             mastered: book.weaponskill.filter((w) => !(prev.mastered ?? []).includes(w)).slice(0, extra?.masteryCap ?? 0),
-            picks: book.kit.picks.map((p) => p.mode === "random" ? [0] : [...p.options.keys()].slice(0, p.count)), goldRoll: 3,
+            picks: book.kit.picks.map((p) => p.mode === "random" ? [Math.floor(rng() * p.options.length)] : [...p.options.keys()].sort(() => rng() - 0.5).slice(0, p.count)), goldRoll: 3,
           }) : hero(book, rng);
           const careful = i % 4 === 3;
           if (careful) { s.cs = Math.max(s.cs, 19); s.epBase = Math.max(s.epBase, 29); s.ep = s.epBase; }
