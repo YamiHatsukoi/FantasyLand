@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { battleExit, canEvade, check, choiceState, crtColumnOf, enter, epMax, heroCs, newRun, playRound, randomResult, retry, startBattle, takeOffer, useItem, validateBook } from "../src/adventure/engine";
-import type { Book, CRT } from "../src/adventure/types";
+import { apply, battleExit, canEvade, check, choiceState, crtColumnOf, enter, epMax, heroCs, newRun, playChoice, playRound, randomResult, retry, startBattle, takeOffer, useItem, validateBook } from "../src/adventure/engine";
+import type { Book, Choice, CRT } from "../src/adventure/types";
 
 // A made-up table (no book data in this repo): hero loses 2, enemy loses 3 + column; column 12 kills.
 const crt: CRT = Array.from({ length: 10 }, () => Array.from({ length: 13 }, (_, c) => [c === 12 ? -1 : 3 + c, c === 0 ? -1 : 2] as [number, number]));
@@ -38,6 +38,25 @@ describe("adventure engine (Lone Wolf rules)", () => {
     expect(s.weaponskill).toBe("Axe");
     const g = hero([], 1);
     expect(g.gold).toBe(15);
+  });
+
+  it("plays a game of chance in a choice: stays for another round, or leaves by the outcome", () => {
+    const s = hero([]);
+    s.gold = 10;
+    const cartwheel: Choice = { text: "cược 1", to: "", repeat: true, if: { gold: 1 }, roll: { out: [{ min: 0, max: 0, fx: [{ gold: 8 }] }, { min: 1, max: 8, fx: [{ gold: -1 }] }, { min: 9, max: 9, to: "5" }] } };
+    expect(playChoice(book, s, cartwheel, 0)).toMatchObject({ to: "", value: 0 });
+    expect(s.gold).toBe(18);
+    expect(playChoice(book, s, cartwheel, [4]).to).toBe("");
+    expect(s.gold).toBe(17);
+    expect(playChoice(book, s, { ...cartwheel, fx: [{ gold: -2 }] }, 9).to).toBe("5");
+    expect(s.gold).toBe(15);
+  });
+
+  it("restores half of the ENDURANCE lost", () => {
+    const s = hero([]);
+    s.ep = 10;
+    apply(book, s, [{ restoreHalf: true }]);
+    expect(s.ep).toBe(10 + Math.floor((epMax(book, s) - 10) / 2));
   });
 
   it("shows positive branches locked and hides the negative ones that do not apply", () => {
