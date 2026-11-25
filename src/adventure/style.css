@@ -207,8 +207,9 @@
 .adv-scene { position: absolute; inset: 0; cursor: pointer; }
 .adv-fit { overflow: hidden; background: #050403; }
 .adv-fit-cv { position: absolute; left: 0; top: 0; transform-origin: 0 0; transition: transform .7s cubic-bezier(.3,.7,.3,1), width .35s, height .35s; }
-.adv-fit-amb { position: absolute; left: -10%; top: -10%; width: 120%; height: 120%; filter: blur(20px) brightness(.5) saturate(1.3); opacity: 0; transition: opacity .4s; }
+.adv-fit-amb { position: absolute; left: -10%; top: -10%; width: 120%; height: 120%; opacity: 0; transition: opacity .4s; }
 .adv-fit.gaps .adv-fit-amb { opacity: 1; }
+.adv-fit > canvas.adv-fit-amb { image-rendering: auto; }
 /* where the scene does not reach the box edge, it melts into its blurred copy */
 .adv-fit.gap-v .adv-fit-cv { -webkit-mask-image: linear-gradient(transparent, #000 9%, #000 91%, transparent); mask-image: linear-gradient(transparent, #000 9%, #000 91%, transparent); }
 .adv-fit.gap-h .adv-fit-cv { -webkit-mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent); mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent); }

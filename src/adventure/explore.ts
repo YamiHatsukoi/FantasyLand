@@ -27,7 +27,7 @@ import { FLAMES, archWin, battlements, castleDoor, drawShip, dungeonFace, furnit
 import { iconEl, uiIcon } from "./art/icons";
 import { lookFor, personFrame, type Facing, type Look, type Pose } from "./art/people";
 import { Px, hs, mix, rgba } from "./art/px";
-import { viewZoom } from "./motion";
+import { Pacer, viewZoom } from "./motion";
 import { isMonster } from "./stage";
 import type { Choice, Loc, Scene } from "./types";
 import { saidSide } from "./world";
@@ -4204,6 +4204,15 @@ export function mountExplore(o: ExploreOpts): ExploreHandle {
     S = Math.max(1, Math.round(k));
     // "Toàn cảnh": farther out, more of the place in view (half steps keep the pixels even enough)
     if (viewZoom() === "full") S = Math.max(1, Math.min(S, Math.round(k * 0.75 * 2) / 2));
+    // 3x screens: when the art scale allows, draw at 2x instead (each art pixel still lands on
+    // the same whole number of screen pixels, the canvas has 2.25 times fewer pixels to fill)
+    if (dpr > 2) {
+      const s2 = (S * 2) / dpr;
+      if (s2 >= 1 && Math.abs(s2 * 2 - Math.round(s2 * 2)) < 1e-6) {
+        dpr = 2; S = s2;
+        canvas.width = Math.round(cssW * dpr); canvas.height = Math.round(cssH * dpr);
+      }
+    }
     bw = Math.ceil(canvas.width / S) + 2; bh = Math.ceil(canvas.height / S) + 2;
     buf.width = bw; buf.height = bh; lightC.width = bw; lightC.height = bh;
     g.imageSmoothingEnabled = false; ctx.imageSmoothingEnabled = false;
@@ -4400,6 +4409,7 @@ export function mountExplore(o: ExploreOpts): ExploreHandle {
 
   // ---- input
   let paused = false, alive = true;
+  const pace = new Pacer();
   let tapFx: { x: number; y: number; t: number; ok: boolean } | null = null;
   const keys = new Set<string>();
   const KEYMAP: Record<string, Pt> = { ArrowUp: { x: 0, y: -1 }, KeyW: { x: 0, y: -1 }, ArrowDown: { x: 0, y: 1 }, KeyS: { x: 0, y: 1 }, ArrowLeft: { x: -1, y: 0 }, KeyA: { x: -1, y: 0 }, ArrowRight: { x: 1, y: 0 }, KeyD: { x: 1, y: 0 } };
@@ -4614,7 +4624,8 @@ export function mountExplore(o: ExploreOpts): ExploreHandle {
   const frame = (t: number) => {
     if (!alive) return;
     raf = requestAnimationFrame(frame);
-    if (paused) return;
+    if (paused) { pace.reset(); return; }
+    if (!pace.tick(t)) return;
     const dt = Math.min(50, last ? t - last : 16);
     last = t; now = t;
     // hero: keys, then path

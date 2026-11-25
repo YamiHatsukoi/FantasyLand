@@ -272,6 +272,8 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
 
   return new Promise((resolve) => {
     const stage = new Stage({ bg: sec.scene.bg, time: sec.scene.time, weather: sec.scene.weather, mood: "combat", seed: `${book.id}-${s.section}` }, "adv-stage battle");
+    // the story's stage under the battle screen is hidden: stop drawing it until the fight ends
+    const releaseOthers = Stage.holdOthers(stage);
     const gy = stage.scene.groundY;
     stage.actors = [];
     const fx = new FxLayer(gy);
@@ -1419,7 +1421,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       if (win) await victory();
       const title = win ? "CHIẾN THẮNG" : b.over === "evaded" ? "ĐÃ THOÁT" : b.over === "timeout" ? (c.compare ? "HẾT HIỆP" : "HẾT GIỜ") : b.over === "beaten" ? "THUA TRẬN" : b.over === "hurt" ? "TRÚNG ĐÒN!" : "BẠI TRẬN";
       sfx(b.over === "lose" ? "defeat" : "victory");
-      const done = (to2: string | null) => { alive = false; fit.destroy(); stage.destroy(); el.classList.add("out"); setTimeout(() => el.remove(), 250); playMusic("title"); resolve({ battle: b, exit: to2 }); };
+      const done = (to2: string | null) => { alive = false; releaseOthers(); fit.destroy(); stage.destroy(); el.classList.add("out"); setTimeout(() => el.remove(), 250); playMusic("title"); resolve({ battle: b, exit: to2 }); };
       const alts = b.over === "evaded" ? c.evade?.alt ?? [] : [];
       const buttons = alts.length
         ? [gameBtn("Chạy theo lối đã định", () => done(exit), { kind: "gold", cls: "block" }), ...alts.map((a) => gameBtn(a.text, () => done(a.to), { cls: "block" }))]

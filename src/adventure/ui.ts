@@ -159,6 +159,47 @@ export interface FitOpts {
 }
 
 /**
+ * The blurred, dimmed copy of the scene behind a StageFit box (what CSS
+ * `blur(20px) brightness(.5) saturate(1.3)` did, but blurred here on a tiny canvas once
+ * instead of by the compositor on every frame, which is costly on phones).
+ */
+function softCopy(cv: HTMLCanvasElement, src: HTMLCanvasElement, boxW: number) {
+  // about 8 CSS px per pixel: three box passes of radius 2 then match a 20px blur
+  const w = Math.max(16, Math.min(160, Math.round((boxW * 1.2) / 8))), hh = Math.max(9, Math.round((w * 9) / 16));
+  if (cv.width !== w || cv.height !== hh) { cv.width = w; cv.height = hh; }
+  const g = cv.getContext("2d")!;
+  g.imageSmoothingEnabled = true;
+  g.drawImage(src, 0, 0, w, hh);
+  const img = g.getImageData(0, 0, w, hh), d = img.data, n = w * hh;
+  const r = new Float32Array(n), gr = new Float32Array(n), b = new Float32Array(n), t = new Float32Array(n);
+  // brightness .5 then saturate 1.3 (the CSS filter matrices)
+  const S = 1.3;
+  for (let i = 0; i < n; i++) {
+    const R = d[i * 4] * 0.5, G = d[i * 4 + 1] * 0.5, B = d[i * 4 + 2] * 0.5;
+    r[i] = (0.213 + 0.787 * S) * R + (0.715 - 0.715 * S) * G + (0.072 - 0.072 * S) * B;
+    gr[i] = (0.213 - 0.213 * S) * R + (0.715 + 0.285 * S) * G + (0.072 - 0.072 * S) * B;
+    b[i] = (0.213 - 0.213 * S) * R + (0.715 - 0.715 * S) * G + (0.072 + 0.928 * S) * B;
+  }
+  const pass = (a: Float32Array) => {
+    for (let k = 0; k < 3; k++) {
+      for (let y = 0; y < hh; y++) for (let x = 0; x < w; x++) {
+        let sum = 0;
+        for (let o = -2; o <= 2; o++) sum += a[y * w + Math.max(0, Math.min(w - 1, x + o))];
+        t[y * w + x] = sum / 5;
+      }
+      for (let y = 0; y < hh; y++) for (let x = 0; x < w; x++) {
+        let sum = 0;
+        for (let o = -2; o <= 2; o++) sum += t[Math.max(0, Math.min(hh - 1, y + o)) * w + x];
+        a[y * w + x] = sum / 5;
+      }
+    }
+  };
+  pass(r); pass(gr); pass(b);
+  for (let i = 0; i < n; i++) { d[i * 4] = r[i]; d[i * 4 + 1] = gr[i]; d[i * 4 + 2] = b[i]; d[i * 4 + 3] = 255; }
+  g.putImageData(img, 0, 0);
+}
+
+/**
  * Makes a Stage canvas fill its box like a game camera: cover-cropped, crisp nearest-neighbour
  * pixels (integer scale when it is close), panned to keep the characters in view.
  */
@@ -180,16 +221,12 @@ export class StageFit {
     this.ro.observe(box);
     window.addEventListener("adv-zoom", this.onZoom);
     this.timer = window.setInterval(() => this.layout(), 700);
+    // the blurred backdrop: only while the box shows it, a few times a second (CSS re-blurs it each time)
     const amb = () => {
       if (!this.alive) return;
-      const t = performance.now();
-      if (this.amb && t - this.ambT > 120) {
-        this.ambT = t;
-        const g = this.amb.getContext("2d")!;
-        g.drawImage(stage.canvas, 0, 0, 64, 36);
-      }
-      requestAnimationFrame(amb);
+      if (this.amb && !stage.held && this.box.classList.contains("gaps") && stage.canvas.isConnected) softCopy(this.amb, stage.canvas, this.box.clientWidth);
     };
+    this.ambT = window.setInterval(amb, 250);
     requestAnimationFrame(amb);
     this.layout();
   }
@@ -247,6 +284,7 @@ export class StageFit {
     this.ro.disconnect();
     window.removeEventListener("adv-zoom", this.onZoom);
     clearInterval(this.timer);
+    clearInterval(this.ambT);
     this.amb?.remove();
   }
 }

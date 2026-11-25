@@ -13,7 +13,7 @@ import { emoteFrame } from "./art/emotes";
 import { isPersonActor, lookFor, personFrame, type Facing, type Look, type Pose } from "./art/people";
 import { isLivingProp, propArt, type PropArt } from "./art/props";
 import { makeScene, type SceneHandle, type SceneSpec } from "./art/scene";
-import { calmMotion } from "./motion";
+import { calmMotion, Pacer } from "./motion";
 
 export const W = 320;
 export const H = 180;
@@ -189,6 +189,20 @@ export class Stage {
   private alive = true;
   private last = 0;
   now = 0;
+  /** Stages currently alive (one covering screen can pause the ones beneath it). */
+  static live = new Set<Stage>();
+  /** Paused while > 0 (covered by another stage, e.g. a battle over the story). */
+  held = 0;
+  private shown = false;
+  private pace = new Pacer();
+
+  /** Pauses every other live stage until the returned function is called. */
+  static holdOthers(keep: Stage): () => void {
+    const held = [...Stage.live].filter((s) => s !== keep);
+    for (const s of held) s.held++;
+    let done = false;
+    return () => { if (done) return; done = true; for (const s of held) { s.held = Math.max(0, s.held - 1); s.last = 0; } };
+  }
 
   constructor(spec: SceneSpec, cls = "adv-stage") {
     this.spec = spec;
@@ -205,9 +219,13 @@ export class Stage {
     this.tmp = document.createElement("canvas");
     this.tmp.width = W; this.tmp.height = H;
     this.now = performance.now();
+    Stage.live.add(this);
     const loop = (t: number) => {
       if (!this.alive) return;
-      this.frame(t);
+      // drawn only when seen: not while covered by another stage or taken off the page
+      if (this.canvas.isConnected) this.shown = true;
+      if (!this.held && (this.canvas.isConnected || !this.shown)) { if (this.pace.tick(t)) this.frame(t); }
+      else { this.last = 0; this.pace.reset(); }
       this.raf = requestAnimationFrame(loop);
     };
     this.raf = requestAnimationFrame(loop);
@@ -215,6 +233,7 @@ export class Stage {
 
   destroy() {
     this.alive = false;
+    Stage.live.delete(this);
     cancelAnimationFrame(this.raf);
     this.canvas.remove();
   }
