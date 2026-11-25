@@ -123,12 +123,53 @@ export interface Scene {
   actors: string[];
   mood: "calm" | "tense" | "danger" | "combat" | "sad" | "mystery" | "triumph";
   cutscene?: boolean;
+  /** The distinct spot (book.locations) where the section happens. */
+  loc?: string;
   /** The section plays as a walkable area (explore mode). */
   explore?: boolean;
 }
 
+/** A distinct physical spot of a book (locations.json): every section at the same spot shares it. */
+export interface Loc {
+  name: string;
+  kind: Bg;
+  /** World-map node (place) this spot belongs to. */
+  node: string;
+  desc: string;
+  features: string[];
+  size: "small" | "medium" | "large";
+  /** Adjacent spots and the direction they lie in. */
+  links: Record<string, "north" | "south" | "east" | "west" | "up" | "down" | "in" | "out">;
+}
+
+/** One beat of a section's staging: a short piece of the text and what happens on screen. */
+export interface Beat {
+  t: string;
+  do?: StageAction[];
+  wait?: number;
+}
+
+export type StageAction = Record<string, string | number | undefined> & (
+  | { enter: string; from?: string; at?: number; n?: number }
+  | { move: string; to: number | string }
+  | { run: string; to: number | string }
+  | { pose: string }
+  | { face: string; dir: string }
+  | { say: string; text: string }
+  | { emote: string; kind: string }
+  | { fx: string; at?: string | number }
+  | { prop: string; at?: number; state?: string }
+  | { remove: string }
+  | { camera: string }
+  | { weather: string }
+  | { time: string }
+  | { sfx: string }
+);
+
 export interface Section {
   text: string[];
+  /** How the section is performed on screen, beat by beat (covers all of `text`). */
+  stage?: Beat[];
   scene: Scene;
   fx?: Effect[];
   combat?: Combat;
@@ -188,6 +229,7 @@ export interface Book {
   actors?: Record<string, string>;
   places?: Record<string, { name: string; desc: string }>;
   map?: import("./worldmap").BookMap | null;
+  locations?: Record<string, Loc>;
   sections: Record<string, Section>;
 }
 
