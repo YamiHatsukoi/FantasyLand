@@ -379,13 +379,14 @@ function warhammer(c: Ic, k: Ctx) {
 }
 
 function staff(c: Ic, k: Ctx) {
-  const W = tone(k.tint ?? C.wood), M = tone(C.iron, { shiny: true }), Lt = tone(C.leather);
-  c.ne(2, 22, 20, [W, W]);
-  c.ne(2, 22, 2, [M, M]);
-  c.ne(20, 4, 2, [M, M]);
-  c.ne(9, 15, 3, [Lt, Lt]);
-  c.ne(13, 11, 2, [Lt, Lt]);
-  for (const i of [5, 15]) { c.o(3 + i, 22 - i, W.d); }
+  const W = tone(k.tint ?? C.wood, { gr: 0.3 }), M = tone(C.iron, { shiny: true }), Lt = tone(C.leather);
+  c.ne(1, 22, 21, [W, W, W]);
+  c.ne(1, 22, 3, [M, M, M]);
+  c.ne(19, 4, 3, [M, M, M]);
+  c.ne(9, 14, 4, [Lt, Lt, Lt]);
+  for (let i = 0; i < 4; i += 2) c.ne(9 + i, 14 - i, 1, [Lt.s, Lt.s, Lt.s]);
+  for (const i of [5, 15]) c.ne(1 + i, 22 - i, 1, [W.s, W.s, W.s]);
+  c.o(20, 2, hs(C.iron, 0.8)); c.o(2, 20, hs(C.iron, 0.8));
 }
 
 function bow(c: Ic, k: Ctx) {
@@ -653,17 +654,19 @@ function herb(c: Ic, k: Ctx) {
 }
 
 function meal(c: Ic) {
-  const Cr = tone("#c98a42", { gr: 1.3 }), Ap = tone("#d23b3e"), Lf = tone("#4aa64f"), Stm = tone(C.dwood);
-  c.ell(10, 11.5, 8.4, 5.6, Cr);
-  for (const x of [5, 9, 13]) { c.line(x, 10, x + 2, 8, rgba("#6a3410", 0.6), true); c.o(x + 1, 10, rgba("#ffe8b0", 0.6)); c.o(x + 2, 9, rgba("#ffe8b0", 0.6)); }
-  c.ball(16.5, 16, 4.6, tone("#d63e3e", { shiny: true }));
-  void Ap;
-  c.rect(16, 10, 1, 2, Stm);
-  leaf(c, 17, 11, -0.4, 3.6, 1.3, Lf);
-  // cheese wedge
-  const Ch = tone("#f0c64a");
-  c.poly([[3, 15], [10, 13.5], [11, 21], [3, 21]], Ch);
-  c.o(5, 17, "#c99428"); c.o(8, 18, "#c99428"); c.o(6, 19, "#c99428"); c.o(9, 16, "#c99428");
+  // a round loaf behind a roast drumstick
+  const Cr = tone("#cf8e44", { gr: 1.3 }), Bt = tone("#9a5a2a");
+  c.fn((x, y) => (y <= 13.5 && ((x - 9) / 7.6) ** 2 + ((y - 11) / 6.4) ** 2 <= 1 ? Cr : undefined));
+  c.rect(2, 12, 15, 2, Bt);
+  for (let x = 4; x <= 13; x++) { const y = Math.round(8 - Math.sin(((x - 4) / 9) * Math.PI) * 2); c.o(x, y, "#f6dca0"); c.o(x, y + 1, rgba("#5a2a08", 0.5)); }
+  for (const [x, y] of [[6, 6], [10, 5], [12, 8]] as const) c.o(x, y, rgba("#fff6e0", 0.7));
+  const M = tone("#c8662e", { gr: 1.2 }), B = tone(C.bone);
+  c.ne(6, 19, 6, [B, B]);
+  c.ball(4.6, 18.6, 1.9, B); c.ball(6.8, 20.8, 1.9, B);
+  const L = loc(14.5, 13.5, NE);
+  c.fn((x, y) => { const [u, v] = L(x, y); const rx = u < 0 ? 4.4 : 6.4; return (u / rx) ** 2 + (v / 5) ** 2 <= 1 ? M : undefined; });
+  c.ofn((x, y) => { const [u, v] = L(x, y); return (u / 6.4) ** 2 + (v / 5) ** 2 <= 1 && Math.sin(u * 1.4 + v * 0.6) > 0.92 ? rgba("#ffd090", 0.55) : undefined; });
+  c.o(14, 10, "#ffe0b0"); c.o(15, 9, "#ffd0a0"); c.o(13, 11, "#ffc890");
 }
 
 function rations(c: Ic) {
@@ -1049,15 +1052,15 @@ function ring(c: Ic, k: Ctx) {
   c.spark(10, 4, "#ffffff");
 }
 function signet(c: Ic) {
-  const M = ringBand(c, C.gold);
-  c.rect(8, 8, 8, 2, M);
-  const F = tone(hs(C.gold, 0.05), { shiny: true });
-  c.ell(12, 6.5, 6.2, 4.2, F);
-  c.ell(12, 6.5, 4.4, 2.8, "#9a6418");
-  // hammer of Hammerdal, raised on the seal face
-  const e = "#ffe48a", es = "#d89a30";
-  c.orect(9, 4, 6, 2, e); c.orect(11, 6, 2, 3, e); c.o(14, 5, es); c.o(12, 8, es); c.o(9, 5, es);
-  c.spark(8, 4, "#fff6c0");
+  const M = tone(C.gold, { shiny: true });
+  c.ring(12, 15.5, 8, 5.4, 2.2, M);
+  c.ell(12, 8.5, 7, 4.8, tone(hs(C.gold, 0.05), { shiny: true }));
+  c.ell(12, 8.5, 5.2, 3.2, "#7a4a14");
+  // the hammer of Hammerdal, raised on the seal face
+  const e = "#ffe48a", es = "#e0a43a";
+  c.orect(8, 6, 8, 2, e); c.orect(11, 8, 2, 3, e);
+  c.orect(8, 7, 8, 1, es); c.o(12, 10, es);
+  c.spark(6, 5, "#fff6c0");
 }
 
 function coins(c: Ic, k: Ctx) {
@@ -1508,8 +1511,8 @@ function boltShape(c: Ic, col: string) {
 
 function paw(c: Ic, cx: number, cy: number, col: string, s = 1) {
   const T = tone(col);
-  c.ell(cx, cy + 1.4 * s, 2.5 * s, 2 * s, T);
-  for (const [dx, dy] of [[-3.1, -1.9], [-1.15, -3.7], [1.15, -3.7], [3.1, -1.9]] as const) c.ell(cx + dx * s, cy + dy * s, 0.85 * s + 0.15, 1.05 * s + 0.15, tone(col));
+  c.fn((x, y) => { const dx = (x - cx) / (2.6 * s), dy = (y - cy - 1.6 * s) / (2 * s); return dx * dx + dy * dy <= 1 && !(dy > 0.55 && Math.abs(dx) < 0.22) ? T : undefined; });
+  for (const [dx, dy] of [[-3.2, -1.4], [-1.25, -3.4], [1.25, -3.4], [3.2, -1.4]] as const) c.ell(cx + dx * s, cy + dy * s, 0.8 * s, 1.05 * s, tone(col));
 }
 
 function wolfHead(c: Ic, fur: string, eye: string) {
@@ -1564,7 +1567,7 @@ const DISC: Record<string, (c: Ic) => void> = {
     eyeShape(c, 12, 12, 9, 5, "#5a6ae0");
   },
   tracking: (c) => {
-    paw(c, 7, 16.5, "#7a4e30", 1.45); paw(c, 16.5, 7.5, "#7a4e30", 1.45);
+    paw(c, 7, 16, "#8a5a34", 1.3); paw(c, 17, 6.5, "#8a5a34", 1.3);
     c.post((p) => { for (const [x, y] of [[2, 23], [4, 22], [20, 14], [22, 13], [21, 1]] as const) p.px(x, y, rgba("#c8a070", 0.8)); });
   },
   healing: (c) => {
@@ -1717,7 +1720,6 @@ const DISC: Record<string, (c: Ic) => void> = {
     c.ell(7.5, 11, 2.6, 1.7, "#120e18"); c.ell(16.5, 11, 2.6, 1.7, "#120e18");
     c.line(2, 8, 22, 8, G);
     for (const x of [3, 21]) c.ball(x, 7, 1.4, G);
-    c.post((p) => { for (let y = 17; y <= 22; y++) p.px(y % 2 ? 2 : 3, y, rgba(C.gold, 0.8)); });
   },
   grandhuntmastery: (c) => {
     paw(c, 12, 12.5, C.gold, 1.5);
@@ -1732,10 +1734,10 @@ const DISC: Record<string, (c: Ic) => void> = {
   },
   kaisurge: (c) => {
     c.post((p) => {
-      for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; for (let r = 8; r <= 11; r++) p.px(Math.round(12 + Math.cos(a) * r), Math.round(12 + Math.sin(a) * r), rgba("#ffd860", 0.9 - (r - 8) * 0.2)); }
+      for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2 + 0.39; for (let r = 8; r <= 11; r++) p.px(Math.round(12 + Math.cos(a) * r), Math.round(12 + Math.sin(a) * r), rgba("#ffd860", 1 - (r - 8) * 0.22)); }
     });
     boltShape(c, "#f8c030");
-    c.glow("#ffe080", 2, 0.45);
+    c.glow("#ffe080", 1, 0.5);
   },
   kaiscreen: (c) => {
     c.post((p) => { for (let i = 0; i <= 10; i++) { const a = Math.PI + (i / 10) * Math.PI; for (let r = 11; r <= 12; r++) p.px(Math.round(12 + Math.cos(a) * r), Math.round(18 + Math.sin(a) * r), rgba("#ffe080", r === 11 ? 0.9 : 0.45)); } });
@@ -1748,26 +1750,22 @@ const DISC: Record<string, (c: Ic) => void> = {
     c.o(6, 11, "#ffffff"); c.o(7, 10, rgba("#ffffff", 0.7)); c.o(5, 12, rgba("#ffffff", 0.7));
   },
   grandnexus: (c) => {
-    const q: [number, string][] = [[0, "#e8502a"], [1, "#3a7ad8"], [2, "#4aa64f"], [3, "#e8e4f0"]];
-    for (const [i, col] of q) {
-      const T = tone(col);
-      c.fn((x, y) => {
-        const a = (Math.atan2(y - 12, x - 12) + Math.PI * 2.75) % (Math.PI * 2);
-        return Math.hypot(x - 12, y - 12) <= 9 && Math.floor(a / (Math.PI / 2)) === i ? T : undefined;
-      });
-    }
-    c.ring(12, 12, 10.5, 10.5, 1.6, tone(C.gold, { shiny: true }));
-    c.ball(12, 12, 2.2, tone("#ffffff"));
+    c.ring(12, 12, 9, 9, 1.4, tone(C.gold, { shiny: true }));
+    const orbs: [number, number, string][] = [[12, 3.5, "#ee5a26"], [20.5, 12, "#3a7ad8"], [12, 20.5, "#4aa64f"], [3.5, 12, "#e4e8f4"]];
+    for (const [x, y, col] of orbs) c.ball(x, y, 3.2, tone(col, { shiny: true }));
+    c.ball(12, 12, 3.4, tone("#fff2c0", { shiny: true }));
+    c.glow("#fff0b0", 1, 0.4);
   },
   telegnosis: (c) => {
     const H = tone("#3a3e6a", { gr: 1.1 });
     c.fn((x, y) => (y >= 15 && ((x - 12) / 10) ** 2 + ((y - 24) / 8.5) ** 2 <= 1 ? H : undefined));
     c.ball(12, 11, 6.2, tone("#3a3e6a"));
+    c.ofn((x, y) => { const r = Math.hypot(x - 12, (y - 10.5) * 1.3); return r < 5 ? rgba("#7ad8ff", 0.55 - r * 0.1) : undefined; });
     c.post((p) => {
-      for (let i = 0; i < 9; i++) { const a = Math.PI + (i / 8) * Math.PI; for (let r = 4; r <= 6; r++) p.px(Math.round(12 + Math.cos(a) * r * 1.6), Math.round(9 + Math.sin(a) * r * 1.25), rgba("#9ae8ff", 0.95 - (r - 4) * 0.3)); }
       for (const [x, y] of [[11, 9], [12, 9], [10, 10], [13, 10], [11, 11], [12, 11]] as const) p.px(x, y, "#e8fbff");
       p.px(11, 10, "#3ab8e8"); p.px(12, 10, "#1a5a9a");
     });
+    c.spark(5, 4, "#d0ffff", true); c.spark(19, 3, "#d0ffff"); c.spark(20, 9, "#d0ffff");
   },
   magimagic: (c) => {
     openBook(c);
