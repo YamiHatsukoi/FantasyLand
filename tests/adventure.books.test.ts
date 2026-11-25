@@ -8,7 +8,7 @@
 import { describe, expect, it } from "vitest";
 import {
   battleExit, canEvade, choiceState, continueRun, discsOf, enter, newRun, phase, playRound, randomResult,
-  startBattle, takeOffer, apply, visibleChoices, rollRandom, carryNeeds, playChoice,
+  startBattle, takeOffer, apply, visibleChoices, rollRandom, carryNeeds, playChoice, heroCs, answerRiddle,
 } from "../src/adventure/engine";
 import type { AdvState, Book, Disc } from "../src/adventure/types";
 
@@ -98,7 +98,13 @@ function playOnce(book: Book, s: AdvState, rng: () => number, r: Report, careful
         continue;
       }
       const b = startBattle(book, s, sec);
-      for (let round = 0; round < 200 && !b.over; round++) playRound(book, s, b, canEvade(book, s, b) && rng() < 0.15, rng);
+      // evade now and then; mostly when the fight looks hopeless (as a reader would)
+      const grim = () => {
+        const foe = b.foes[b.idx];
+        const ratio = heroCs(book, s, sec.combat!, foe.def, b.mind, b.round).total - foe.def.cs;
+        return ratio <= -3 || s.ep <= Math.min(10, foe.ep / 2);
+      };
+      for (let round = 0; round < 200 && !b.over; round++) playRound(book, s, b, canEvade(book, s, b) && rng() < (grim() ? 0.85 : 0.15), rng);
       if (!b.over) throw new Error(`§${s.section}: combat never ended`);
       const to = battleExit(book, s, b);
       if (to === null) continue; // death: next loop reports the end
@@ -137,6 +143,12 @@ function playOnce(book: Book, s: AdvState, rng: () => number, r: Report, careful
     if (c.roll) {
       const to = playChoice(book, s, c, rollRandom(c.roll, rng)).to;
       if (!s.ended && to) enter(book, s, to);
+      continue;
+    }
+    if (c.riddle) {
+      // a riddle is answered right some of the time; a wrong answer without `fail` stays here
+      const to = answerRiddle(c, rng() < 0.6 ? c.to : "0");
+      if (to) enter(book, s, to);
       continue;
     }
     if (c.fx) apply(book, s, c.fx);
