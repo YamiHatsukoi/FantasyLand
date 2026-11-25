@@ -16,13 +16,13 @@ import { makeScene } from "./art/scene";
 import { playCutscene } from "./cutscene";
 import {
   choiceState, condText, discsOf, drop, eatMeal, enter, epMax, itemName, newRun, pendingLoss, phase, pick10,
-  profile, randomResult, retry, takeOffer, useItem, apply, type Change,
+  profile, randomResult, retry, takeOffer, useItem, apply, continueRun, visibleChoices, type Change,
 } from "./engine";
 import { runFight } from "./fight";
 import { importBook, listBooks, loadBook, removeBook, type BookEntry } from "./library";
 import { AdvSaves, type SlotInfo } from "./save";
 import { Stage } from "./stage";
-import type { AdvState, Book, Disc, Offer } from "./types";
+import type { AdvState, Book, Disc, Offer, Section } from "./types";
 import { WorldMapView, mapPlace } from "./worldmap";
 
 export interface AdventureOpts {
@@ -117,7 +117,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
         h("div", { class: "section-title" }, "Ô lưu"),
         ...slots.map((sl) => {
           const d = sl.data;
-          if (!d) return h("button", { class: "adv-slot empty", type: "button", onclick: () => create(book, sl.slot, entry) }, h("b", null, `Ô ${sl.slot + 1}`), h("span", null, "+ Cuộc phiêu lưu mới"));
+          if (!d) return h("button", { class: "adv-slot empty", type: "button", onclick: () => void startNew(book, sl.slot, entry) }, h("b", null, `Ô ${sl.slot + 1}`), h("span", null, "+ Cuộc phiêu lưu mới"));
           const st = d.ended === "victory" ? "Đã hoàn thành" : d.ended === "death" ? "Đã tử nạn" : `Đoạn ${d.section} · ${d.steps} bước`;
           return h("div", { class: "adv-slot" },
             h("button", { class: "adv-slot-main", type: "button", onclick: () => play(book, sl.slot, d, entry) },
@@ -144,6 +144,74 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       sfx("good");
       return n;
     })();
+  }
+
+  /** A new adventure: a fresh hero, or the hero who finished the previous book. */
+  async function startNew(book: Book, slot: number, entry: BookEntry) {
+    clearStage();
+    let heroes: AdvState[] = [];
+    try {
+      const prev = (await listBooks(session)).find((b) => b.num === book.num - 1);
+      if (prev) {
+        const prevBook = await loadBook(session, prev);
+        if ((prevBook.rules ?? "kai") === (book.rules ?? "kai")) {
+          heroes = (await new AdvSaves(session, prev.id).list()).map((x) => x.data).filter((d): d is AdvState => !!d && d.ended === "victory");
+        }
+      }
+    } catch { /* offline or no earlier book: fresh hero only */ }
+    if (!heroes.length) return create(book, slot, entry);
+    el.replaceChildren(topbar("Cuộc phiêu lưu mới", () => void openBook(entry)),
+      h("div", { class: "adv-create" },
+        h("p", null, `Bạn đã hoàn thành cuốn ${book.num - 1}. Mang nhân vật sang cuốn này để giữ chỉ số, kỹ năng và hành trang, và học thêm 1 kỹ năng mới.`),
+        ...heroes.map((p) => h("button", { class: "adv-slot-main", type: "button", onclick: () => carryOver(book, slot, entry, p) },
+          h("b", null, p.name), h("span", { class: "adv-slot-stats" }, ui("cs", 1), ` ${p.cs}  `, ui("ep", 1), ` ${p.epBase}  `, ui("gold", 1), ` ${p.gold}  · ${p.disciplines.length} kỹ năng`))),
+        h("button", { class: "btn block", type: "button", onclick: () => create(book, slot, entry) }, "Tạo nhân vật mới")));
+  }
+
+  function carryOver(book: Book, slot: number, entry: BookEntry, prev: AdvState) {
+    const discs = discsOf(book).filter((d) => !prev.disciplines.includes(d));
+    let newDisc: Disc | undefined;
+    const r = { gold: -1, ws: -1 };
+    const picks: number[][] = book.kit.picks.map(() => []);
+    const body = h("div", { class: "adv-create" });
+    const startBtn = h("button", { class: "btn primary big block", type: "button" }, "Lên đường");
+    const goldWheel = h("div");
+    const optLabel = (o: Book["kit"]["picks"][number]["options"][number]) => "gold" in o
+      ? h("span", { class: "adv-chip-item" }, ui("gold", 1), `${o.gold} Vương Miện Vàng`)
+      : h("span", { class: "adv-chip-item" }, iconEl(itemIcon(o.gain, o.type), 1), `${itemName(book, o.gain)}${(o.n ?? 1) > 1 ? ` ×${o.n}` : ""}`);
+    const draw = () => {
+      body.replaceChildren(...nn(
+        h("h2", { class: "adv-h2" }, `${prev.name} tiếp tục hành trình`),
+        h("div", { class: "section-title" }, discs.length ? "Học thêm 1 kỹ năng" : "Đã thông thạo mọi kỹ năng"),
+        h("div", { class: "adv-disc-grid" }, ...discs.map((d) => h("button", { class: `adv-disc ${newDisc === d ? "on" : ""}`, type: "button", onclick: () => { newDisc = d; draw(); } },
+          iconEl(discIcon(d), 2), h("b", null, book.names.disc[d] ?? d), book.names.discDesc?.[d] ? h("small", null, book.names.discDesc[d]) : null))),
+        newDisc === "weaponskill" ? h("div", { class: "adv-pick" }, h("span", null, "Vũ khí sở trường"), r.ws < 0
+          ? h("button", { class: "btn small", type: "button", onclick: async () => { const w = h("div"); body.append(w); r.ws = await wheelRoll(w); draw(); } }, "Bốc số")
+          : h("span", { class: "adv-chip-item" }, iconEl(itemIcon(book.weaponskill[r.ws], "weapon"), 1), itemName(book, book.weaponskill[r.ws]))) : null,
+        h("div", { class: "section-title" }, "Trang bị cho chuyến đi"),
+        book.kit.gold.random ? h("div", { class: "row" }, ui("gold"), r.gold < 0
+          ? h("button", { class: "btn small", type: "button", onclick: async (e: Event) => { (e.currentTarget as HTMLButtonElement).disabled = true; r.gold = await wheelRoll(goldWheel); draw(); } }, "Bốc số Vương Miện Vàng")
+          : h("b", null, `+${r.gold + book.kit.gold.add} Vương Miện Vàng (tối đa 50)`), goldWheel) : null,
+        ...book.kit.picks.map((p, i) => h("div", { class: "adv-pick" }, h("span", null, p.mode === "random" ? "Bốc số một món:" : `Chọn tối đa ${p.count} món (Ba Lô tối đa 8, vũ khí tối đa 2):`),
+          p.mode === "random"
+            ? (picks[i].length ? optLabel(p.options[picks[i][0]]) : h("button", { class: "btn small", type: "button", onclick: async () => { const w = h("div"); body.append(w); picks[i] = [await wheelRoll(w)]; draw(); } }, "Bốc số"))
+            : h("div", { class: "adv-pick-opts" }, ...p.options.map((o, j) => h("button", { class: `adv-opt ${picks[i].includes(j) ? "on" : ""}`, type: "button", onclick: () => {
+              const k = picks[i].indexOf(j);
+              if (k >= 0) picks[i].splice(k, 1); else if (picks[i].length < p.count) picks[i].push(j);
+              draw();
+            } }, optLabel(o)))))),
+        startBtn));
+      startBtn.disabled = (discs.length > 0 && !newDisc) || (book.kit.gold.random && r.gold < 0) || (newDisc === "weaponskill" && r.ws < 0)
+        || book.kit.picks.some((p, i) => p.mode === "random" && !picks[i].length);
+    };
+    startBtn.onclick = async () => {
+      const s = continueRun(book, prev, { newDisc, picks, goldRoll: Math.max(0, r.gold), weaponskillRoll: r.ws });
+      saves!.save(slot, s, true);
+      if (book.intro.length) await introScreen(book);
+      play(book, slot, s, entry);
+    };
+    el.replaceChildren(topbar("Mang nhân vật sang", () => void startNew(book, slot, entry)), body);
+    draw();
   }
 
   function create(book: Book, slot: number, entry: BookEntry) {
@@ -364,18 +432,26 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
           const n = await wheelRoll(wheel);
           const res = randomResult(book, sec, s, n);
           const extra = res.fx ? apply(book, s, res.fx) : [];
+          if (res.end) { s.ended = res.end; save(true); showChanges(extra); }
           actions.append(h("div", { class: "adv-roll" }, `Số ${n}${res.add ? ` ${res.add > 0 ? "+" : ""}${res.add} = ${res.value}` : ""}`),
-            h("button", { class: "btn primary block", type: "button", onclick: () => void goTo(res.to, extra) }, "Tiếp tục"));
+            h("button", { class: "btn primary block", type: "button", onclick: () => (res.end ? render() : void goTo(res.to, extra)) }, "Tiếp tục"));
           save();
         } }, ui("dice"), "Bốc số ngẫu nhiên"));
         return;
       }
-      for (const c of sec.choices ?? []) {
+      for (const c of visibleChoices(sec, s)) {
         const st = choiceState(s, c);
         if (st === "hidden") continue;
-        actions.append(h("button", { class: `adv-choice ${st === "locked" ? "locked" : ""}`, type: "button", disabled: st === "locked", onclick: () => void goTo(c.to) },
+        actions.append(h("button", { class: `adv-choice ${st === "locked" ? "locked" : ""}`, type: "button", disabled: st === "locked", onclick: () => pick(c) },
           h("span", null, c.text), st === "locked" ? h("span", { class: "adv-lock" }, ui("lock", 1), condText(book, c.if)) : h("span", { class: "adv-go" }, "›")));
       }
+    }
+
+    /** A choice: pay its price / apply its effects, then go (or stay, for repeatable purchases). */
+    function pick(c: NonNullable<Section["choices"]>[number]) {
+      const ch = c.fx ? apply(book, s, c.fx) : [];
+      if (c.repeat) { save(); render(); showChanges(ch); return; }
+      void goTo(c.to, ch);
     }
 
     function offersBox() {

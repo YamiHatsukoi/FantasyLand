@@ -79,7 +79,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       foeBar.set(foe.ep, foe.def.ep);
       foeName.textContent = `${foe.def.name}${b.foes.length > 1 ? ` (${b.idx + 1}/${b.foes.length})` : ""}`;
       foeCs.replaceChildren(iconEl(uiIcon("cs"), 1), ` ${foe.def.cs}`);
-      const cs = heroCs(book, s, c, foe.def, b.mind);
+      const cs = heroCs(book, s, c, foe.def, b.mind, b.round);
       const ratio = cs.total - foe.def.cs;
       ratioEl.replaceChildren(h("span", null, "Chênh lệch"), h("b", { class: ratio >= 0 ? "good" : "bad" }, `${ratio > 0 ? "+" : ""}${ratio}`));
       csList.replaceChildren(h("span", null, iconEl(uiIcon("cs"), 1), ` Kỹ Năng Chiến Đấu ${cs.total}`),
@@ -238,11 +238,15 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       const exit = battleExit(book, s, b);
       onChange();
       const win = b.over === "win";
-      const title = win ? "CHIẾN THẮNG" : b.over === "evaded" ? "ĐÃ THOÁT" : b.over === "timeout" ? "HẾT GIỜ" : "BẠI TRẬN";
+      const title = win ? "CHIẾN THẮNG" : b.over === "evaded" ? "ĐÃ THOÁT" : b.over === "timeout" ? (c.compare ? "HẾT HIỆP" : "HẾT GIỜ") : b.over === "beaten" ? "THUA TRẬN" : "BẠI TRẬN";
       if (win) { hero.pose = "idle"; stage.play(hero, "cast", 900); stage.burst(hero.x, gy - 40, "#ffd27a", 30, 2.2, { glow: true }); }
       sfx(b.over === "lose" ? "defeat" : "victory");
-      const cont = h("button", { class: "btn primary big", type: "button", onclick: () => { stage.destroy(); el.remove(); playMusic("title"); resolve({ battle: b, exit }); } }, "Tiếp tục");
-      banner.replaceChildren(h("div", { class: `adv-fbanner-box ${b.over}` }, h("div", { class: "t" }, title), cont));
+      const done = (to: string | null) => { stage.destroy(); el.remove(); playMusic("title"); resolve({ battle: b, exit: to }); };
+      const alts = b.over === "evaded" ? c.evade?.alt ?? [] : [];
+      const buttons = alts.length
+        ? [h("button", { class: "btn primary", type: "button", onclick: () => done(exit) }, "Chạy theo lối đã định"), ...alts.map((a) => h("button", { class: "btn", type: "button", onclick: () => done(a.to) }, a.text))]
+        : [h("button", { class: "btn primary big", type: "button", onclick: () => done(exit) }, "Tiếp tục")];
+      banner.replaceChildren(h("div", { class: `adv-fbanner-box ${b.over}` }, h("div", { class: "t" }, title), ...buttons));
       banner.classList.add("show");
     }
 

@@ -92,6 +92,8 @@ export interface Choice {
   force?: boolean;
   /** Buying more: applies its fx and stays in the section. */
   repeat?: boolean;
+  /** Where the choice sits in the explore view (an exit, a door, a person or an object). */
+  via?: { exit?: "north" | "south" | "east" | "west"; door?: string; npc?: string; object?: string };
 }
 
 export interface RandomPick {
@@ -113,6 +115,8 @@ export interface Scene {
   actors: string[];
   mood: "calm" | "tense" | "danger" | "combat" | "sad" | "mystery" | "triumph";
   cutscene?: boolean;
+  /** The section plays as a walkable area (explore mode). */
+  explore?: boolean;
 }
 
 export interface Section {

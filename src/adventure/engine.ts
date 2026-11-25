@@ -79,6 +79,38 @@ export function newRun(book: Book, h: NewHero): AdvState {
   return s;
 }
 
+/**
+ * Continue with the hero of a finished earlier book (Lone Wolf rules): stats, disciplines,
+ * gear, gold and flags carry over; one new discipline is learnt per finished book; the new
+ * book's equipment offer is added on top (as far as there is room).
+ */
+export function continueRun(book: Book, prev: AdvState, h: { newDisc?: Disc; picks: number[][]; goldRoll?: number; weaponskillRoll?: number; mastered?: string[] }): AdvState {
+  const now = Date.now();
+  const s: AdvState = {
+    ...JSON.parse(JSON.stringify(prev)) as AdvState,
+    v: 2, book: book.id, section: book.start, csNext: 0, csBook: 0, offers: [], fought: false, hurt: false,
+    visited: [], steps: 0, created: now, updated: now, ended: undefined, back: undefined,
+  };
+  // flags of the old book stay (later books ask "have you ever…"), cutscene marks do not
+  for (const f of Object.keys(s.flags)) if (f.startsWith("cut:")) delete s.flags[f];
+  if (h.newDisc && !s.disciplines.includes(h.newDisc)) s.disciplines.push(h.newDisc);
+  if (h.newDisc === "weaponskill" && !s.weaponskill) s.weaponskill = book.weaponskill[h.weaponskillRoll ?? 0];
+  if (h.mastered?.length) s.mastered = [...new Set([...(s.mastered ?? []), ...h.mastered])];
+  s.gold = Math.min(MAX_GOLD, s.gold + book.kit.gold.add + (book.kit.gold.random ? h.goldRoll ?? 0 : 0));
+  for (const it of book.kit.items) if (!has(s, it.gain)) give(book, s, it.gain, it.type, it.n ?? 1);
+  book.kit.picks.forEach((p, i) => {
+    for (const idx of h.picks[i] ?? []) {
+      const o = p.options[idx];
+      if (!o) continue;
+      if ("gold" in o) s.gold = Math.min(MAX_GOLD, s.gold + o.gold);
+      else give(book, s, o.gain, o.type, o.n ?? 1);
+    }
+  });
+  s.ep = epMax(book, s); // a new adventure starts rested
+  enter(book, s, book.start);
+  return s;
+}
+
 // ------------------------------------------------------------------ items
 
 export function epMax(book: Book, s: AdvState) {
