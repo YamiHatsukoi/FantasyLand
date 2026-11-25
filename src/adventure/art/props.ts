@@ -7,7 +7,7 @@
  */
 import { creatureFrame } from "./creatures";
 import { lookFor, personFrame } from "./people";
-import { Px, hs, hueOutline, memo, mix } from "./px";
+import { Px, hs, hueOutline, memo } from "./px";
 
 export type PropState = "" | "open" | "broken" | "burning" | "closed";
 
@@ -26,7 +26,6 @@ const IRON = ["#2a2a32", "#4a4a56", "#70707e", "#a0a0ae"];
 const STONE = ["#4e4c54", "#6c6a72", "#8c8a92", "#b0aeb4"];
 const GOLD = ["#7a4a10", "#c08a24", "#f0c050", "#fff0a0"];
 const CLOTH = ["#5a4030", "#8a6a48", "#b89a6a", "#dcc59a"];
-const CHAR = (c: string) => mix(c, "#1a1210", 0.62);
 
 /** Wood plank texture in a rectangle (vertical planks). */
 function planks(p: Px, x: number, y: number, w: number, h: number, pal = WOOD, vertical = true, seed = 1) {

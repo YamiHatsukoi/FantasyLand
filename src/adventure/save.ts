@@ -73,6 +73,13 @@ export class AdvSaves {
     return out;
   }
 
+  /** What this device holds for each slot, at once (no network): for badges and quick looks. */
+  peek(): (AdvState | null)[] {
+    const out: (AdvState | null)[] = [];
+    for (let slot = 0; slot < SLOTS; slot++) out.push(this.readLocal(slot)?.data ?? null);
+    return out;
+  }
+
   /** Call after every change; the server copy follows within a couple of seconds. */
   save(slot: number, data: AdvState, now = false) {
     const v = this.versions.get(slot) ?? 0;

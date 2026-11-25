@@ -188,6 +188,7 @@ export class StageFit {
     const feet = this.stage.scene.groundY;
     const ay = this.o.anchorY ?? 0.78;
     const top = ch <= H ? (H - ch) / 2 : Math.max(H - ch, Math.min(0, H * ay - feet * s));
+    this.stage.visibleX = [Math.max(0, -left / s), Math.min(SW, (W - left) / s)];
     const cv = this.stage.canvas;
     cv.style.width = `${cw}px`;
     cv.style.height = `${ch}px`;

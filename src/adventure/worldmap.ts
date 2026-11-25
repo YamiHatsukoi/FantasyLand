@@ -4,7 +4,7 @@
  * its scene (forest, swamp, city...). Fog hides what the hero has not reached yet; the hero
  * walks the road when the story moves to another place.
  */
-import { personCanvas } from "../render/people";
+import { lookFor, personFrame, type Facing, type Look } from "./art/people";
 import { T, TS } from "../render/tiles";
 import { G, hash, noise, paintMap, type ArtNode, type MapFx, type Pt } from "./art/mapart";
 import type { Bg } from "./types";
@@ -278,6 +278,8 @@ export interface MapViewOpts {
   here: string;
   label: (place: string) => string;
   onTapPlace?: (place: string) => void;
+  /** The hero as the walkable areas and stages draw him (Adventure's sprite, with his weapon). */
+  heroLook?: Look;
 }
 
 let GLOW: HTMLCanvasElement | null = null, CLOUD: HTMLCanvasElement | null = null;
@@ -311,7 +313,9 @@ export class WorldMapView {
   private fog: HTMLCanvasElement;
   private zoom = 2;
   private cam: { x: number; y: number };
-  private hero: { x: number; y: number; dir: 0 | 1 | 2; flip: boolean; walking: boolean };
+  private hero: { x: number; y: number; facing: Facing; walking: boolean; phase: number };
+  /** While travelling: where to, and the road still ahead. */
+  private trip: { to: string; pts: { x: number; y: number }[]; i: number } | null = null;
   private raf = 0;
   private alive = true;
   private drag: { x: number; y: number; cx: number; cy: number; moved: boolean } | null = null;
@@ -326,7 +330,7 @@ export class WorldMapView {
     this.el.className = "adv-map";
     this.el.append(this.cv);
     const n = o.map.nodes[o.here] ?? Object.values(o.map.nodes)[0];
-    this.hero = { x: n.x, y: n.y, dir: 0, flip: false, walking: false };
+    this.hero = { x: n.x, y: n.y, facing: "down", walking: false, phase: 0 };
     this.cam = { x: n.x, y: n.y };
     this.fog = document.createElement("canvas");
     this.updateFog();
@@ -351,6 +355,8 @@ export class WorldMapView {
       if (!this.o.visited.has(a) && !this.o.visited.has(b)) continue;
       for (const p of this.terrain.roads.get(`${a}|${b}`) ?? []) seen.push({ x: p.x, y: p.y, r: 2.5 });
     }
+    // the road being travelled
+    this.trip?.pts.forEach((p, i) => { if (i % 2 === 0) seen.push({ x: p.x, y: p.y, r: 2.5 }); });
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       let a = 1;
       for (const s of seen) { const d = Math.hypot(s.x - x, s.y - y); if (d < s.r + 3) a = Math.min(a, Math.max(0, (d - s.r) / 3)); if (!a) break; }
@@ -373,6 +379,9 @@ export class WorldMapView {
     if (!pts.length) { const n = this.o.map.nodes[to]; if (n) { this.hero.x = n.x; this.hero.y = n.y; } return Promise.resolve(); }
     const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     const ms = reduce ? 0 : Math.max(1400, Math.min(3600, pts.length * 90));
+    this.trip = { to, pts, i: 0 };
+    // the way there and the place are shown before he sets off
+    if (!this.o.visited.has(to)) { this.o.visited = new Set([...this.o.visited, to]); this.updateFog(); }
     return new Promise((res) => {
       const start = performance.now();
       let skip = false;
@@ -384,11 +393,13 @@ export class WorldMapView {
         const i = Math.floor(f), a = pts[i], b = pts[Math.min(pts.length - 1, i + 1)], u = f - i;
         const nx = a.x + (b.x - a.x) * u, ny = a.y + (b.y - a.y) * u;
         const dx = nx - this.hero.x, dy = ny - this.hero.y;
-        if (Math.abs(dx) > Math.abs(dy)) { this.hero.dir = 2; this.hero.flip = dx < 0; } else if (dy) this.hero.dir = dy < 0 ? 1 : 0;
+        if (Math.abs(dx) > Math.abs(dy)) this.hero.facing = dx < 0 ? "left" : "right"; else if (dy) this.hero.facing = dy < 0 ? "up" : "down";
+        this.hero.phase += Math.hypot(dx, dy);
         this.hero.x = nx; this.hero.y = ny; this.hero.walking = t < 1;
+        if (this.trip) this.trip.i = i;
         this.cam.x += (nx - this.cam.x) * 0.15; this.cam.y += (ny - this.cam.y) * 0.15;
         if (t < 1 && this.alive) requestAnimationFrame(step);
-        else { this.cv.removeEventListener("pointerdown", onTap); this.hero.walking = false; this.hero.dir = 0; res(); }
+        else { this.cv.removeEventListener("pointerdown", onTap); this.hero.walking = false; this.hero.facing = "down"; this.trip = null; res(); }
       };
       requestAnimationFrame(step);
     });
@@ -480,6 +491,20 @@ export class WorldMapView {
     }
   }
 
+  /** A small banner planted at the destination, waving. */
+  private flag(c: CanvasRenderingContext2D, x: number, y: number, t: number) {
+    const u = Math.max(1, Math.round(this.zoom * 0.75)), X = Math.round(x), Y = Math.round(y);
+    c.fillStyle = "rgba(0,0,0,.35)"; c.fillRect(X - 3 * u, Y, 7 * u, u);
+    c.fillStyle = "#3a2414"; c.fillRect(X, Y - 16 * u, u, 16 * u);
+    const wave = Math.round(Math.sin(t / 220) * u);
+    c.fillStyle = "#7a1418"; c.fillRect(X + u, Y - 16 * u, 8 * u, 6 * u + wave);
+    c.fillStyle = "#c8282e"; c.fillRect(X + u, Y - 16 * u, 7 * u, 5 * u + wave);
+    c.fillStyle = "#ffd27a"; c.fillRect(X + 3 * u, Y - 14 * u, 2 * u, 2 * u);
+    const pulse = (t / 900) % 1;
+    c.strokeStyle = `rgba(255,210,122,${1 - pulse})`; c.lineWidth = Math.max(1, u);
+    c.beginPath(); c.ellipse(X, Y, (4 + pulse * 10) * u, (2 + pulse * 5) * u, 0, 0, Math.PI * 2); c.stroke();
+  }
+
   private draw(t: number) {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const W = this.cv.clientWidth, H = this.cv.clientHeight;
@@ -492,17 +517,29 @@ export class WorldMapView {
     c.fillRect(0, 0, W, H);
     const ox = W / 2 - (this.cam.x + 0.5) * k, oy = H / 2 - (this.cam.y + 0.5) * k;
     c.drawImage(this.art, ox, oy, this.art.width * this.zoom, this.art.height * this.zoom);
-    // hero
-    const frame = this.hero.walking ? Math.floor(t / 140) % 4 : 0;
-    const spr = personCanvas("hero_ranger", undefined, this.hero.dir, frame);
-    const sw = spr.width * this.zoom, shh = spr.height * this.zoom;
-    const hx = ox + (this.hero.x + 0.5) * k, hy = oy + (this.hero.y + 1) * k;
+    // the road ahead and where it leads
+    if (this.trip) {
+      const { pts, i, to } = this.trip;
+      c.fillStyle = "rgba(255,226,140,.85)";
+      for (let j = i + 1; j < pts.length; j++) {
+        if ((j + Math.floor(t / 160)) % 3) continue;
+        const s = Math.max(2, Math.round(this.zoom * 1.2));
+        c.fillRect(Math.round(ox + (pts[j].x + 0.5) * k - s / 2), Math.round(oy + (pts[j].y + 0.5) * k - s / 2), s, s);
+      }
+      const n = this.o.map.nodes[to];
+      if (n) this.flag(c, ox + (n.x + 0.5) * k, oy + (n.y + 0.7) * k, t);
+    }
+    // hero: Adventure's own sprite (32 x 48 art at half the map's zoom, about a tile wide), walking four ways
+    const look = this.o.heroLook ?? lookFor("lonewolf");
+    const frame = this.hero.walking ? Math.floor(t / 130) : Math.floor(t / 480);
+    const spr = personFrame(look, this.hero.facing, this.hero.walking ? "walk" : "idle", frame);
+    const sc = this.zoom / 2;
+    const sw = spr.width * sc, shh = spr.height * sc;
+    // feet on the road's centre line (roads are painted through tile centres)
+    const hx = ox + (this.hero.x + 0.5) * k, hy = oy + (this.hero.y + 0.62) * k;
     c.fillStyle = "rgba(0,0,0,.35)";
-    c.beginPath(); c.ellipse(hx, hy - 2 * this.zoom, 6 * this.zoom, 2.5 * this.zoom, 0, 0, Math.PI * 2); c.fill();
-    c.save();
-    if (this.hero.flip) { c.translate(hx, 0); c.scale(-1, 1); c.translate(-hx, 0); }
-    c.drawImage(spr, hx - sw / 2, hy - shh, sw, shh);
-    c.restore();
+    c.beginPath(); c.ellipse(hx, hy - 2 * sc, 8 * sc, 3 * sc, 0, 0, Math.PI * 2); c.fill();
+    c.drawImage(spr, Math.round(hx - sw / 2), Math.round(hy - shh), Math.round(sw), Math.round(shh));
     if (!this.calm) this.ambient(c, t, ox, oy, W, H);
     // fog, smoothed
     c.imageSmoothingEnabled = true;

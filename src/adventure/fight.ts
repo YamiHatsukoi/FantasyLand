@@ -24,7 +24,7 @@ import { arrowHead, darkOrbHead, digitsSprite, disc, ease, FxLayer, ring, type E
 import { iconEl, uiIcon } from "./art/icons";
 import { lookFor, personFrame, portrait, withWeapon, type Look, type Pose, type WeaponKind } from "./art/people";
 import { battleExit, canEvade, epMax, heroCs, itemName, playRound, profile, startBattle, type Battle, type RoundResult } from "./engine";
-import { isMonster, Stage, H as SH, W as SW } from "./stage";
+import { isMonster, OUT, Stage, H as SH, W as SW } from "./stage";
 import type { AdvState, Book, FoeDef } from "./types";
 import { bump, gameBtn, StageFit } from "./ui";
 
@@ -130,6 +130,7 @@ interface Pup {
   alpha: number;
   flashUntil: number;
   flashCol: string;
+  flashA: number;
   rot: number;
   sx: number;
   sy: number;
@@ -268,10 +269,11 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
     const gy = stage.scene.groundY;
     stage.actors = [];
     const fx = new FxLayer(gy);
+    fx.popTop = 50;
     const kits = b.foes.map((f) => foeKit(f.def));
 
     const pup = (id: string, x: number, facing: "left" | "right", o: Partial<Pup> = {}): Pup => ({
-      id, monster: isMonster(id), x, y: gy, z: 0, hover: 0, kx: 0, facing, pose: "idle", f: 0, phase: 0, alpha: 1, flashUntil: 0, flashCol: "#fff",
+      id, monster: isMonster(id), x, y: gy, z: 0, hover: 0, kx: 0, facing, pose: "idle", f: 0, phase: 0, alpha: 1, flashUntil: 0, flashCol: "#fff", flashA: 0.7,
       rot: 0, sx: 1, sy: 1, hidden: false, dissolve: 0, ghost: "", ghosts: [], ghostAt: 0, shakeUntil: 0, aura: "", ...o,
     });
     const hero = pup("lonewolf", HERO_X, "right", { look: heroLook, monster: false });
@@ -284,6 +286,9 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
     const foeName = h("div", { class: "adv-fname" });
     const foeCs = h("div", { class: "adv-fcs" });
     const ratioEl = h("div", { class: "adv-ratio fr-panel" });
+    // the fate reel: its own little pixel canvas docked under the ratio chip (always in view)
+    const RW = 40, RH = 40;
+    const reelCv = h("canvas", { class: "adv-freel", width: String(RW * OUT), height: String(RH * OUT) }) as HTMLCanvasElement;
     const csList = h("div", { class: "adv-cs-list" });
     const wheel = h("div", { class: "adv-wheel" }, ...Array.from({ length: 10 }, (_, i) => h("span", { "data-n": String(i) }, String(i))));
     const log = h("div", { class: "adv-flog" });
@@ -307,7 +312,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       h("div", { class: "adv-fight-stage" }, arena, h("div", { class: "adv-scene-shade" }), h("div", { class: "adv-fvig" }),
         h("div", { class: "adv-fhud" },
           h("div", { class: "adv-fside hero fr-chip" }, faceBox, h("div", null, h("div", { class: "adv-fname" }, s.name), heroBar.el)),
-          ratioEl,
+          h("div", { class: "adv-fmid" }, ratioEl, reelCv),
           h("div", { class: "adv-fside foe fr-foe" }, h("div", null, foeName, foeBar.el, foeCs))),
         card, banner),
       h("div", { class: "adv-fpanel fr-panel" },
@@ -315,7 +320,8 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
         csList, wheel, log, actions));
     host.append(el);
     // the camera frames the two home spots, not the fighters running about
-    const anchors = { canvas: stage.canvas, scene: stage.scene, actors: [{ x: HERO_X }, { x: FOE_X }] } as unknown as Stage;
+    // (a fixed focus: zoom punches must not make the fitter pan)
+    const anchors = { canvas: stage.canvas, scene: stage.scene, actors: [], focusX: (HERO_X + FOE_X) / 2, viewX: (x: number) => x } as unknown as Stage;
     const fit = new StageFit(arena, anchors, { minVis: 0.62, anchorY: 0.82 });
 
     const say = (t: string, cls = "") => {
@@ -342,6 +348,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       return tween(dur, (k) => { for (const p in tgt) (o as Record<string, number>)[p] = from[p] + (tgt[p] - from[p]) * k; }, e);
     };
     const hitStop = (ms: number) => { stopUntil = Math.max(stopUntil, stage.now + ms / speed); };
+    fx.onShake = (amp, ms) => { if (!reduced) stage.shake(ms / speed, amp * 0.42); };
     const zoom = { k: 1, x: SW / 2, y: SH / 2 };
     const punch = (k: number, x: number, y: number, ms = 280) => {
       if (reduced) return;
@@ -356,7 +363,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
     const hold = (p: Pup, pose: Pose | CPose, f: number) => play(p, pose, [f], 100, true);
     const run = (p: Pup, ms = 80) => { p.anim = { pose: "walk", seq: [0, 1, 2, 3], t0: clock, ms, loop: true }; };
     const idle = (p: Pup) => { p.anim = undefined; p.pose = "idle"; };
-    const flash = (p: Pup, col = "#ffffff", ms = 90) => { p.flashUntil = clock + ms; p.flashCol = col; };
+    const flash = (p: Pup, col = "#ffffff", ms = 90, a = 0.7) => { p.flashUntil = clock + ms; p.flashCol = col; p.flashA = a; };
 
     function update(dt: number) {
       clock += dt;
@@ -403,7 +410,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       // afterimages
       for (const gh of p.ghosts) {
         const k = (clock - gh.t) / 170;
-        g.globalAlpha = 0.42 * (1 - k) * p.alpha;
+        g.globalAlpha = 0.3 * (1 - k) * p.alpha;
         g.drawImage(silhouette(gh.fr, p.ghost || "#9ad8ff"), Math.round(gh.x - gh.fr.width / 2), Math.round(gh.y - gh.fr.height));
       }
       g.globalAlpha = 1;
@@ -424,7 +431,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       g.globalAlpha = p.alpha;
       g.drawImage(img, Math.round(-w / 2), -hh);
       if (clock < p.flashUntil) {
-        g.globalAlpha = 0.85 * p.alpha;
+        g.globalAlpha = p.flashA * p.alpha;
         g.drawImage(silhouette(fr, p.flashCol), Math.round(-w / 2), -hh);
       }
       g.restore();
@@ -433,7 +440,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
 
     // ---------------------------------------------------------------- the fate reel (random number)
     const reel = { v: 0, alpha: 0, landAt: -1e9, n: -1, lastTick: 0 };
-    const REEL_X = SW / 2, REEL_Y = 66;
+    const REEL_X = RW / 2, REEL_Y = RH / 2;
     function drawReel(g: CanvasRenderingContext2D) {
       if (reel.alpha <= 0.01) return;
       const bw = 26, bh = 30, x0 = Math.round(REEL_X - bw / 2), y0 = Math.round(REEL_Y - bh / 2);
@@ -443,14 +450,14 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       const rim = landed < 160 ? "#fff6c8" : "#e6b955";
       g.fillStyle = "#090604"; g.fillRect(x0 - 2, y0 - 2, bw + 4, bh + 4);
       g.fillStyle = rim; g.fillRect(x0 - 1, y0 - 1, bw + 2, bh + 2);
-      g.fillStyle = "#1a0f07"; g.fillRect(x0, y0, bw, bh);
-      g.fillStyle = "#2a1a0c"; g.fillRect(x0, y0 + Math.round(bh / 2) - 1, bw, 2);
+      g.fillStyle = "#3a2614"; g.fillRect(x0, y0, bw, bh);
+      g.fillStyle = "#4a3220"; g.fillRect(x0, y0 + Math.round(bh / 2) - 1, bw, 2);
       // the digits roll downwards through the window
       g.save();
       g.beginPath(); g.rect(x0, y0, bw, bh); g.clip();
       const d = Math.floor(reel.v), frac = reel.v - d;
-      const grad: [string, string, string] = ["#fffbe0", "#ffd23a", "#e0641a"];
-      const spr = (n: number) => digitsSprite(String(((n % 10) + 10) % 10), 3, grad);
+      const grad: [string, string, string] = ["#fff8d0", "#ffc83a", "#d85a14"];
+      const spr = (n: number) => digitsSprite(String(((n % 10) + 10) % 10), 3, grad, "#120804");
       for (const [n, off] of [[d, frac], [d + 1, frac - 1]] as [number, number][]) {
         const sp = spr(n);
         const y = Math.round(REEL_Y - sp.height / 2 + off * bh);
@@ -488,7 +495,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       const base = Math.floor(from) + 22;
       const target = base + ((n - (base % 10)) + 10) % 10;
       let shown = -1;
-      await tween(620, (k) => {
+      await tween(360, (k) => {
         reel.v = from + (target - from) * k;
         const dd = ((Math.round(reel.v) % 10) + 10) % 10;
         if (dd !== shown) {
@@ -504,8 +511,9 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       bump(cells[n], "won");
       el.classList.remove("rolling");
       sfx("coin");
-      fx.stars(REEL_X, REEL_Y, { n: 6, w: 14, h: 12, speed: 0.4, life: 500 });
-      await wait(140);
+      bump(reelCv, "land");
+      void wait(420).then(hideReel);
+      await wait(60);
     }
     const hideReel = () => to(reel, { alpha: 0 }, 260);
 
@@ -515,23 +523,31 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       const real = lastT ? Math.min(50, t - lastT) : 16;
       lastT = t;
       update(t < stopUntil ? 0 : real * speed * timeScale);
-      const [sx, sy] = fx.shakeOffset();
-      stage.cam.x = sx; stage.cam.y = sy;
+      stage.cam.zoom = zoom.k;
+      stage.cam.x = SW / 2 + (zoom.x - SW / 2) * Math.min(1, (zoom.k - 1) * 8);
+      stage.cam.y = SH / 2 + (zoom.y - SH / 2) * Math.min(1, (zoom.k - 1) * 8);
       const light = stage.scene.light(t);
       fx.draw(g, "under");
       for (const p of [...pups].sort((a, q) => (a === hero ? 0.5 : 0) - (q === hero ? 0.5 : 0) + a.y - q.y)) drawPup(g, p, light);
       fx.draw(g, "over");
+      return true;
+    });
+    // numbers, words, flashes and the reel: on the output canvas, crisp, outside the zoom
+    stage.screenFx.push((g) => {
+      if (!alive) return false;
+      const z = Math.max(1, stage.cam.zoom), vw = SW / z, vh = SH / z;
+      const x0 = Math.max(0, Math.min(SW - vw, stage.cam.x - vw / 2)), y0 = Math.max(0, Math.min(SH - vh, stage.cam.y - vh / 2));
       g.save();
-      g.setTransform(1, 0, 0, 1, 0, 0);
-      if (zoom.k > 1.002) {
-        const sw = SW / zoom.k, sh = SH / zoom.k;
-        const zx = Math.max(0, Math.min(SW - sw, zoom.x - sw / 2)), zy = Math.max(0, Math.min(SH - sh, zoom.y - sh / 2));
-        g.imageSmoothingEnabled = false;
-        g.drawImage(g.canvas, zx, zy, sw, sh, 0, 0, SW, SH);
-      }
-      drawReel(g);
+      g.imageSmoothingEnabled = false;
+      g.setTransform(OUT * z, 0, 0, OUT * z, -x0 * OUT * z, -y0 * OUT * z);
       fx.draw(g, "screen");
       g.restore();
+      const rg = reelCv.getContext("2d")!;
+      rg.setTransform(1, 0, 0, 1, 0, 0);
+      rg.clearRect(0, 0, reelCv.width, reelCv.height);
+      rg.imageSmoothingEnabled = false;
+      rg.setTransform(OUT, 0, 0, OUT, 0, 0);
+      drawReel(rg);
       return true;
     });
 
@@ -578,7 +594,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       const [x, y] = foeHitPoint(p);
       const k = kitOf(p);
       hitStop(big ? 110 : 55);
-      flash(p, kind === "mind" ? "#e0c8ff" : "#ffffff", big ? 120 : 80);
+      flash(p, "#ffffff", big ? 90 : 60);
       play(p, "hurt", [0, 1, 1], 90);
       p.shakeUntil = clock + 200;
       const push = (big ? 12 : 6) * (k.big ? 0.45 : 1);
@@ -591,7 +607,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       fx.number(x + 6, foeTop(p) - 2, dmg, { crit: big });
       if (big) {
         punch(1.14, x, y);
-        fx.flash("#ffffff", 100, 0.5);
+        if (dmg >= 9 || foeShown - dmg <= 0) fx.flash("#ffffff", 70, 0.26);
         fx.shake(3, 220);
         sfx("crit");
         fx.ring(x, y, { r1: 26, dur: 260, col: "#ffffff", w: 2, glow: true });
@@ -604,14 +620,14 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
     function heroHurt(dmg: number, big: boolean, col = "#ff5040") {
       const [x, y] = heroHitPoint();
       hitStop(big ? 110 : 55);
-      flash(hero, "#ffffff", 90);
+      flash(hero, "#ffffff", 50, 0.6);
       play(hero, "hurt", [0, 1, 1], 100);
       hero.shakeUntil = clock + 220;
       void to(hero, { kx: -(big ? 11 : 6) }, 70).then(() => to(hero, { kx: 0 }, 280, ease.inOutQuad));
       fx.impact(x, y, { r: big ? 14 : 9, col: "#ffd8c8" });
       fx.blood(x - 2, y, { dir: -1, n: 6 + Math.min(14, dmg * 2), col: "#c81e1a", col2: "#6a0a08" });
       fx.number(x - 4, gy - 58, dmg, { crit: big, grad: big ? heroCrit : heroGrad });
-      if (big) { punch(1.12, x, y); fx.flash(col, 110, 0.45); fx.shake(3.5, 260); sfx("crit"); } else { fx.shake(2, 150); sfx("hit"); }
+      if (big) { punch(1.12, x, y); if (dmg >= 9 || heroShown - dmg <= 0) fx.flash(col, 80, 0.24); fx.shake(3.5, 260); sfx("crit"); } else { fx.shake(2, 150); sfx("hit"); }
       heroShown -= dmg;
       heroBar.set(heroShown, epMax(book, s));
       bump(faceBox, "flinch");
@@ -685,14 +701,14 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       if (Math.abs(hero.x - HERO_X) > 1) {
         hero.facing = "right";
         play(hero, "walk", [1], 100, true);
-        moves.push(to(hero, { x: HERO_X }, 260, ease.inOutQuad));
-        moves.push(tween(260, (k) => { hero.z = Math.sin(k * Math.PI) * 6; }, ease.linear));
-        void wait(260).then(() => fx.dust(HERO_X, gy, { n: 3, dir: 0, speed: 0.4 }));
+        moves.push(to(hero, { x: HERO_X }, 190, ease.inOutQuad));
+        moves.push(tween(190, (k) => { hero.z = Math.sin(k * Math.PI) * 6; }, ease.linear));
+        void wait(190).then(() => fx.dust(HERO_X, gy, { n: 3, dir: 0, speed: 0.4 }));
       }
       const p = foes[curFoe];
       if (p && !p.hidden && p.pose !== "dead" && Math.abs(p.x - FOE_X) > 1) {
         p.facing = "left";
-        moves.push(to(p, { x: FOE_X, z: 0 }, 280, ease.inOutQuad));
+        moves.push(to(p, { x: FOE_X, z: 0 }, 200, ease.inOutQuad));
       }
       engaged = false;
       await Promise.all(moves);
@@ -713,8 +729,8 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
         case "arc": {
           await engage(p);
           play(hero, "attack", [0], 100, true);
-          void to(hero, { kx: -2 }, 70);
-          await wait(80);
+          void to(hero, { kx: -2 }, 60);
+          await wait(65);
           play(hero, "attack", [1, 2, 2, 3], 55);
           void to(hero, { kx: 3 }, 60);
           sfx("slash");
@@ -730,15 +746,15 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
             fx.sparks(fx0, fy0, { n: 10, dir: -60, spread: 90, speed: 2.6 });
             fx.impact(fx0, fy0 - 4, { r: 10 });
           }
-          await wait(170);
-          void to(hero, { kx: 0 }, 120);
+          await wait(90);
+          void to(hero, { kx: 0 }, 100);
           break;
         }
         case "over": {
           await engage(p);
           play(hero, "attack", [0], 100, true);
           sfx("whoosh");
-          await Promise.all([to(hero, { z: 13, kx: 3 }, 150, ease.outQuad)]);
+          await to(hero, { z: 13, kx: 3 }, 130, ease.outQuad);
           play(hero, "attack", [1], 100, true);
           void fx.slash(hero.x + 2, gy - 34 - hero.z, { r: 18, a0: -165, a1: -10, col: "#ffe8c0", edge: "#ffffff", thick: 3, dur: 160 });
           await wait(45);
@@ -749,10 +765,10 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
           fx.shake(big ? 4 : 2.5, 220);
           sfx("break");
           land();
-          await wait(230);
+          await wait(130);
           play(hero, "attack", [3], 100);
-          void to(hero, { kx: 0 }, 140);
-          await wait(60);
+          void to(hero, { kx: 0 }, 120);
+          await wait(40);
           break;
         }
         case "thrust": {
@@ -779,16 +795,16 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
           await engage(p);
           sfx("whoosh");
           void fx.whirl(hero.x + 2, gy - 28, { r: 15, dur: 330, turns: 1.6, col: "#e8d0a0" });
-          play(hero, "attack", [0, 1, 2, 3, 0], 55);
-          await wait(280);
+          play(hero, "attack", [0, 1, 2, 3], 55);
+          await wait(220);
           play(hero, "attack", [1, 2, 3], 60);
           sfx("slash");
           void fx.slash(hero.x + 2, gy - 28, { r: 16, a0: -150, a1: 20, col: "#f0dcb0", edge: "#ffffff", thick: 3, dur: 180 });
           void to(hero, { kx: 4 }, 60);
           await wait(50);
           land();
-          await wait(180);
-          void to(hero, { kx: 0 }, 120);
+          await wait(120);
+          void to(hero, { kx: 0 }, 100);
           break;
         }
         case "fist": {
@@ -809,10 +825,10 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
         }
         case "bow": {
           play(hero, "attack", [0], 100, true);
-          await wait(90);
+          await wait(70);
           play(hero, "attack", [1], 100, true);
-          void fx.charge(hero.x + 12, gy - 29, { col: "#fff4c0", dur: 200, r: 10 });
-          await wait(200);
+          void fx.charge(hero.x + 12, gy - 29, { col: "#fff4c0", dur: 170, r: 10 });
+          await wait(170);
           play(hero, "attack", [2, 2, 3], 90);
           sfx("bow");
           const x0 = hero.x + 12, y0 = gy - 29;
@@ -831,7 +847,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
             fx.word(tx, ty - 20, "ĐỠ!", "#ffe08a");
             void fx.projectile(tx, ty, tx - 30, gy - 2, { dur: 260, arc: 14, head: arrowHead });
           }
-          await wait(150);
+          await wait(100);
           break;
         }
       }
@@ -853,31 +869,31 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       hero.aura = col;
       void fx.glyph(hero.x, gy - 1, { r: 15, ry: 0.32, col, dur: 560, layer: "under" });
       sfx("cast", "light");
-      await fx.charge(hx, hy, { col, dur: 260, r: 18 });
+      await fx.charge(hx, hy, { col, dur: 170, r: 18 });
       hero.aura = "";
       if (cost > 0) { fx.number(hero.x - 8, gy - 60, cost, { small: true, grad: ["#ffffff", col, "#5a2a9a"] }); heroShown -= cost; heroBar.set(heroShown, epMax(book, s)); lowCheck(); }
       const [tx, ty] = foeHitPoint(p);
       sfx("whoosh");
-      void fx.psiWave(hx + 4, hy + 6, tx, { col, col2: core, dur: 260, h: 11 });
-      await wait(250);
+      void fx.psiWave(hx + 4, hy + 6, tx, { col, col2: core, dur: 190, h: 11 });
+      await wait(180);
       if (immune) {
         // the wave splashes on a dark ward around the foe
         fx.ring(tx + 4, ty, { r0: 10, r1: 16, dur: 360, col: "#8a8a9a", w: 2 });
         fx.sparks(tx - 6, ty, { n: 10, dir: 180, spread: 140, speed: 1.6, col: "#a0a0b0", col2: "#505060", glow: false });
         void to(p, { sy: 1.06 }, 90).then(() => to(p, { sy: 1 }, 200, ease.outQuad));
-        fx.word(tx, foeTop(p) - 6, "MIỄN NHIỄM", "#b8b8c8", { size: 14 });
+        fx.word(tx, foeTop(p) - 6, "MIỄN NHIỄM", "#b8b8c8", { size: 14, dur: 700 });
         sfx("shield");
         say(`${b.foes[curFoe].def.name} miễn nhiễm với tâm lực.`);
       } else {
         for (let i = 0; i < 3; i++) fx.ring(tx, ty - 4, { r0: 2 + i * 3, r1: 16 + i * 5, dur: 260 + i * 80, col: i ? col : core, w: 1, glow: true });
         fx.burst(tx, ty - 4, { n: 14, col, speed: 1.6, glow: true });
-        flash(p, col, 120);
+        flash(p, col, 110, 0.45);
         p.shakeUntil = clock + 160;
         fx.shake(1.5, 120);
         sfx("impact", "light");
       }
-      play(hero, "cast", [2, 1], 70);
-      await wait(120);
+      play(hero, "cast", [2, 1], 60);
+      await wait(70);
     }
 
     // ---------------------------------------------------------------- foe moves
@@ -904,22 +920,22 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
         case "spear": case "punch": {
           await approach(p, reach + (k.move === "spear" ? 8 : 0));
           play(p, "attack", [0], 100, true);
-          await to(p, { kx: 3 }, 90);
+          await to(p, { kx: 3 }, 70);
           play(p, "attack", [1], 100, true);
           sfx(k.move === "spear" ? "slash" : "whoosh");
           if (k.move === "spear") void fx.thrust(p.x - bodyHalf(p) - 4, gy - 26, hx - 8, { col: "#ffe8d8", dur: 140 });
           fx.speedLines(p.x - 4, gy - 36, 26, 14, -1, { dur: 140, n: 5 });
           await to(p, { kx: -9 }, 60, ease.outExpo);
           land();
-          play(p, "attack", [2, 3], 90);
-          await wait(140);
-          await to(p, { kx: 0 }, 140);
+          play(p, "attack", [2, 3], 80);
+          await wait(90);
+          await to(p, { kx: 0 }, 110);
           break;
         }
         case "slash": case "over": {
           await approach(p, reach);
           play(p, "attack", [0], 100, true);
-          await to(p, { kx: 3, z: k.move === "over" ? 8 : 0 }, 100);
+          await to(p, { kx: 3, z: k.move === "over" ? 8 : 0 }, 80);
           play(p, "attack", [1, 2, 2, 3], 60);
           sfx("slash");
           if (k.move === "over") {
@@ -934,54 +950,54 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
           }
           land();
           if (k.drains && res === "hit") drainWisps(p);
-          await wait(200);
-          await to(p, { kx: 0 }, 140);
+          await wait(130);
+          await to(p, { kx: 0 }, 110);
           break;
         }
         case "swoop": {
           // rise, dive at the hero, rake with claws, climb away
           play(p, "move", [0, 1, 2, 3], 60, true);
           sfx("whoosh");
-          await to(p, { z: 26, kx: 6 }, 170, ease.outQuad);
+          await to(p, { z: 26, kx: 6 }, 140, ease.outQuad);
           p.ghost = "#ffcfa0";
           play(p, "attack", [0, 1], 90, true);
-          const tx = hero.x + hero.kx + bodyHalf(p) + 6;
-          await Promise.all([to(p, { x: tx, kx: 0 }, 190, ease.inOutQuad), to(p, { z: -10 }, 190, ease.inQuad)]);
+          const tx = hero.x + hero.kx + bodyHalf(p) + 10;
+          await Promise.all([to(p, { x: tx, kx: 0 }, 170, ease.inOutQuad), to(p, { z: -10 }, 170, ease.inQuad)]);
           fx.claw(hx + 1, hy - 2, { n: 3, dir: -1, col: "#ff6a4a", len: 18 });
           sfx("slash");
           land();
-          play(p, "attack", [2, 3], 90);
-          await wait(110);
+          play(p, "attack", [2, 3], 80);
+          await wait(80);
           p.ghost = "";
           play(p, "move", [0, 1, 2, 3], 70, true);
-          await Promise.all([to(p, { z: 20 }, 200, ease.outQuad), to(p, { x: FOE_X }, 300, ease.inOutQuad)]);
-          await to(p, { z: 0 }, 160, ease.inOutQuad);
+          await Promise.all([to(p, { z: 20 }, 170, ease.outQuad), to(p, { x: FOE_X }, 250, ease.inOutQuad)]);
+          void to(p, { z: 0 }, 160, ease.inOutQuad);
           idle(p);
           break;
         }
         case "leap": {
           // crouch, pounce on the hero, bite, spring back
           play(p, "move", [0], 100, true);
-          await to(p, { sy: 0.86, sx: 1.08 }, 90);
+          await to(p, { sy: 0.86, sx: 1.08, x: p.x + (engaged ? 12 : 0) }, 90);
           sfx("whoosh");
           play(p, "attack", [0], 100, true);
           p.ghost = "#ffb0a0";
           const x0 = p.x, tx = hero.x + hero.kx + bodyHalf(p) + 8;
           fx.dust(p.x + 6, gy, { n: 5, dir: 1 });
           void to(p, { sy: 1, sx: 1 }, 80);
-          await tween(230, (u) => { p.x = x0 + (tx - x0) * u; p.z = Math.sin(u * Math.PI) * (Math.abs(tx - x0) > 40 ? 18 : 10) * (1 - u * 0.4); }, ease.outQuad);
+          await tween(190, (u) => { p.x = x0 + (tx - x0) * u; p.z = Math.sin(u * Math.PI) * (Math.abs(tx - x0) > 40 ? 18 : 13) * (1 - u * 0.4); }, ease.outQuad);
           p.z = 0;
           play(p, "attack", [1, 2, 3], 80);
           fx.bite(hx + 3, hy - 3, { size: 9 });
           sfx("slash");
           land();
           fx.dust(p.x, gy, { n: 4, dir: 0, speed: 0.5 });
-          await wait(160);
+          await wait(90);
           p.ghost = "";
           // spring back to its spot
           const x1 = p.x;
           play(p, "move", [1], 100, true);
-          await tween(engaged ? 180 : 260, (u) => { p.x = x1 + (FOE_X - x1) * u; p.z = Math.sin(u * Math.PI) * (engaged ? 5 : 10); }, ease.inOutQuad);
+          await tween(engaged ? 150 : 220, (u) => { p.x = x1 + (FOE_X - x1) * u; p.z = Math.sin(u * Math.PI) * (engaged ? 5 : 10); }, ease.inOutQuad);
           p.z = 0;
           idle(p);
           break;
@@ -993,7 +1009,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
             p.aura = k.magic;
             void fx.glyph(p.x, gy - 1, { r: 16, ry: 0.32, col: k.magic, dur: 520, layer: "under", spin: -2.5 });
             sfx("cast", "dark");
-            await fx.charge(hand[0], hand[1], { col: k.magic, dur: 300, r: 18 });
+            await fx.charge(hand[0], hand[1], { col: k.magic, dur: 240, r: 18 });
             p.aura = "";
             play(p, "attack", [1, 2], 90, true);
             const dur = Math.abs(hand[0] - hx) * 1.9;
@@ -1010,7 +1026,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
             await fx.projectile(hand[0], hand[1] + 6, hx + 2, hy, { dur: Math.abs(hand[0] - hx) * 1.7, arc: 4, head: (g, x, y, a) => arrowHead(g, x, y, a), trail: "#fff0c0", trailLen: 5 });
           }
           land();
-          await wait(160);
+          await wait(100);
           idle(p);
           break;
         }
@@ -1028,7 +1044,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
           await wait(60);
           land();
           p.ghost = "";
-          if (res === "hit") await drainWisps(p);
+          if (res === "hit") { void drainWisps(p); await wait(240); }
           else fx.wisps(hx + 6, hy, { n: 8, col: k.trail, w: 4, h: 6 });
           play(p, "attack", [3], 90);
           await wait(120);
@@ -1038,25 +1054,25 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
           await approach(p, reach);
           play(p, "attack", [0], 100, true);
           sfx("charge");
-          await to(p, { sy: 1.1, z: 3, kx: 3 }, 160, ease.outQuad);
+          await to(p, { sy: 1.1, z: 3, kx: 3 }, 110, ease.outQuad);
           play(p, "attack", [1, 2], 70, true);
           await to(p, { sy: 1, z: 0, kx: -8 }, 70, ease.inQuad);
           fx.claw(hx + 2, hy - 4, { n: 4, dir: -1, col: "#ff4a3a", len: 20 });
           sfx("slash");
-          await wait(60);
+          await wait(45);
           fx.claw(hx - 1, hy + 2, { n: 3, dir: 1, col: "#ff4a3a", len: 16 });
           fx.shake(2, 160);
           land();
           play(p, "attack", [3], 100);
-          await wait(180);
-          await to(p, { kx: 0 }, 160);
+          await wait(110);
+          await to(p, { kx: 0 }, 120);
           break;
         }
         case "smash": {
           await approach(p, reach + 4);
           play(p, "attack", [0], 100, true);
           sfx("charge");
-          await to(p, { z: 5, sy: 1.06, kx: 4 }, 180, ease.outQuad);
+          await to(p, { z: 5, sy: 1.06, kx: 4 }, 130, ease.outQuad);
           play(p, "attack", [1, 2], 60, true);
           await to(p, { z: 0, sy: 1, kx: -6 }, 70, ease.inQuad);
           fx.shock(hx + 8, gy, { r: 30, n: 18 });
@@ -1064,8 +1080,8 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
           sfx("break");
           land();
           play(p, "attack", [3], 120);
-          await wait(220);
-          await to(p, { kx: 0 }, 160);
+          await wait(140);
+          await to(p, { kx: 0 }, 120);
           break;
         }
         case "strike": case "bite": {
@@ -1130,10 +1146,13 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
           break;
         }
         case "fall": {
-          hold(p, "hurt", 0);
-          const dir = Math.random() < 0.5 ? -1 : 1;
-          await to(p, { z: p.z + 8, rot: dir * 0.5 }, 140, ease.outQuad);
-          await to(p, { z: -p.hover, rot: dir * 1.4, kx: 10 }, 360, ease.inQuad);
+          hold(p, "hurt", 1);
+          const dir = 1;
+          await to(p, { z: p.z + 8, rot: dir * 0.4 }, 140, ease.outQuad);
+          await to(p, { z: -p.hover, rot: dir * 1.1, kx: 8 }, 360, ease.inQuad);
+          // crashed: lies on the ground
+          p.rot = 0; p.z = 0; p.hover = 0;
+          hold(p, "dead", 0);
           fx.dust(p.x + p.kx, gy, { n: 10, dir: 0, speed: 1.2, size: 3 });
           fx.debris(p.x + p.kx, gy - 1, { n: 8, speed: 1.8 });
           fx.shake(3, 200);
@@ -1150,8 +1169,8 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
           await to(p, { sy: 0.9 }, 90).then(() => to(p, { sy: 1 }, 140));
           fx.dust(p.x, gy, { n: k.death === "heavy" ? 12 : 6, dir: 0, speed: 0.9, size: k.death === "heavy" ? 3.5 : 2.5 });
           if (k.death === "heavy") { fx.shake(4, 260); sfx("break"); fx.debris(p.x, gy - 1, { n: 8 }); }
-          await wait(380);
-          await to(p, { alpha: 0 }, 460);
+          await wait(260);
+          await to(p, { alpha: 0 }, 360);
           p.hidden = true;
         }
       }
@@ -1254,6 +1273,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
 
     // ---------------------------------------------------------------- a round
     let busy = false;
+    const shrugged = new Set<number>();
     function render() {
       const foe = b.foes[b.idx];
       heroShown = s.ep;
@@ -1291,21 +1311,23 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       const foe = b.foes[b.idx];
       const m = mindSpec();
       const immune = (foe.def.immune ?? []).some((x) => MIND_IMMUNE.includes(x));
+      const heroBefore = s.ep, foeBefore = foe.ep;
       const r: RoundResult = playRound(book, s, b, evade);
       onChange();
       // the bars follow the show, not the rules (they already changed)
-      heroShown = s.ep + r.heroLoss;
-      foeShown = foe.ep + (r.evaded ? 0 : r.foeLoss);
+      heroShown = heroBefore;
+      foeShown = foeBefore;
       foeBar.set(foeShown, foe.def.ep);
       heroBar.set(heroShown, epMax(book, s));
-      await spin(r.n);
+      // the hero closes in while the reel spins
+      await Promise.all([spin(r.n), r.evaded ? null : wait(120).then(() => engage(p))]);
       const heroDmg = r.heroLoss - r.mindCost;
       if (r.evaded) await flee(p, heroDmg);
       else {
-        if (m && !evade) await mindStrike(p, immune, r.mindCost);
+        // an immune foe shrugs the mind attack off once; after that it is not tried on it
+        if (m && !evade && !(immune && shrugged.has(r.foe))) { if (immune) shrugged.add(r.foe); await mindStrike(p, immune, r.mindCost); }
         await exchange(r, p, heroDmg);
       }
-      void hideReel();
       if (r.foeKilled && !r.evaded) await foeDies(p);
       if (r.heroKilled) await defeat();
       else if (!r.evaded) await disengage();
@@ -1326,6 +1348,8 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       else beats = ["clash"];
       const held = (b.foes[r.foe].def.holdRounds ?? 0) >= b.round;
       if (held) beats = beats.filter((x) => x !== "foeBlocked");
+      // a melee hero closes in first, so the blows trade where they stand
+      await engage(p);
       for (const beat of beats) {
         if (beat === "heroHit") await heroAttack(p, "hit", foeDmg);
         else if (beat === "heroMiss") await heroAttack(p, "miss", 0);
@@ -1334,7 +1358,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
           if (beat === "foeHit" && r.heroKilled) timeScale = 0.45;
           await foeAttack(p, beat === "foeHit" ? "hit" : "block", heroDmg);
         }
-        await wait(70);
+        await wait(35);
       }
     }
 

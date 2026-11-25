@@ -127,11 +127,17 @@ export function digitsSprite(text: string, s: number, grad: [string, string, str
   const rgb = (c0: string) => { const n = parseInt(c0.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
   const [t0, m0, b0, o0] = [...grad, outline].map(rgb);
   const set = (x: number, y: number, col: number[]) => { const i = (y * w + x) * 4; img.data[i] = col[0]; img.data[i + 1] = col[1]; img.data[i + 2] = col[2]; img.data[i + 3] = 255; };
-  const top = 1, bot = 1 + 7 * s;
+  // smooth vertical ramp, one tone per glyph row (top → mid → bottom), brightest edge on top
+  const tone = (row: number) => {
+    const k = Math.max(0, Math.min(6, row)) / 6;
+    const [a0, a1, u] = k < 0.45 ? [t0, m0, k / 0.45] : [m0, b0, (k - 0.45) / 0.55];
+    return a0.map((v, i) => Math.round(v + (a1[i] - v) * u));
+  };
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     if (mask[y * w + x]) {
-      const k = (y - top) / (bot - top);
-      set(x, y, k < 0.3 ? t0 : k < 0.72 ? m0 : b0);
+      const row = Math.floor((y - 1) / s);
+      const edge = y > 0 && !mask[(y - 1) * w + x];
+      set(x, y, edge && row > 0 ? tone(row - 1) : tone(row));
     } else {
       // outline: any neighbour (8-way) set, or shadow: pixel above-left set
       let near = false;
@@ -246,7 +252,11 @@ export class FxLayer {
 
   clear() { this.parts = []; this.fx = []; }
 
+  /** Receives shake requests (the battle forwards them to the Stage camera). */
+  onShake?: (amp: number, ms: number) => void;
+
   shake(amp: number, ms: number) {
+    if (this.onShake) { this.onShake(amp, ms); return; }
     if (amp >= this.shakeAmp || this.t > this.shakeUntil) this.shakeAmp = amp;
     this.shakeUntil = Math.max(this.shakeUntil, this.t + ms);
   }
@@ -725,18 +735,28 @@ export class FxLayer {
   /** Pop-up sprite (number or word): jumps up with a pop, hangs, then fades and floats. */
   pop(spr: HTMLCanvasElement, x: number, y: number, o: { dur?: number; rise?: number; big?: boolean; drift?: number } = {}) {
     const dur = o.dur ?? 900, rise = o.rise ?? 14, drift = o.drift ?? 0;
+    // stack above pop-ups still showing at the same spot instead of overlapping them
+    this.pops = this.pops.filter((p) => p.until > this.t);
+    for (const p of this.pops) {
+      if (Math.abs(p.x - x) < (p.w + spr.width) / 2 - 4 && Math.abs(p.y - y) < (p.h + spr.height) / 2) y = Math.min(y, p.y - (p.h + spr.height) / 2 + 2);
+    }
+    y = Math.max(this.popTop + spr.height / 2 + rise, y);
+    this.pops.push({ x, y, w: spr.width, h: spr.height, until: this.t + dur * 0.7 });
+    const white = o.big ? silhouetteOf(spr, "#ffffff") : null;
     return this.add(dur, (g, k, age) => {
       const up = age < 160 ? ease.outBack(age / 160) * rise : rise + ((age - 160) / dur) * 6;
       const fade = k > 0.7 ? 1 - (k - 0.7) / 0.3 : 1;
-      // pop: first frames drawn one size up (whole pixels), shaking for big hits
-      const s = o.big && age < 90 ? 2 : 1;
+      // big hits: a white flash frame, then a short shudder
       const jx = o.big && age < 220 ? R((Math.random() - 0.5) * 2) : 0;
-      const w = spr.width * s, h = spr.height * s;
+      const px = R(x - spr.width / 2 + drift * k + jx), py = R(y - up - spr.height / 2);
       g.globalAlpha = fade;
-      g.drawImage(spr, R(x - w / 2 + drift * k + jx), R(y - up - h / 2), w, h);
+      g.drawImage(white && age < 70 ? white : spr, px, py);
       g.globalAlpha = 1;
     }, "screen");
   }
+  private pops: { x: number; y: number; w: number; h: number; until: number }[] = [];
+  /** Highest y a pop-up may reach (keeps them below a HUD over the top of the stage). */
+  popTop = 0;
 
   /** Damage number: "-n" in bold digits; crit = larger, gold and shaking. */
   number(x: number, y: number, n: number, o: { crit?: boolean; heal?: boolean; small?: boolean; grad?: [string, string, string]; prefix?: string } = {}) {
@@ -749,6 +769,17 @@ export class FxLayer {
   word(x: number, y: number, text: string, col: string, o: { size?: number; dur?: number } = {}) {
     return this.pop(wordSprite(text, o.size ?? 16, col), x, y, { rise: 10, dur: o.dur ?? 850 });
   }
+}
+
+function silhouetteOf(spr: HTMLCanvasElement, col: string) {
+  const c = document.createElement("canvas");
+  c.width = spr.width; c.height = spr.height;
+  const g = c.getContext("2d")!;
+  g.drawImage(spr, 0, 0);
+  g.globalCompositeOperation = "source-in";
+  g.fillStyle = col;
+  g.fillRect(0, 0, c.width, c.height);
+  return c;
 }
 
 // ------------------------------------------------------------------ projectile heads

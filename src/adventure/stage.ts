@@ -169,6 +169,8 @@ export class Stage {
   look = { fade: 0, dark: 0, glow: 0 };
   /** Where a cropping box (StageFit) should centre the view, world x (default: the cast). */
   focusX?: number;
+  /** Part of the view (screen art x, 0..W) the box shows: text stays inside it. */
+  visibleX: [number, number] = [0, W];
   shakeUntil = 0;
   shakePower = 1;
   flashUntil = 0;
@@ -585,7 +587,7 @@ export class Stage {
     c.globalAlpha = 1;
     this.floaters = this.floaters.filter((f) => t - f.born < 1100);
     // speech bubbles
-    for (const a of this.actors) if (a.bubble && t < a.bubble.until && !a.hidden) speech(c, a.bubble, sx(a.x), sy(this.headY(a)), t);
+    for (const a of this.actors) if (a.bubble && t < a.bubble.until && !a.hidden) speech(c, a.bubble, sx(a.x), sy(this.headY(a)), t, this.visibleX);
     if (t < this.flashUntil) {
       c.globalAlpha = 0.55 * Math.min(1, (this.flashUntil - t) / Math.max(60, this.flashMs * 0.7));
       c.fillStyle = this.flashCol; c.fillRect(0, 0, W * OUT, H * OUT); c.globalAlpha = 1;
@@ -614,7 +616,7 @@ function tinted(fr: HTMLCanvasElement, light: { tint: string; alpha: number }) {
 }
 
 /** A speech bubble drawn crisp on the output canvas, pointing at the speaker's head. */
-function speech(c: CanvasRenderingContext2D, b: NonNullable<Actor["bubble"]>, hx: number, hy: number, t: number) {
+function speech(c: CanvasRenderingContext2D, b: NonNullable<Actor["bubble"]>, hx: number, hy: number, t: number, vis: [number, number]) {
   const K = OUT;
   c.font = `${9.5 * K}px VT323, monospace`;
   const words = b.text.split(" ");
@@ -629,9 +631,9 @@ function speech(c: CanvasRenderingContext2D, b: NonNullable<Actor["bubble"]>, hx
   const age = b.at !== undefined ? t - b.at : 1000;
   const pop = age < 140 ? 0.6 + (age / 140) * 0.4 : 1;
   const bw = Math.max(...shown.map((l) => c.measureText(l).width)) + 10 * K, bh = shown.length * 8.5 * K + 5 * K;
-  const CW = W * K;
+  const v0 = vis[0] * K, v1 = vis[1] * K;
   let x = Math.round(hx - bw / 2), y = Math.round(hy - bh - 7 * K);
-  x = Math.max(2 * K, Math.min(CW - bw - 2 * K, x));
+  x = Math.max(v0 + 3 * K, Math.min(v1 - bw - 3 * K, x));
   y = Math.max(2 * K, y);
   c.save();
   c.translate(hx, y + bh);

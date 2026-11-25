@@ -44,3 +44,10 @@
   .adv-fface.flinch, .adv-fcard.show, .adv-fight.low .adv-fvig, .adv-bar.low .adv-bar-track i { animation-duration: .01s; animation-iteration-count: 1; }
   .adv-fcard.show { opacity: 1; }
 }
+
+/* the fate reel under the ratio chip */
+.adv-fmid { display: flex; flex-direction: column; align-items: center; }
+.adv-freel { width: 80px; height: 80px; margin-top: -6px; image-rendering: pixelated; pointer-events: none; filter: drop-shadow(0 3px 6px rgba(0,0,0,.6)); }
+.adv-freel.land { animation: advReelLand .32s both; }
+@keyframes advReelLand { 0% { transform: scale(1); } 35% { transform: scale(1.22); } 100% { transform: scale(1); } }
+@media (max-width: 420px) { .adv-freel { width: 68px; height: 68px; } }

@@ -4,9 +4,10 @@
  * next (choices, a random number, a battle). Travel between places plays on the map; big
  * moments play as cutscenes. Loaded on demand from the game picker.
  *
- * Layout: the scene is the screen. On phones it fills the top edge to edge with the HUD over
- * it and the story in a bottom sheet (half / full / minimised); on wide screens the story is
- * docked beside it. Every window uses the pixel frames from ./ui.
+ * Layout: the scene is the screen. Each section is performed on it beat by beat (./director.ts):
+ * the HUD over the scene, a short piece of the text typed out in the story panel under it, and
+ * once the beats are over, what to do next in the same panel. The whole text is a tap away
+ * ("Nhật ký"). Every window uses the pixel frames from ./ui.
  */
 import "./style.css";
 import type { Screen } from "../app";
@@ -17,7 +18,7 @@ import { h, nn, sleep, toast } from "../ui/dom";
 import { discIcon, iconEl, itemIcon, type UiIcon } from "./art/icons";
 import { portrait, withWeapon, type Look } from "./art/people";
 import { makeScene, type SceneSpec } from "./art/scene";
-import { playCutscene } from "./cutscene";
+import { Performance } from "./director";
 import {
   choiceState, condText, discsOf, drop, enter, epMax, itemName, newRun, pendingLoss, phase, pick10,
   profile, randomResult, retry, takeOffer, useItem, apply, continueRun, visibleChoices, type Change,
@@ -28,7 +29,8 @@ import { AdvSaves, type SlotInfo } from "./save";
 import { Stage } from "./stage";
 import type { AdvState, Book, Choice, Disc, Offer } from "./types";
 import { advConfirm, advWindow, bump, countTo, gameBtn, iconBtn, installSkin, StageFit, ui } from "./ui";
-import { WorldMapView, mapPlace } from "./worldmap";
+import { WorldMapView } from "./worldmap";
+import { locSides as worldLocSides, nodeOf } from "./world";
 
 export interface AdventureOpts {
   leave: () => void;
@@ -36,11 +38,11 @@ export interface AdventureOpts {
 }
 
 /**
- * Explore mode (sections with scene.explore): ./explore.ts draws the place as a walkable area
- * where choices with `via` are spots to walk to. Loaded on demand (it is large); choices without
- * `via` stay as buttons in the story panel.
+ * Explore mode (sections with scene.explore): the beats are performed on the stage first, then
+ * ./explore.ts draws the place as a walkable area where choices with `via` are spots to walk to.
+ * Loaded on demand (it is large); choices without `via` stay as buttons in the story panel.
  */
-type ExploreView = { destroy(): void; pause(on: boolean): void };
+type ExploreView = import("./explore").ExploreHandle;
 type Side = "north" | "south" | "east" | "west";
 const OPPOSITE: Record<Side, Side> = { north: "south", south: "north", east: "west", west: "east" };
 
@@ -113,6 +115,26 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
           file))));
     backdrop(bg, { bg: "camp", time: "night", weather: "clear", mood: "calm", seed: "library" }, ["lonewolf"], undefined, { minVis: 0.5, anchorY: 0.62 });
     if (linked && !synced) void runSync(false);
+    void refreshBadges(books);
+  }
+
+  /** Badges on the covers: this device's copies at once, then the account's (in parallel). */
+  const badgeEls = new Map<string, HTMLElement>();
+  function setBadge(id: string, slots: (AdvState | null)[]) {
+    const host = badgeEls.get(id);
+    if (!host) return;
+    const going = slots.filter((d): d is AdvState => !!d && !d.ended).sort((a, b) => b.updated - a.updated)[0];
+    const won = slots.some((d) => d?.ended === "victory");
+    host.replaceChildren(...nn(
+      going ? h("span", { class: "adv-badge going" }, h("i", { class: "adv-badge-dot" }), `Đang chơi · Đoạn ${going.section}`) : null,
+      won ? h("span", { class: "adv-badge won" }, ui("trophy", 1), "Hoàn thành") : null));
+  }
+  async function refreshBadges(books: BookEntry[]) {
+    for (const b of books) setBadge(b.id, new AdvSaves(session, b.id).peek());
+    if (session.offline) return;
+    await Promise.all(books.map(async (b) => {
+      try { const sl = await new AdvSaves(session, b.id).list(); if (alive) setBadge(b.id, sl.map((x) => x.data)); } catch { /* local badge stays */ }
+    }));
   }
 
   /** Pull new/changed books from the player's private GitHub shelf. */
@@ -153,10 +175,12 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
   function bookCard(b: BookEntry) {
     const cover = document.createElement("canvas");
     cover.width = 320; cover.height = 180; cover.className = "adv-cover-art";
+    const badges = h("div", { class: "adv-badges" });
+    badgeEls.set(b.id, badges);
     try { makeScene({ bg: (["forest", "river", "cave", "mountain", "desert"] as const)[b.num % 5], time: (["dusk", "night", "day", "dawn"] as const)[b.num % 4], weather: "clear", mood: "mystery", seed: b.id }).draw(cover.getContext("2d")!, 0); } catch { /* art still loading */ }
     return h("div", { class: "adv-book" },
       h("button", { class: "adv-book-main fr-panel", type: "button", onclick: () => { sfx("open"); void openBook(b); } },
-        h("div", { class: "adv-cover" }, cover, h("span", { class: "adv-cover-num" }, String(b.num))),
+        h("div", { class: "adv-cover" }, cover, h("span", { class: "adv-cover-num" }, String(b.num)), badges),
         h("div", { class: "adv-book-plate" }, h("small", null, `Cuốn ${b.num}`), h("b", null, b.title))),
       iconBtn("close", "Xoá sách", async () => {
         if (!(await confirm("Xoá sách", `Xoá "${b.title}" khỏi thư viện? Các ô lưu vẫn còn, nạp lại sách là chơi tiếp được.`, "Xoá"))) return;
@@ -474,15 +498,23 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
     let stage: Stage | null = null;
     let fit: StageFit | null = null;
     let explore: ExploreView | null = null;
+    let perf: Performance | null = null;
+    let cine: HTMLElement | null = null;
     /** Side of the place the hero walks in from (the opposite of the exit taken). */
     let entrySide: Side | undefined;
+    /** Location of the section before (the hero walks in from there). */
+    let fromLoc: string | undefined;
     let exploring = false;
-    let shownSection = "";
+    let exHolder: HTMLElement | null = null;
     const noExplore = new Set<string>();
     const save = (now = false) => saves!.save(slot, s, now);
     const heroLook = (): Look => withWeapon("lonewolf", s.weapons[0]);
-    const killScene = () => { explore?.destroy(); explore = null; fit?.destroy(); fit = null; stage?.destroy(); stage = null; };
+    const killExplore = () => { explore?.destroy(); explore = null; };
+    const killStage = () => { fit?.destroy(); fit = null; stage?.destroy(); stage = null; };
+    const killScene = () => { perf?.destroy(); perf = null; cine?.remove(); cine = null; killExplore(); killStage(); };
     cleanups.push(killScene);
+    let auto = false;
+    try { auto = localStorage.getItem("adv.auto") === "1"; } catch { /* private mode */ }
 
     // --- HUD
     const epFill = h("i");
@@ -500,53 +532,48 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
     const sceneBox = h("div", { class: "adv-scene" });
     const place = h("div", { class: "adv-place" });
     const endBanner = h("div", { class: "adv-endban" });
-    const sceneWrap = h("div", { class: "adv-scene-wrap" }, sceneBox, h("div", { class: "adv-scene-shade" }), place, endBanner, hud);
+    const tapHint = h("div", { class: "adv-taphint" }, "Chạm để tiếp tục");
+    const sceneWrap = h("div", { class: "adv-scene-wrap" }, sceneBox, h("div", { class: "adv-scene-shade" }), place, endBanner, tapHint, hud);
 
-    // --- story sheet
+    // --- story panel: the beat's words under the scene, then what to do next
     const secBadge = h("span", { class: "adv-secnum" });
-    const placeSmall = h("span", { class: "adv-sheet-place" });
-    const grip = h("div", { class: "adv-grip", role: "button", tabindex: "0", "aria-label": "Mở rộng / thu gọn" },
-      h("span", { class: "adv-grip-bar" }), h("div", { class: "adv-sheet-head" }, secBadge, placeSmall, h("span", { class: "adv-grip-chev" })));
-    const text = h("div", { class: "adv-text" });
-    const body = h("div", { class: "adv-sheet-body" }, text);
-    const dock = h("div", { class: "adv-dock" });
-    const sheet = h("section", { class: "adv-sheet fr-panel" }, grip, body, dock);
-    const pops = h("div", { class: "adv-pops", "aria-live": "polite" });
-    const view = h("div", { class: "adv-play", "data-sheet": "half" }, sceneWrap, sheet, pops);
-    el.replaceChildren(view);
-
-    type SheetState = "min" | "half" | "full";
-    const order: SheetState[] = ["min", "half", "full"];
-    function setSheet(st: SheetState) {
-      if (view.dataset.sheet === st) return;
-      view.dataset.sheet = st;
+    const placeSmall = h("span", { class: "adv-story-place" });
+    const pips = h("div", { class: "adv-beats", "aria-hidden": "true" });
+    const autoBtn = h("button", { class: "adv-tbtn fr-btn", type: "button", title: "Tự động chuyển nhịp", "aria-pressed": String(auto), onclick: (e: Event) => {
+      e.stopPropagation();
+      auto = !auto;
+      try { localStorage.setItem("adv.auto", auto ? "1" : "0"); } catch { /* ignore */ }
+      syncAuto();
       sfx("click");
-      explore?.pause(st === "full");
-    }
-    // drag / tap the handle
-    let drag: { y: number; id: number } | null = null;
-    grip.addEventListener("pointerdown", (e) => { drag = { y: e.clientY, id: e.pointerId }; grip.setPointerCapture(e.pointerId); });
-    grip.addEventListener("pointerup", (e) => {
-      if (!drag) return;
-      const dy = e.clientY - drag.y;
-      drag = null;
-      const i = order.indexOf(view.dataset.sheet as SheetState);
-      if (dy < -30) setSheet(order[Math.min(2, i + 1)]);
-      else if (dy > 30) setSheet(order[Math.max(0, i - 1)]);
-      else setSheet(view.dataset.sheet === "full" ? "half" : view.dataset.sheet === "min" ? "half" : "full");
-    });
-    grip.addEventListener("pointercancel", () => { drag = null; });
-    grip.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSheet(view.dataset.sheet === "full" ? "half" : "full"); } });
-    sceneBox.addEventListener("click", () => { if (!exploring) setSheet(view.dataset.sheet === "min" ? "half" : "min"); });
-    // tap the text to show it all at once
-    body.addEventListener("pointerdown", () => view.classList.add("shown"));
+      perf?.autoChanged();
+    } }, h("i", { class: "adv-auto-ic" }), h("span", null, "Tự động"));
+    const syncAuto = () => { autoBtn.setAttribute("aria-pressed", String(auto)); autoBtn.classList.toggle("on", auto); for (const b of document.querySelectorAll(".adv-cine .adv-auto-btn")) b.classList.toggle("on", auto); };
+    const skipBtn = h("button", { class: "adv-tbtn fr-btn adv-skip", type: "button", title: "Bỏ qua tới lựa chọn", onclick: (e: Event) => { e.stopPropagation(); sfx("click"); perf?.skip(); } },
+      h("span", null, "Bỏ qua"), h("i", { class: "adv-ff" }));
+    const replayBtn = h("button", { class: "adv-tbtn fr-btn adv-replay", type: "button", title: "Xem lại đoạn này", onclick: (e: Event) => { e.stopPropagation(); sfx("click"); enterSection(false, []); } },
+      h("i", { class: "adv-replay-ic" }), h("span", null, "Xem lại"));
+    const logBtn = iconBtn("book", "Nhật ký", (e) => { e.stopPropagation(); logWindow(); }, "small adv-logbtn");
+    const bar = h("div", { class: "adv-story-bar" }, secBadge, placeSmall, pips, h("div", { class: "adv-story-tools" }, replayBtn, autoBtn, skipBtn, logBtn));
+    const capHost = h("div", { class: "adv-cap-host" });
+    const dock = h("div", { class: "adv-dock" });
+    const story = h("section", { class: "adv-story fr-panel" }, bar, capHost, dock);
+    const pops = h("div", { class: "adv-pops", "aria-live": "polite" });
+    const view = h("div", { class: "adv-play" }, sceneWrap, story, pops);
+    el.replaceChildren(view);
+    syncAuto();
 
-    // number keys pick choices on a keyboard
+    const tap = () => { if (perf && !perf.finished) { perf.tap(); tapHint.classList.add("gone"); } };
+    sceneBox.addEventListener("click", tap);
+    capHost.addEventListener("click", () => { if (perf && !perf.finished) tap(); else logWindow(); });
+
+    // keys: space / enter go on, number keys pick choices
     const onKey = (e: KeyboardEvent) => {
-      if (document.querySelector(".adv-win-back, .adv-fight, .adv-cine, .adv-travel")) return;
+      if (document.querySelector(".adv-win-back, .adv-fight, .adv-travel")) return;
       if ((e.target as HTMLElement)?.tagName === "INPUT") return;
+      if ((e.key === " " || e.key === "Enter") && perf && !perf.finished) { e.preventDefault(); tap(); return; }
+      if (e.key === "Escape" && perf && !perf.finished) { perf.skip(); return; }
       const n = Number(e.key);
-      if (n >= 1 && n <= 9) {
+      if (n >= 1 && n <= 9 && !document.querySelector(".adv-cine")) {
         const b = dock.querySelectorAll<HTMLButtonElement>(".adv-choice:not(:disabled)")[n - 1];
         b?.click();
       }
@@ -554,7 +581,8 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
     document.addEventListener("keydown", onKey);
     cleanups.push(() => document.removeEventListener("keydown", onKey));
 
-    const placeOf = (sid: string) => (book.map ? mapPlace(book.map, book.sections[sid].scene.place) : book.sections[sid].scene.place);
+    // [world] the world-map place of a section is its location's node (./world.ts), else its scene's place
+    const placeOf = (sid: string) => nodeOf(book, sid);
     const placeName = (p: string) => book.places?.[p]?.name ?? p.split("-").map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
     const visitedPlaces = () => new Set(s.visited.map(placeOf));
 
@@ -587,31 +615,32 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       last = { ep: s.ep, cs: s.cs, gold: s.gold, meals: s.meals };
     }
 
-    /** Moves to a section: map travel when the place changes, a cutscene for big moments. */
+    /** Moves to a section: map travel when the place changes, then the section is performed. */
     async function goTo(to: string, extra: Change[] = []) {
       const from = s.section;
-      const ch = [...extra, ...enter(book, s, to)];
+      fromLoc = book.sections[from]?.scene.loc;
+      const ch = enter(book, s, to);
       save();
+      if (extra.length) { renderChips(); showChanges(extra); }
       const pa = placeOf(from), pb = placeOf(to);
+      explore?.pause(true);
       if (book.map && pa !== pb && book.map.nodes[pb]) await travel(pa, pb);
       if (!alive || !view.isConnected) return;
       const sec = book.sections[to];
+      let big = false;
       if (sec.scene.cutscene && s.visited.filter((x) => x === to).length <= 1 && !s.flags[`cut:${to}`]) {
         s.flags[`cut:${to}`] = true;
         save();
-        explore?.pause(true);
-        await playCutscene(el, book, to, heroLook());
+        big = true;
       }
-      if (!alive || !view.isConnected) return;
-      render(from);
-      showChanges(ch);
+      enterSection(big, ch);
     }
 
     function travel(from: string, to: string): Promise<void> {
       const v = visitedPlaces();
       v.add(from);
       const wrap = h("div", { class: "adv-travel" });
-      const mv = new WorldMapView({ key: book.id, map: book.map!, visited: v, here: from, label: placeName });
+      const mv = new WorldMapView({ key: book.id, map: book.map!, visited: v, here: from, label: placeName, heroLook: heroLook() });
       const label = h("div", { class: "adv-travel-label fr-panel" }, h("small", null, "Đang đi tới"), h("b", null, placeName(to)));
       wrap.append(mv.el, h("div", { class: "adv-travel-vig" }), label);
       el.append(wrap);
@@ -637,83 +666,177 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       const info = h("div", { class: "adv-map-info fr-parch" });
       const setInfo = (p: string) => info.replaceChildren(h("b", null, placeName(p), p === here ? h("span", { class: "adv-here" }, "Bạn ở đây") : null), h("span", null, book.places?.[p]?.desc ?? ""));
       setInfo(here);
-      mv = new WorldMapView({ key: book.id, map: book.map!, visited: v, here, label: placeName, onTapPlace: setInfo });
+      mv = new WorldMapView({ key: book.id, map: book.map!, visited: v, here, label: placeName, onTapPlace: setInfo, heroLook: heroLook() });
       const m = mv;
       w.body.append(h("div", { class: "adv-map-box" }, m.el,
         h("div", { class: "adv-map-zoom" }, gameBtn("+", () => m.zoomBy(1), { cls: "sq" }), gameBtn("−", () => m.zoomBy(-1), { cls: "sq" }))), info);
     }
 
-    /** The scene: a Stage, or the walkable explore view when the section is one and the module exists. */
+    /** The whole text of the section (and the one before), on demand. */
+    function logWindow() {
+      const sec = book.sections[s.section];
+      const w = advWindow(el, `Nhật ký · Đoạn ${s.section}`, { cls: "log", icon: "book" });
+      const prev = s.visited.length > 1 ? s.visited[s.visited.length - 2] : undefined;
+      const prevSec = prev && prev !== s.section ? book.sections[prev] : undefined;
+      w.body.append(...nn(
+        h("div", { class: "adv-log-text" }, ...sec.text.map((t) => h("p", { class: "adv-para" }, t))),
+        sec.note ? h("div", { class: "adv-note fr-parch" }, ui("info", 2), h("span", null, sec.note)) : null,
+        prevSec ? h("details", { class: "adv-log-prev" }, h("summary", null, `Đoạn trước (${prev})`), ...prevSec.text.map((t) => h("p", { class: "adv-para" }, t))) : null));
+    }
+
     /** The section's walkable spots when it plays in explore mode (null: a static scene). */
     function exploreSpots() {
       const sec = book.sections[s.section];
       if (!sec.scene.explore || noExplore.has(s.section) || s.ended || pendingLoss(s) || phase(book, s) !== "choices") return null;
       const list = visibleChoices(sec, s);
-      const spots: { key: number; label: string; via: NonNullable<Choice["via"]>; locked?: string }[] = [];
+      const spots: { key: number; label: string; via: NonNullable<Choice["via"]>; locked?: string; toLoc?: string }[] = [];
       list.forEach((c, i) => {
         const cs = choiceState(s, c);
         if (cs === "hidden" || !c.via) return;
-        spots.push({ key: i, label: c.text, via: c.via, locked: cs === "locked" ? condText(book, c.if) : undefined });
+        spots.push({ key: i, label: c.text, via: c.via, locked: cs === "locked" ? condText(book, c.if) : undefined, toLoc: book.sections[c.to]?.scene.loc });
       });
       return spots.length ? { list, spots } : null;
     }
 
-    function mountScene() {
-      const sec = book.sections[s.section];
-      killScene();
-      sceneBox.replaceChildren();
-      sceneBox.classList.toggle("dead", s.ended === "death");
-      sceneBox.classList.toggle("won", s.ended === "victory");
-      const ex = exploreSpots();
-      exploring = !!ex;
-      sceneBox.classList.toggle("explore", exploring);
-      view.classList.toggle("exploring", exploring);
-      if (ex) {
-        const sid = s.section, steps = s.steps;
-        const entryFrom = entrySide;
-        sceneBox.append(h("div", { class: "adv-loading" }, h("div", { class: "adv-spinner" })));
-        void import("./explore").then((mod) => {
-          if (s.section !== sid || s.steps !== steps || !view.isConnected || !alive || explore) return;
-          sceneBox.replaceChildren();
-          explore = mod.mountExplore({
-            host: sceneBox, seed: `${book.id}-${sec.scene.place}`, scene: sec.scene, heroLook: heroLook(), entryFrom, spots: ex.spots,
-            onPick: (key) => { const c = ex.list[key]; if (c && choiceState(s, c) === "ok" && s.section === sid) pick(c); },
-          });
-        }).catch(() => {
-          // explore failed to load: play the section with a static scene and plain buttons
-          if (s.section !== sid || !view.isConnected) return;
-          noExplore.add(sid);
-          render();
-        });
-        return;
-      }
-      const spec: SceneSpec = { bg: sec.scene.bg, time: sec.scene.time, weather: sec.scene.weather, mood: sec.scene.mood, seed: `${book.id}-${s.section}` };
-      const st = new Stage(spec);
-      st.cast(sec.scene.actors.length ? sec.scene.actors : ["lonewolf"], heroLook());
-      stage = st;
-      fit = new StageFit(sceneBox, st, { minVis: 0.56, anchorY: 0.8 });
+    /** Sides any section at a location leaves by (the roads stay the same in every section there). */
+    function locSides(loc: string): Side[] {
+      // [world] ./world.ts: the sides the location's choices leave by that its links do not already give
+      return worldLocSides(book, loc);
     }
 
-    function render(_from?: string) {
-      renderChips();
-      const sec = book.sections[s.section];
-      mountScene();
-      view.classList.remove("shown", "ended", "won", "dead");
-      // a new section opens the story at its usual size
-      if (view.dataset.sheet === "min" || shownSection !== s.section) view.dataset.sheet = "half";
-      shownSection = s.section;
+    const sceneFit = () => (matchMedia("(min-aspect-ratio: 29/20) and (max-height: 520px)").matches ? { minVis: 0.9, anchorY: 0.8 } : { minVis: 0.62, anchorY: 0.8 });
+    const specOf = (sid: string): SceneSpec => { const sc = book.sections[sid].scene; return { bg: sc.bg, time: sc.time, weather: sc.weather, mood: sc.mood, seed: `${book.id}-${sid}` }; };
+
+    /** Top of the story panel: section number, place, the beat pips. */
+    function header() {
       const pn = placeName(placeOf(s.section));
       place.replaceChildren(h("span", null, pn));
       bump(place, "in");
       secBadge.textContent = `Đoạn ${s.section}`;
       placeSmall.textContent = pn;
-      const paras = sec.text.map((t, i) => h("p", { class: "adv-para", style: `--i:${i}` }, t));
-      text.replaceChildren(...nn(...paras, sec.note ? h("div", { class: "adv-note fr-parch" }, ui("info", 2), h("span", null, sec.note)) : null));
-      body.scrollTop = 0;
+    }
+
+    /**
+     * A new section: its beats are performed on the stage (letterboxed and fullscreen for the big
+     * moments), then what to do next appears. `ch`: the section's gains and losses, shown after.
+     */
+    function enterSection(cinematic: boolean, ch: Change[]) {
+      const sid = s.section, steps = s.steps;
+      killScene();
+      sceneBox.replaceChildren();
+      sceneBox.classList.remove("dead", "won", "explore");
+      exploring = false;
+      view.classList.remove("exploring", "ended", "won", "dead");
+      view.classList.add("performing");
+      header();
+      dock.replaceChildren();
+      endBanner.replaceChildren();
+      const st = new Stage(specOf(sid));
+      stage = st;
+      let capTarget = capHost;
+      if (cinematic) {
+        const box = h("div", { class: "adv-cine-scene" });
+        const cap = h("div", { class: "adv-cine-cap" });
+        const cSkip = h("button", { class: "adv-tbtn fr-btn", type: "button", onclick: (e: Event) => { e.stopPropagation(); sfx("click"); perf?.skip(); } }, h("span", null, "Bỏ qua"), h("i", { class: "adv-ff" }));
+        const cAuto = h("button", { class: `adv-tbtn fr-btn adv-auto-btn ${auto ? "on" : ""}`, type: "button", onclick: (e: Event) => { e.stopPropagation(); autoBtn.click(); } }, h("i", { class: "adv-auto-ic" }), h("span", null, "Tự động"));
+        cine = h("div", { class: "adv-cine" }, box, h("div", { class: "adv-cine-bar top" }), h("div", { class: "adv-cine-bar bottom" }), cap,
+          h("div", { class: "adv-cine-tools" }, cAuto, cSkip));
+        cine.addEventListener("click", () => perf?.tap());
+        el.append(cine);
+        fit = new StageFit(box, st, { minVis: 0.5, anchorY: 0.72 });
+        capTarget = cap;
+        sfx("transition");
+      } else fit = new StageFit(sceneBox, st, sceneFit());
+      tapHint.classList.remove("gone");
+      const p = new Performance({ stage: st, book, sid, heroLook: heroLook(), captionHost: capTarget, pips: cinematic ? undefined : pips, auto: () => auto });
+      perf = p;
+      void p.done.then(async () => {
+        if (perf !== p || s.section !== sid || s.steps !== steps || !view.isConnected) return;
+        p.director.rest(!!s.ended);
+        if (cinematic && cine) {
+          // the film ends: the same stage, as it stands now, becomes the scene of the screen
+          const c = cine;
+          cine = null;
+          capHost.replaceChildren(p.caption);
+          c.classList.add("out");
+          await sleep(380);
+          c.remove();
+          if (perf !== p || stage !== st) return;
+          fit?.destroy();
+          sceneBox.append(st.canvas);
+          fit = new StageFit(sceneBox, st, sceneFit());
+        }
+        view.classList.remove("performing");
+        renderChips();
+        showChanges(ch);
+        render();
+      });
+    }
+
+    /** The stage for a section whose performance is over (coming back from explore...). */
+    function restingStage() {
+      killExplore();
+      if (stage) return;
+      const st = new Stage(specOf(s.section));
+      const p = new Performance({ stage: st, book, sid: s.section, heroLook: heroLook(), captionHost: h("div"), auto: () => false });
+      p.skip();
+      p.director.rest(!!s.ended);
+      p.destroy();
+      stage = st;
+      sceneBox.replaceChildren();
+      fit = new StageFit(sceneBox, st, sceneFit());
+    }
+
+    function mountExploreView(ex: NonNullable<ReturnType<typeof exploreSpots>>) {
+      const sec = book.sections[s.section];
+      const sid = s.section, steps = s.steps;
+      const keep = explore;
+      exploring = true;
+      sceneBox.classList.add("explore");
+      view.classList.add("exploring");
+      const entryFrom = entrySide;
+      const loc = sec.scene.loc;
+      void import("./explore").then((mod) => {
+        if (s.section !== sid || s.steps !== steps || !view.isConnected || !alive || (perf && !perf.finished)) return;
+        const reuse = keep && exHolder && exHolder.isConnected ? exHolder : null;
+        const holder = reuse ?? h("div", { class: "adv-ex-holder" });
+        if (!reuse) sceneBox.append(holder);
+        const v = mod.mountExplore({
+          host: holder, seed: `${book.id}-${sec.scene.place}`, scene: sec.scene, heroLook: heroLook(), entryFrom, spots: ex.spots,
+          onPick: (key) => { const c = ex.list[key]; if (c && choiceState(s, c) === "ok" && s.section === sid) pick(c); },
+          loc: loc ? book.locations?.[loc] : undefined, locId: loc, fromLoc, locations: book.locations, locSides: loc ? locSides(loc) : undefined,
+          keepFrom: keep,
+        }) as ExploreView;
+        explore = v;
+        exHolder = holder;
+        // the stage the beats played on gives way to the walkable place
+        for (const n of [...sceneBox.children]) if (n !== holder) n.remove();
+        requestAnimationFrame(() => holder.classList.add("in"));
+        fit?.destroy(); fit = null; stage?.destroy(); stage = null;
+      }).catch(() => {
+        if (s.section !== sid || !view.isConnected) return;
+        noExplore.add(sid);
+        exploring = false;
+        sceneBox.classList.remove("explore");
+        view.classList.remove("exploring");
+        render();
+      });
+    }
+
+    /** After a change in the same section (loot taken, a fight won...): HUD, scene and next steps. */
+    function render(_from?: string) {
+      renderChips();
+      if (perf && !perf.finished) return;
+      const sec = book.sections[s.section];
+      sceneBox.classList.toggle("dead", s.ended === "death");
+      sceneBox.classList.toggle("won", s.ended === "victory");
+      view.classList.remove("ended", "won", "dead");
+      const ex = exploreSpots();
+      if (ex) mountExploreView(ex);
+      else if (exploring || !stage) { exploring = false; sceneBox.classList.remove("explore"); view.classList.remove("exploring"); restingStage(); }
       // loot sits in the action dock, in reach of the thumb, above what to do next
       const loot = offersBox();
-      dock.replaceChildren(...nn(loot));
-      dock.style.setProperty("--d", `${Math.min(1.2, paras.length * 0.16 + 0.1)}s`);
+      dock.replaceChildren(...nn(sec.note ? h("div", { class: "adv-note fr-parch" }, ui("info", 2), h("span", null, sec.note)) : null, loot));
       const ph = phase(book, s);
       if (ph === "end") return endPanel();
       if (ph === "combat") {
@@ -728,7 +851,6 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
         const wheel = h("div", { class: "adv-wheel-box" });
         const rollBtn = gameBtn("Bốc số ngẫu nhiên", async () => {
           rollBtn.remove();
-          view.classList.add("shown");
           const n = await wheelRoll(wheel);
           const res = randomResult(book, sec, s, n);
           const extra = res.fx ? apply(book, s, res.fx) : [];
@@ -806,7 +928,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
         h("span", { class: "fr-chip" }, ui("map", 1), `${new Set(s.visited).size} đoạn`),
         h("span", { class: "fr-chip" }, ui("gold", 1), `${s.gold}`)),
         h("div", { class: "adv-end-btns" }, ...nn(
-          !win && s.back ? gameBtn("Thử lại đoạn này", () => { const r = retry(s); if (r) { s = r; save(true); last = null; render(); } }, { kind: "gold", cls: "block big", icon: "heal" }) : null,
+          !win && s.back ? gameBtn("Thử lại đoạn này", () => { const r = retry(s); if (r) { s = r; save(true); last = null; renderChips(); enterSection(false, []); } }, { kind: "gold", cls: "block big", icon: "heal" }) : null,
           h("div", { class: "adv-row-btns" },
             gameBtn("Chơi lại từ đầu", () => create(book, slot, entry)),
             gameBtn("Về ô lưu", async () => { await saves!.flush(); void openBook(entry); })))));
@@ -871,12 +993,12 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       draw();
     }
 
+    // the story opens: a big moment plays as a film the first time
     const first = book.sections[s.section];
-    if (s.steps <= 1 && first.scene.cutscene && !s.flags[`cut:${s.section}`]) {
-      s.flags[`cut:${s.section}`] = true;
-      save();
-      void playCutscene(el, book, s.section, heroLook()).then(() => { if (view.isConnected) render(); });
-    } else render();
+    const big = s.steps <= 1 && !!first.scene.cutscene && !s.flags[`cut:${s.section}`];
+    if (big) { s.flags[`cut:${s.section}`] = true; save(); }
+    renderChips();
+    enterSection(big, []);
   }
 
   void library();

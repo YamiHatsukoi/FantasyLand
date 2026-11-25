@@ -84,9 +84,11 @@ export function chunkText(text: string[]): string[] {
   for (const p of text) {
     const ss = sentences(p);
     let cur = "";
+    let n = 0;
     for (const s of ss) {
-      if (cur && (cur.length + s.length > 160 || cur.length > 105)) { out.push(cur); cur = s; }
-      else cur = cur ? `${cur} ${s}` : s;
+      // two sentences at most (a very short one may ride along), about 160 characters
+      if (cur && (cur.length + s.length > 160 || cur.length > 105 || (n >= 2 && (s.length > 24 || n >= 3)))) { out.push(cur); cur = s; n = 1; }
+      else { cur = cur ? `${cur} ${s}` : s; n++; }
     }
     if (cur) out.push(cur);
   }
@@ -286,6 +288,17 @@ export class Director {
   private scoped: Scoped[] = [];
   private uid = 0;
   private instant = false;
+  /** Movements of this beat per actor: later actions on the same actor wait for them. */
+  private pending = new Map<Actor, Promise<void>>();
+  /** Ids that enter and die in the same beat: they are found lying there. */
+  private doa = new Set<string>();
+
+  private after(a: Actor, fn: () => Promise<unknown> | void): Promise<void> {
+    const prev = this.instant ? undefined : this.pending.get(a);
+    const p = (prev ? prev.then(() => fn()) : Promise.resolve(fn())).then(() => undefined);
+    if (!this.instant) this.pending.set(a, p);
+    return p;
+  }
   constructor(readonly stage: Stage, readonly book: Book, readonly sec: Section, readonly heroLook: Look) {
     this.staged = !!sec.stage?.length;
     this.beats = sectionBeats(book, sec);
@@ -425,6 +438,16 @@ export class Director {
     if (st.look.fade > 0.4 && !list.some((a) => "camera" in a && str(a.camera) === "fade-out")) void st.tween(st.look, "fade", 0, instant ? 0 : 900);
     const waits: Promise<unknown>[] = [];
     const facedInBeat = new Set<string>();
+    this.pending.clear();
+    this.doa.clear();
+    const entering = new Set(list.filter((a) => "enter" in a && a.enter).map((a) => base(str((a as Record<string, unknown>).enter))));
+    for (const a of list) {
+      const R = a as Record<string, unknown>;
+      if ("pose" in a && a.pose) {
+        const who = R.as ? str(a.pose) : str(R.who) || HERO, pose = R.as ? str(R.as) : str(a.pose);
+        if ((pose === "dead" || pose === "kneel") && entering.has(base(who))) this.doa.add(base(who));
+      }
+    }
     const entered: Actor[] = [];
     for (const a of list) if ("face" in a) facedInBeat.add(base(str(a.face)));
     // the beat's subject, for the camera
@@ -473,9 +496,11 @@ export class Director {
     if ("face" in a && a.face) {
       const dir = str(R.dir);
       for (const x of this.group(str(a.face))) {
-        if (dir.startsWith("toward:")) { const t = this.one(dir.slice(7)); if (t) this.faceToward(x, t); }
-        else if (dir === "left" || dir === "right") x.facing = dir;
-        else if (dir === "up" || dir === "down") x.facing = isMonster(x.id) ? x.facing : dir;
+        void this.after(x, () => {
+          if (dir.startsWith("toward:")) { const t = this.one(dir.slice(7)); if (t) this.faceToward(x, t); }
+          else if (dir === "left" || dir === "right") x.facing = dir;
+          else if (dir === "up" || dir === "down") x.facing = isMonster(x.id) ? x.facing : dir;
+        });
       }
       return {};
     }
@@ -515,13 +540,14 @@ export class Director {
     const sprite = b;
     const flying = isMonster(sprite) && creatureSize(sprite).flying;
     const waits: Promise<unknown>[] = [];
-    const n0 = clamp(n, 1, 6);
+    const n0 = clamp(n, 1, 4);
     let subject: { x: number; y: number } | undefined;
     const existing = this.group(id);
     const onStage = (a: Actor) => !a.hidden && a.x > -8 && a.x < W + 8 && a.pose !== "dead" && (a.alpha ?? 1) > 0.5;
     const standing = existing.filter(onStage);
-    // already there: without n it just moves to its new spot; with n, more of them come
-    if (standing.length && !hasN) {
+    // already there: a named character just moves to its new spot; more of a kind (giaks, guards) arrive
+    const generic = isMonster(b) || /soldier|guard|cavalry|ranger|refugee|bandit|robber|villager|warrior|knight|townsfolk|peasant|militia|sentry|pirate|sailor|monk|priest/.test(b);
+    if (standing.length && !hasN && !generic) {
       const target = this.place(at === undefined || at === "" ? 3 : at, standing[0]);
       if (this.instant) { standing[0].x = target.x; standing[0].y = target.y; } else waits.push(this.walk(standing[0], target.x, target.y, false));
       entered.push(standing[0]);
@@ -530,12 +556,18 @@ export class Director {
     // the ones who left (ran off, removed) come back first, then new ones
     const reuse = standing.length ? [] : existing.filter((a) => !onStage(a) && a.pose !== "dead");
     let made = existing.length;
+    const atN0 = at === undefined || at === "" ? 3 : Number(at);
+    const target = this.place(Number.isFinite(atN0) ? atN0 : at);
+    // a crowd does not stand inside the hero: it gathers on the side it came from
+    const hero = this.hero();
+    if (hero && !isHero(b) && !hero.hidden && Math.abs(hero.x - target.x) < 22) {
+      const side = from === "left" ? -1 : from === "right" ? 1 : target.x < W / 2 ? -1 : 1;
+      target.x = clamp(hero.x + side * (n0 > 1 ? 40 : 30), 14, W - 14);
+    }
     for (let k = 0; k < n0; k++) {
-      const atN = at === undefined || at === "" ? (k ? 4 : 3) : Number(at);
-      const target = this.place(Number.isFinite(atN) ? atN : at);
       let tx = target.x, ty = target.y;
       const kk = k + (standing.length ? standing.length : 0);
-      if (kk) { tx = clamp(target.x + (kk % 2 ? 1 : -1) * Math.ceil(kk / 2) * 17, 8, W - 8); ty = target.y + (kk % 2 ? 3 : -2); }
+      if (kk) { tx = clamp(target.x + (kk % 2 ? 1 : -1) * Math.ceil(kk / 2) * 13, 8, W - 8); ty = target.y + [0, -5, 4][kk % 3]; }
       let a = reuse[k];
       if (!a) {
         a = { id: made ? `${b}#${made + 1}` : b, sprite, x: tx, y: ty, facing: "left", pose: "idle", phase: Math.floor(Math.random() * 900), look: isHero(b) ? this.heroLook : undefined };
@@ -547,6 +579,13 @@ export class Director {
       if (!subject) subject = { x: tx, y: ty };
       const delay = k * 160;
       if (this.instant) { a.x = tx; a.y = ty; continue; }
+      if (this.doa.has(b)) {
+        // already lying (or kneeling) there when the beat begins: it fades into view
+        a.x = tx; a.y = ty; a.alpha = 0;
+        this.pending.set(a, this.fadeTo(a, 1, 500));
+        continue;
+      }
+      const w0 = waits.length;
       if (from === "top") {
         a.x = tx + (flying ? 70 : 0) + k * 10; a.y = ty; a.z = flying ? 120 : 100;
         a.facing = flying ? "left" : a.facing;
@@ -573,6 +612,7 @@ export class Director {
         a.facing = left ? "right" : "left";
         waits.push(new Promise<void>((res) => setTimeout(() => void this.walk(a!, tx, ty, isMonster(b) && this.danger()).then(res), delay)));
       }
+      if (waits.length > w0) this.pending.set(a, waits[waits.length - 1].then(() => undefined));
     }
     return { wait: Promise.all(waits), subject };
   }
@@ -592,13 +632,13 @@ export class Director {
       if (p.off === "top") {
         // flies away upwards
         if (this.instant) { a.hidden = true; return; }
-        waits.push(this.stage.tween(a as unknown as Record<string, number>, "z", 150, run ? 700 : 1100, (q) => q * q).then(() => { a.hidden = true; a.z = 0; }));
+        waits.push(this.after(a, () => this.stage.tween(a as unknown as Record<string, number>, "z", 150, run ? 700 : 1100, (q) => q * q).then(() => { a.hidden = true; a.z = 0; })));
         return;
       }
       if (p.off) x += (p.off === "right" ? 1 : -1) * k * 14;
       if (!subject) subject = { x, y: p.y };
       if (this.instant) { a.x = x; a.y = p.y; if (p.off) a.hidden = true; return; }
-      waits.push(this.walk(a, x, p.y + (k ? (k % 2 ? 3 : -2) : 0), run).then(() => { if (p.off) a.hidden = true; }));
+      waits.push(this.after(a, () => this.walk(a, x, p.y + (k ? (k % 2 ? 3 : -2) : 0), run).then(() => { if (p.off) a.hidden = true; })));
     });
     return { wait: Promise.all(waits), subject };
   }
@@ -611,8 +651,10 @@ export class Director {
     const targets = pose === "dead" || pose === "hurt" ? (alive.length ? [alive[0]] : g.slice(0, 1)) : g;
     const list = targets.length ? targets : [this.ensure(id)];
     const waits: Promise<unknown>[] = [];
-    for (const a of list) {
+    const one = (a: Actor): Promise<unknown> | void => {
+      const waits: Promise<unknown>[] = [];
       if (a.hidden) this.bringBack(a);
+      if (this.doa.has(base(a.id)) && (pose === "dead" || pose === "kneel")) { a.pose = pose === "kneel" && isMonster(a.sprite ?? a.id) ? "idle" : (pose as Actor["pose"]); return; }
       const fly = isMonster(a.sprite ?? a.id) && creatureSize(a.sprite ?? a.id).flying;
       switch (pose) {
         case "kneel":
@@ -664,7 +706,9 @@ export class Director {
           if (a.pose === "dead" && !this.instant) this.dust(a.x, a.y, 4);
           a.pose = "idle";
       }
-    }
+      return Promise.all(waits);
+    };
+    for (const a of list) waits.push(this.after(a, () => one(a)));
     const f = list[0];
     return { wait: Promise.all(waits), subject: f ? { x: f.x, y: f.y } : undefined };
   }
@@ -677,8 +721,7 @@ export class Director {
       if (this.instant) { a.hidden = true; continue; }
       const fly = isMonster(a.sprite ?? a.id) && creatureSize(a.sprite ?? a.id).flying;
       if (fly && a.pose !== "dead") { waits.push(st.tween(a as unknown as Record<string, number>, "z", 150, 900, (q) => q * q).then(() => { a.hidden = true; a.z = 0; })); continue; }
-      this.dust(a.x, a.y, 5);
-      waits.push(this.fadeTo(a, 0, 600).then(() => { a.hidden = true; a.alpha = 1; }));
+      waits.push(this.after(a, () => { this.dust(a.x, a.y, 5); return this.fadeTo(a, 0, 600).then(() => { a.hidden = true; a.alpha = 1; }); }));
     }
     // a prop of that name goes too
     const kind = isKnownProp(id) ? propKind(id) : "";
@@ -702,8 +745,13 @@ export class Director {
     if (Number.isFinite(n)) {
       const s = this.slot(n);
       x = s.x; y = s.y + (small ? 3 : art.flat ? 2 : -5);
-      // don't hide a prop inside a person standing there
-      if (!small && !art.flat && st.actors.some((a) => !a.hidden && Math.abs(a.x - x) < 12)) x += x > W / 2 ? 18 : -18;
+      // don't hide a prop inside a person standing there (or a person inside it)
+      if (!small && !art.flat) {
+        const half = art.c.width / 2;
+        const busy = (cx: number) => st.actors.some((a) => !a.hidden && a.x > -8 && a.x < W + 8 && Math.abs((a.to?.x ?? a.x) - cx) < half + 6);
+        const base0 = x;
+        for (const d of [0, 20, -20, 38, -38, 56, -56]) { if (!busy(base0 + d)) { x = base0 + d; break; } }
+      }
     } else if (p) { x = p.x; y = p.y; }
     else { const s = this.slot(4); x = s.x + 14; y = s.y - 5; }
     x = clamp(x, art.c.width / 2 + 2, W - art.c.width / 2 - 2);
@@ -772,7 +820,10 @@ export class Director {
           st.emit({
             id: `${id}-s${i}`, until: Infinity,
             tick: (dt) => {
-              if (Math.random() < dt / 90) st.particles.push({ x: q.x + rnd(-8, 8), y: top, vx: rnd(0.05, 0.35), vy: rnd(-0.45, -0.25), life: 0, max: rnd(2600, 3800), col: Math.random() < 0.5 ? "rgba(80,76,80,.55)" : "rgba(120,114,116,.45)", size: rnd(3, 5), shape: "puff", grow: 6, drag: 0.7, a: 0.8 });
+              if (Math.random() < dt / 70) {
+                const r = Math.random();
+                st.particles.push({ x: q.x + rnd(-10, 10), y: top + rnd(-2, 2), vx: rnd(0.08, 0.4), vy: rnd(-0.5, -0.28), life: 0, max: rnd(3000, 4400), col: r < 0.35 ? "#5e5a62" : r < 0.7 ? "#8a8590" : "#b0aab2", size: rnd(2.5, 4.5), shape: "puff", grow: 7, drag: 0.75, a: 0.34 });
+              }
             },
           });
           this.beatScoped(`${id}-s${i}`, 3);
@@ -783,12 +834,26 @@ export class Director {
         const q = P.who ? { x: P.x, y: P.y - 18 } : P.sky ? P : { x: P.x, y: P.y - 12 };
         st.flash("#fff4d0", 220);
         st.shake(520, 2);
+        const t0 = st.now;
+        st.overlays.push((g, t) => {
+          const k = (t - t0) / 520;
+          if (k > 1) return false;
+          const r = 6 + easeOut(Math.min(1, k * 1.6)) * 30;
+          g.save();
+          g.globalCompositeOperation = "lighter";
+          g.globalAlpha = 1 - k;
+          const gr = g.createRadialGradient(q.x, q.y, 0, q.x, q.y, r);
+          gr.addColorStop(0, "#fffbe0"); gr.addColorStop(0.35, "#ffd050"); gr.addColorStop(0.7, "rgba(240,90,20,.8)"); gr.addColorStop(1, "rgba(200,40,10,0)");
+          g.fillStyle = gr; g.beginPath(); g.arc(q.x, q.y, r, 0, Math.PI * 2); g.fill();
+          g.restore();
+          return true;
+        });
         this.ring(q.x, q.y, "#ffe0a0", 70, 420, false);
         for (let i = 0; i < 46; i++) {
           const a = Math.random() * Math.PI * 2, v = rnd(0.6, 3.4);
           st.particles.push({ x: q.x, y: q.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 0.8, life: 0, max: rnd(350, 750), col: ["#fff6c0", "#ffd050", "#ff8a20", "#e83a10"][i % 4], size: rnd(1, 3), glow: true, g: 0.003, drag: 0.2 });
         }
-        for (let i = 0; i < 14; i++) st.particles.push({ x: q.x + rnd(-10, 10), y: q.y + rnd(-6, 6), vx: rnd(-0.8, 0.8), vy: rnd(-0.9, -0.2), life: 0, max: rnd(1500, 2600), col: "rgba(60,50,48,.7)", size: rnd(4, 7), shape: "puff", grow: 9, drag: 0.35 });
+        for (let i = 0; i < 14; i++) st.particles.push({ x: q.x + rnd(-10, 10), y: q.y + rnd(-6, 6), vx: rnd(-0.8, 0.8), vy: rnd(-0.9, -0.2), life: -rnd(120, 320), max: rnd(1500, 2600), col: "#4a4240", size: rnd(4, 7), shape: "puff", grow: 9, drag: 0.35, a: 0.45 });
         for (let i = 0; i < 10; i++) st.particles.push({ x: q.x, y: q.y, vx: rnd(-2.4, 2.4), vy: rnd(-3.2, -1.2), life: 0, max: 2400, col: "#5a4a3a", size: rnd(1, 2), shape: "rock", g: 0.008, floor: (P.who?.y ?? this.slot(2).y) + rnd(-2, 4) });
         st.decal(scorch(), q.x, P.who?.y ?? this.slot(2).y);
         if (!this.instant) { sfx("impact", "fire"); sfx("demolish"); }
@@ -921,7 +986,7 @@ export class Director {
       });
     }
     if (w > 2 && Math.random() < dt / 260) st.particles.push({ x: x + rnd(-w / 3, w / 3), y: y - 10, vx: rnd(-0.3, 0.3), vy: rnd(-0.9, -0.5), life: 0, max: rnd(900, 1600), col: "#ffd070", size: 1, glow: true });
-    if (smoke && w > 4 && Math.random() < dt / 170) st.particles.push({ x: x + rnd(-w / 3, w / 3), y: y - 16, vx: rnd(0, 0.25), vy: rnd(-0.45, -0.25), life: 0, max: rnd(1800, 2800), col: "rgba(60,54,56,.5)", size: rnd(2.5, 4), shape: "puff", grow: 5, drag: 0.7 });
+    if (smoke && w > 4 && Math.random() < dt / 170) st.particles.push({ x: x + rnd(-w / 3, w / 3), y: y - 16, vx: rnd(0, 0.25), vy: rnd(-0.45, -0.25), life: 0, max: rnd(1800, 2800), col: Math.random() < 0.5 ? "#4e4a50" : "#7a747c", size: rnd(2.5, 4), shape: "puff", grow: 5, drag: 0.7, a: 0.4 });
   }
 
   private dust(x: number, y: number, n: number) {
@@ -1010,8 +1075,8 @@ export class Director {
       g.save();
       g.globalCompositeOperation = "lighter";
       g.globalAlpha = (1 - k) * 0.9;
-      g.strokeStyle = "#c8a0ff"; g.lineWidth = 2;
-      const r = 6 + k * 12;
+      g.strokeStyle = "#c8a0ff"; g.lineWidth = 3;
+      const r = 8 + k * 16;
       g.beginPath();
       if (dir > 0) g.arc(cx - r, y, r, -0.9, 0.9); else g.arc(cx + r, y, r, Math.PI - 0.9, Math.PI + 0.9);
       g.stroke();

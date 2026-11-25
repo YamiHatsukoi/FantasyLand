@@ -29,6 +29,7 @@ import { lookFor, personFrame, type Facing, type Look, type Pose } from "./art/p
 import { Px, hs, mix, rgba } from "./art/px";
 import { isMonster } from "./stage";
 import type { Choice, Loc, Scene } from "./types";
+import { saidSide } from "./world";
 
 // ============================================================ public API
 type Side = "north" | "south" | "east" | "west";
@@ -1559,7 +1560,7 @@ function wildBase(g: Gen) {
   if (bg === "river" || bg === "bridge") {
     // location mode: the river runs across the way the roads go, so the road crosses it on the bridge
     const across = !g.plan || g.exits.has("north") || g.exits.has("south") || !(g.exits.has("east") || g.exits.has("west"));
-    carveRiver(g, across, (across ? hub.y : hub.x) + (bg === "bridge" ? 4 : 5) * (g.plan && r.chance(0.5) ? -1 : 1), bg === "bridge" ? 3 : 2.3);
+    carveRiver(g, across, (across ? hub.y : hub.x) + (bg === "bridge" ? 4 : 5) * (g.plan && r.chance(0.5) ? -1 : 1), g.plan && g.feat.has("stream") && !g.feat.has("river") ? 1.7 : bg === "bridge" ? 3 : 2.3);
   } else if (bg === "lake") {
     const cx = hub.x + (r.chance(0.5) ? 8 : -8), cy = hub.y - 4;
     for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
@@ -2865,9 +2866,11 @@ function planWays(loc: Loc, self: string, kind: Kind, locations?: Record<string,
 function locIvar(loc: Loc): IVar {
   const f = new Set(loc.features);
   if (loc.kind === "temple" || (loc.kind === "hall" && (f.has("altar") || f.has("shrine")) && !f.has("throne"))) return "temple";
-  if (f.has("throne")) return "throne";
-  if (loc.kind === "inn" && f.has("bar")) return "tavern";
+  if (f.has("throne") && loc.kind === "hall") return "throne";
   const v = interiorVar({ place: `${loc.name}`, bg: loc.kind } as Scene);
+  // the name says what the room is (a shop with a counter is still a shop); else a bar makes a tavern
+  if (v === "shop" || v === "guild") return v;
+  if (loc.kind === "inn" && f.has("bar")) return "tavern";
   if (v === "tavern" && loc.kind === "inn" && !f.has("bar") && hasWord(loc.desc, ["nhà", "phòng", "căn nhà", "túp lều", "chòi", "lều"])) return "house";
   return v;
 }
@@ -3018,6 +3021,7 @@ function landmarksOut(g: Gen) {
     const off = c > lim / 2 ? -5 - r.int(0, 1) : 5 + r.int(0, 1);
     carveRiver(g, across, c + off, F("river", "stone-bridge", "bridge") ? 2.4 : 1.6, true);
   }
+  straightenBridges(g);
   if (F("stone-bridge")) for (let k = 0; k < g.w * g.h; k++) if (g.gnd[k] === G.BRIDGE) g.extra.set(k, "stone");
   if (bg !== "lake" && !walled && F("lake", "pool", "pond", "waterfall")) {
     const s = awaySide(), v = SIDE_V[s], big = F("lake");
@@ -3184,7 +3188,62 @@ function landmarksOut(g: Gen) {
   if (F("stairs") && g.kind === "wild") putAt(null, prop("stairsDown"), near(ring(2, 5)), 1, 1, { flat: true, walkable: true, dy: 2 });
   if (F("trapdoor")) putAt(null, prop("hatch"), near(ring(2, 5)), 1, 1, { flat: true, walkable: true, dy: -6 });
   if (F("totem")) putAt("statue", prop("totem"), near(ring(2, 5)));
+  if (F("bench")) { const p = near({ x: hub.x - 2, y: hub.y - 1 }, 2, 1, 5); if (p) put("table", prop("bench"), p, 2, 1); }
   if (F("scarecrow")) putAt(null, prop("scarecrow"), near(ring(3, 7)));
+}
+
+/**
+ * A road that met the river at a slant leaves a staircase of planks over the water: each crossing
+ * becomes one straight bridge from bank to bank, and the road walks along the bank to its foot.
+ */
+function straightenBridges(g: Gen) {
+  const seen = new Uint8Array(g.w * g.h);
+  const water = (x: number, y: number) => { const v = g.get(x, y); return v === G.WATER || v === G.DEEP; };
+  for (let k0 = 0; k0 < g.w * g.h; k0++) {
+    if (g.gnd[k0] !== G.BRIDGE || seen[k0]) continue;
+    const comp: Pt[] = [];
+    const st = [k0];
+    seen[k0] = 1;
+    while (st.length) {
+      const k = st.pop()!, x = k % g.w, y = (k / g.w) | 0;
+      comp.push({ x, y });
+      for (const [dx, dy] of [...DIR4, [1, 1], [-1, 1], [1, -1], [-1, -1]]) { const nx = x + dx, ny = y + dy; if (g.inb(nx, ny) && g.get(nx, ny) === G.BRIDGE && !seen[g.i(nx, ny)]) { seen[g.i(nx, ny)] = 1; st.push(g.i(nx, ny)); } }
+    }
+    const xs = comp.map((p) => p.x), ys = comp.map((p) => p.y);
+    const spanX = Math.max(...xs) - Math.min(...xs), spanY = Math.max(...ys) - Math.min(...ys);
+    if (spanX === 0 || spanY === 0) continue;
+    // the river runs across the longer way of the water around it
+    const vertical = comp.filter((p) => water(p.x - 1, p.y) || water(p.x + 1, p.y)).length >= comp.filter((p) => water(p.x, p.y - 1) || water(p.x, p.y + 1)).length;
+    const mid = comp[comp.length >> 1];
+    const ends = comp.filter((p) => DIR4.some(([dx, dy]) => { const v = g.get(p.x + dx, p.y + dy); return v !== G.BRIDGE && !UNWALK.has(v); }));
+    for (const p of comp) g.set(p.x, p.y, G.WATER);
+    // the bridge: straight across at the middle of the old crossing
+    const at = vertical ? mid.y : mid.x;
+    const line: Pt[] = [];
+    if (!vertical) { let y0 = mid.y, y1 = mid.y; while (water(at, y0 - 1)) y0--; while (water(at, y1 + 1)) y1++; for (let y = y0; y <= y1; y++) line.push({ x: at, y }); }
+    else { let x0 = mid.x, x1 = mid.x; while (water(x0 - 1, at)) x0--; while (water(x1 + 1, at)) x1++; for (let x = x0; x <= x1; x++) line.push({ x, y: at }); }
+    for (const p of line) { g.set(p.x, p.y, G.BRIDGE); g.keep[g.i(p.x, p.y)] = 1; }
+    // the road along each bank from where it reached the water to the bridge's foot
+    const floor = floorOf(g);
+    for (const e of ends) {
+      let { x, y } = e;
+      const lay = () => { if (!UNWALK.has(g.get(x, y)) || water(x, y)) { if (!water(x, y) && g.get(x, y) !== G.BRIDGE) g.set(x, y, floor); g.keep[g.i(x, y)] = 1; } };
+      // step back onto land first
+      for (const [dx, dy] of DIR4) if (!water(x + dx, y + dy) && g.get(x + dx, y + dy) !== G.BRIDGE && !UNWALK.has(g.get(x + dx, y + dy)) && water(x, y)) { x += dx; y += dy; break; }
+      for (let n = 0; n < 40; n++) {
+        const tx = vertical ? x : at, ty = vertical ? at : y;
+        if (x === tx && y === ty) break;
+        const nx = x + Math.sign(tx - x), ny = y + Math.sign(ty - y);
+        if (water(nx, ny)) {
+          // round the water on the bank side
+          const back = vertical ? { x, y: ny } : { x: nx, y };
+          if (water(back.x, back.y)) break;
+          x = back.x; y = back.y;
+        } else { x = nx; y = ny; }
+        lay();
+      }
+    }
+  }
 }
 
 /** Rails along the paths of a mine (flat, walked over). */
@@ -3306,6 +3365,15 @@ function locSpots(g: Gen, spots: ExploreOpts["spots"], out: PSpot[], zoneOf: (p:
     // the way to where the choice goes; else a way on the side the choice says
     let w = s.toLoc ? ways.find((x) => x.to === s.toLoc && !taken.has(x) && ready(x)) : undefined;
     if (!w && s.via.exit) w = ways.find((x) => !x.door && x.side === s.via.exit && !taken.has(x) && ready(x) && !wanted(x, s));
+    // the text names a compass direction the link does not agree with: the text wins (the player reads it)
+    const said = saidSide(s.label);
+    if (w && !w.door && said && said !== w.side) {
+      taken.add(w);
+      const end = g.ends[said] && !out.some((o) => o.end && o.end.x === g.ends[said]!.x && o.end.y === g.ends[said]!.y) ? g.ends[said]! : branchEnd(g, said, [...ways.filter((x) => x.end).map((x) => x.end!), ...out.filter((o) => o.end).map((o) => o.end!)]);
+      out.push({ ...edgeSpot(g, s, said, end, zoneOf), dest: w.name });
+      signpost(g, said, end);
+      continue;
+    }
     if (w) { claim(s, w); continue; }
     if (s.via.door && !s.via.exit) {
       // a building of the place that fits the label, else any free one
@@ -3720,7 +3788,7 @@ function interiorVar(sc: Scene): IVar {
 }
 
 function buildArea(o: ExploreOpts): Area {
-  const loc = o.loc ?? null;
+  let loc = o.loc ?? null;
   const real = o.scene;
   // what the place is (location mode: the location, not the moment of the section)
   const snowy = !!loc && (loc.features.includes("snow") || loc.features.includes("ice") || hasWord(`${loc.name} ${loc.desc}`, ["tuyết", "băng giá", "phủ tuyết"]));
@@ -3740,6 +3808,17 @@ function buildArea(o: ExploreOpts): Area {
     g.plan = planWays(loc, o.locId ?? "", kind, o.locations);
     g.feat = new Set(loc.features.map((f) => f.toLowerCase()));
     g.words = `${loc.name} ${loc.desc}`.toLowerCase();
+    // things the description names that the features do not
+    const KW: [string, string[]][] = [
+      ["bench", ["ghế dài", "băng ghế"]], ["well", ["giếng"]], ["campfire", ["lửa trại", "đống lửa"]], ["fallen-tree", ["cây đổ", "thân cây đổ", "cây ngã"]],
+      ["graves", ["mộ", "nấm mồ", "ngôi mộ", "bia mộ", "nghĩa địa"]], ["statue", ["tượng", "bức tượng"]], ["cart", ["xe ngựa", "xe bò", "xe hàng", "cỗ xe"]],
+      ["boat", ["thuyền", "xuồng", "bè"]], ["rocks", ["tảng đá", "đá tảng", "mỏm đá"]], ["stream", ["suối", "con suối", "khe suối"]], ["lake", ["hồ"]],
+      ["pool", ["ao", "vũng nước"]], ["fence", ["hàng rào"]], ["hut", ["túp lều", "chòi"]], ["cabin", ["căn nhà gỗ", "nhà gỗ", "căn chòi"]], ["tower", ["tháp canh", "tháp"]],
+      ["ruins", ["đổ nát", "phế tích", "tàn tích"]], ["bones", ["xương", "hài cốt"]], ["corpses", ["xác", "xác chết", "thi thể"]], ["crates", ["thùng gỗ", "kiện hàng"]],
+      ["banners", ["cờ", "lá cờ"]], ["signpost", ["biển chỉ đường", "cột chỉ đường", "cột mốc"]],
+    ];
+    for (const [f, w] of KW) if (hasWord(g.words, w)) loc = { ...loc, features: [...loc.features, f] };
+    g.feat = new Set(loc.features.map((f) => f.toLowerCase()));
     g.dens = hasWord(g.words, ["rậm", "rậm rạp", "dày đặc", "um tùm", "sâu", "rừng sâu", "chằng chịt"]) ? 1.3 : hasWord(g.words, ["thưa", "trống", "quang", "phát quang", "trống trải", "bãi trống"]) ? 0.6 : 0.85 + cell(seed & 1023, 3, 9) * 0.35;
     for (const wy of g.plan) if (wy.side) g.exits.add(wy.side);
     for (const sd of o.locSides ?? []) g.exits.add(sd);
@@ -3991,6 +4070,16 @@ const CSS = `
 .ex-label.locked{color:#c8b8a0}
 .ex-label .ex-arr{color:#f2c542}
 .ex-label img{flex:none}
+.ex-label.has-dest{flex-direction:column;align-items:center;gap:0;padding:1px 7px 2px}
+.ex-label .ex-row{display:flex;align-items:center;gap:4px;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.ex-label .ex-dest{color:#f2c542;font-size:13px;line-height:1.05}
+.ex-label.sign{font-size:13px;color:#e8dcc0;background:rgba(40,26,14,.62);box-shadow:inset 0 0 0 1px rgba(200,160,90,.35)}
+.ex-label.sign.on{opacity:.85}
+.ex-prompt .ex-dest{display:block;color:#7a5418;font-size:14px;line-height:1;margin:0 0 2px}
+.ex-root.ex-in>canvas{animation:exIn .5s ease-out}
+.ex-root.ex-out>canvas{opacity:0;transition:opacity .32s ease-in}
+.ex-root.ex-out>.ex-ui{opacity:0;transition:opacity .2s}
+@keyframes exIn{from{opacity:0}to{opacity:1}}
 .ex-prompt{position:absolute;left:0;top:0;transform:translate(-50%,-100%);pointer-events:auto;width:max-content;min-width:120px;max-width:min(280px,86%);padding:7px 10px 9px;background:#f1e5c5;color:#2b2016;border:2px solid #24170c;box-shadow:inset 0 0 0 2px #fff8e4,inset 0 -3px 0 2px #d8c08c,0 3px 0 rgba(0,0,0,.45);text-align:center;animation:exPop .18s ease-out}
 .ex-prompt::after{content:"";position:absolute;left:50%;bottom:-8px;margin-left:-6px;border:6px solid transparent;border-top:6px solid #24170c;border-bottom:0}
 .ex-prompt.below{transform:translate(-50%,0)}
@@ -4244,7 +4333,7 @@ export function mountExplore(o: ExploreOpts): ExploreHandle {
     for (const { s, p } of order) {
       const el = s.el!;
       const d = Math.hypot(s.stand.x - near.x, s.stand.y - near.y);
-      const on = s !== active && (d < 6 || target === s);
+      const on = s !== active && (d < (s.kind === "exit" || s.kind === "door" ? 9 : 6) || target === s);
       el.classList.toggle("on", on);
       if (!on) continue;
       let size = labelSize.get(el);
@@ -4268,7 +4357,16 @@ export function mountExplore(o: ExploreOpts): ExploreHandle {
       let size = labelSize.get(el);
       if (!size) { size = { w: el.offsetWidth, h: el.offsetHeight }; labelSize.set(el, size); }
       const p = toScreen(sg.ax, sg.ay), half = Math.min(size.w / 2, cssW / 2 - 2);
-      el.style.transform = `translate(${Math.round(clamp(p.x, half + 2, cssW - half - 2))}px,${Math.round(Math.max(size.h + 2, Math.min(cssH - 2, p.y)))}px) translate(-50%,-100%)`;
+      const lx = clamp(p.x, half + 2, cssW - half - 2);
+      let ly = Math.max(size.h + 2, Math.min(cssH - 2, p.y));
+      // keep clear of the labels of the choices (they matter more): move down, then up
+      for (let k = 0; k < 6; k++) {
+        const hit = placed.find((r) => lx - half < r.x1 && lx + half > r.x0 && ly - size!.h < r.y1 && ly > r.y0);
+        if (!hit) break;
+        ly = hit.y1 + size.h + 2 <= cssH - 2 ? hit.y1 + size.h + 2 : hit.y0 - 2;
+      }
+      placed.push({ x0: lx - half, x1: lx + half, y0: ly - size.h, y1: ly });
+      el.style.transform = `translate(${Math.round(lx)}px,${Math.round(ly)}px) translate(-50%,-100%)`;
     }
     if (prompt && active) {
       const p = toScreen(active.ax, active.ay);
@@ -4350,11 +4448,16 @@ export function mountExplore(o: ExploreOpts): ExploreHandle {
     for (let k = 0; k < n; k++) parts.push({ x: x + (Math.random() - 0.5) * 8, y: y - Math.random() * 2, vx: (Math.random() - 0.5) * spread, vy: -0.01 - Math.random() * 0.012, life: 0, max: 380 + Math.random() * 260, col, size: 2, kind: "puff", grow: 0.004 });
   };
   const splash = (x: number, y: number) => parts.push({ x, y, vx: 0, vy: 0, life: 0, max: 420, col: "rgba(220,240,255,.8)", size: 1, kind: "ring" });
-  const wind = sc.weather === "wind" || sc.weather === "storm" ? 1 : 0.25;
-  const rainy = outdoor && (sc.weather === "rain" || sc.weather === "storm");
-  const night = sc.time === "night";
-  const darkish = A.dark || A.indoor;
-  const amb = ambient(A, sc);
+  let wind = 0.25, rainy = false, night = false, darkish = false, amb: [number, number, number] | null = null;
+  /** What follows from the section's moment (weather, time of day). */
+  const moment = () => {
+    wind = sc.weather === "wind" || sc.weather === "storm" ? 1 : 0.25;
+    rainy = outdoor && (sc.weather === "rain" || sc.weather === "storm");
+    night = sc.time === "night";
+    darkish = A.dark || A.indoor;
+    amb = ambient(A, sc);
+  };
+  moment();
   let lightning = 0, nextBolt = 4000 + Math.random() * 6000;
   let fishAt = 3000;
 
@@ -4809,12 +4912,50 @@ export function mountExplore(o: ExploreOpts): ExploreHandle {
   raf = requestAnimationFrame(frame);
   if (A.startWalk) sfx("step");
 
-  return {
+  const handle: ExploreHandle = {
+    locId: o.loc ? o.locId : undefined,
+    heroTile: () => tileOf(hero),
+    update(spots, scene, pick) {
+      if (!alive) return;
+      const here = tileOf(hero);
+      const B = buildArea({ ...o, spots, scene, onPick: pick, fromLoc: undefined, entryFrom: undefined, at: here });
+      // the people who live here carry on where they are; the section's people are the new section's
+      const stay = A.actors.filter((a) => !a.sec);
+      for (const a of B.actors) if (!a.sec && a.ai === "still") { const t = tileOf(a); B.block[t.y * B.w + t.x] = 0; }
+      for (const a of stay) if (a.ai === "still") { const t = tileOf(a); B.block[t.y * B.w + t.x] = 1; }
+      B.actors = [...B.actors.filter((a) => a.sec), ...stay];
+      const same = A.gnd.length === B.gnd.length && A.gnd.every((v, i) => v === B.gnd[i]) && A.dark === B.dark && A.extra.size === B.extra.size && [...A.extra].every(([k, v]) => B.extra.get(k) === v);
+      for (const s of A.spots) s.el?.remove();
+      for (const sg of A.signs) sg.el?.remove();
+      for (const b of barks) b.el.remove();
+      barks.length = 0;
+      hidePrompt();
+      A = B;
+      if (!same) ground = renderGround(A);
+      sc = scene;
+      onPick = pick;
+      moment();
+      makeLabels();
+      actors = [hero, ...A.actors];
+      // the hero stays put (a step aside if something now stands on his tile)
+      if (!canWalk(here.x, here.y)) {
+        const q = [here];
+        const seen = new Set([here.y * A.w + here.x]);
+        while (q.length) { const t = q.shift()!; if (canWalk(t.x, t.y)) { hero.x = t.x * TW + TW / 2; hero.y = t.y * TW + FEET; break; } for (const [dx, dy] of DIR4) { const n = { x: t.x + dx, y: t.y + dy }, k = n.y * A.w + n.x; if (n.x >= 0 && n.y >= 0 && n.x < A.w && n.y < A.h && !seen.has(k)) { seen.add(k); q.push(n); } } }
+      }
+      hero.path = [];
+      target = null;
+      picking = false;
+      clearTimeout(leaveTimer);
+      root.classList.remove("ex-out", "ex-in");
+    },
     destroy() {
       if (!alive) return;
       alive = false;
+      LIVE.delete(handle);
       cancelAnimationFrame(raf);
       clearTimeout(hintTimer);
+      clearTimeout(leaveTimer);
       ro.disconnect();
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keyup", onKey);
@@ -4827,7 +4968,11 @@ export function mountExplore(o: ExploreOpts): ExploreHandle {
       if (!on) last = 0;
     },
   };
+  LIVE.add(handle);
+  return handle;
 }
+/** Views still on screen (a destroyed one cannot be kept). */
+const LIVE = new WeakSet<ExploreHandle>();
 
 function chevron(g: CanvasRenderingContext2D, x: number, y: number, v: Pt) {
   // a small arrow head pointing along v, 2-pixel strokes
