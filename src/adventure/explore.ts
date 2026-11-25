@@ -545,6 +545,18 @@ const propArt = memo((key: string): HTMLCanvasElement => {
       p.line(18, 8, 21, 5, b); p.line(18, 8, 21, 11, b);
       return c;
     }
+    case "gatepost": {
+      // a square gate tower seen from the front: battlements, arrow slit, stone blocks
+      const [c, p] = mk(20, 60);
+      const st = a1 || "#a8a294";
+      softShadow(p, 10, 58, 9, 2);
+      wallTex(p, 1, 12, 18, 46, st, "stone", 11);
+      p.rect(0, 8, 20, 5, hs(st, 0.12)); p.rect(0, 8, 20, 1, hs(st, 0.35)); p.rect(0, 12, 20, 1, outline(st));
+      for (let x = 0; x < 20; x += 5) { p.rect(x, 3, 3, 5, st); p.rect(x, 3, 3, 1, hs(st, 0.3)); }
+      p.rect(9, 20, 2, 9, "#1e1a1e"); p.rect(9, 36, 2, 7, "#1e1a1e");
+      p.rect(0, 12, 1, 46, outline(st)); p.rect(19, 12, 1, 46, outline(st));
+      return c;
+    }
     case "chest2": return propCanvas("chest");
     case "crates": return buildingCanvas("crates", 1);
     case "barrel": return buildingCanvas("barrel", 1);
@@ -1236,7 +1248,7 @@ class Gen {
       const x = p.x + ox - (width > 2 ? 1 : 0), y = p.y + oy - (width > 2 ? 1 : 0);
       if (!this.inb(x, y)) continue;
       const cur = this.get(x, y);
-      if (cur === G.WALL && this.kind !== "under") continue;
+      if (cur === G.WALL && this.kind !== "under" && over(cur) === g) continue;
       this.set(x, y, over(cur));
       this.keep[this.i(x, y)] = 1;
     }
@@ -1362,9 +1374,9 @@ function wildBase(g: Gen) {
   const path = bg === "desert" ? G.PATHSAND : bg === "ruins" ? G.FLAG : bg === "coast" || bg === "sea" ? G.PATHSAND : G.DIRT;
   // ---- water and land features
   if (bg === "river" || bg === "bridge") {
-    const yc = hub.y + (bg === "bridge" ? 4 : 5), hw = bg === "bridge" ? 2.6 : 1.8, ph = r.next() * 6;
+    const yc = hub.y + (bg === "bridge" ? 4 : 5), hw = bg === "bridge" ? 3 : 2.3, ph = r.next() * 6;
     for (let x = 0; x < g.w; x++) {
-      const c = yc + Math.sin(x / 5 + ph) * 1.6 + (noise(x / 3, 0, g.seed) - 0.5) * 1.2;
+      const c = yc + Math.sin(x / 7 + ph) * 1.4 + (noise(x / 5, 0, g.seed) - 0.5) * 0.8;
       for (let y = 0; y < g.h; y++) { const d = Math.abs(y - c); if (d < hw) g.set(x, y, d < hw - 1.3 ? G.DEEP : G.WATER); }
     }
   } else if (bg === "lake") {
@@ -1393,6 +1405,11 @@ function wildBase(g: Gen) {
     const lim = bg === "hill" ? 0.68 : 0.62;
     for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) if (Math.hypot(x - hub.x, y - hub.y) > 6 && fbm(x / 6, y / 6, g.seed + 3) > lim) g.set(x, y, G.ROCK);
   }
+  for (let pass = 0; pass < 2; pass++) for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
+    if (g.get(x, y) !== G.ROCK) continue;
+    const n = DIR4.filter(([dx, dy]) => g.get(x + dx, y + dy) === G.ROCK).length;
+    if (n < 2 || (g.get(x, y + 1) !== G.ROCK && g.get(x, y - 1) !== G.ROCK)) g.set(x, y, G.GRASS);
+  }
   // ---- roads to the four edges (an edge without an exit is closed later)
   const width = bg === "road" ? 2 : 1;
   for (const s of SIDES) {
@@ -1401,7 +1418,7 @@ function wildBase(g: Gen) {
     g.road(hub, end, path, width, 0.35, (cur) => (WATERY.has(cur) ? G.BRIDGE : cur === G.ROCK ? path : cur === G.MUD ? path : path));
   }
   // ---- the clearing
-  const R = bg === "camp" ? 4.6 : bg === "ruins" ? 4.2 : 3.4;
+  const R = bg === "camp" ? 5.6 : bg === "ruins" ? 4.2 : 3.4;
   for (let y = -6; y <= 6; y++) for (let x = -7; x <= 7; x++) {
     const d = Math.hypot(x, y * 1.25);
     const tx = hub.x + x, ty = hub.y + y;
@@ -1457,7 +1474,7 @@ function settleBase(g: Gen) {
   const px0 = hub.x - (pw >> 1), py0 = hub.y - (ph >> 1);
   for (let y = py0; y < py0 + ph; y++) for (let x = px0; x < px0 + pw; x++) {
     if (bg === "village" && (x === px0 || x === px0 + pw - 1) && (y === py0 || y === py0 + ph - 1)) continue;
-    g.set(x, y, bg === "castle" ? G.COBBLE : road);
+    g.set(x, y, road);
     g.keep[g.i(x, y)] = 1;
   }
   // ---- roads to the edges
@@ -1476,14 +1493,19 @@ function settleBase(g: Gen) {
   // ---- building lots: doors face south onto a road or the plaza
   const nLots = bg === "village" ? 8 : bg === "town" ? 11 : bg === "city" ? 14 : 4;
   const sizes: [number, number][] = bg === "castle" ? [[5, 3], [3, 3]] : bg === "village" ? [[3, 2], [3, 3], [5, 2]] : [[3, 3], [5, 3], [3, 2], [5, 2]];
+  const isRoad = (gg: number) => gg === road || gg === G.COBBLE || gg === G.DIRT || (gg === G.FLAG && bg !== "castle");
+  const nearRoad = (fx: number, fy: number): Pt | null => {
+    let best: Pt | null = null, bd = 7;
+    for (let dy = -5; dy <= 6; dy++) for (let dx = -6; dx <= 6; dx++) { const x = fx + dx, y = fy + dy; if (!g.inb(x, y) || !isRoad(g.get(x, y))) continue; const d = Math.abs(dx) + Math.abs(dy) + (dy < 0 ? 2 : 0); if (d < bd) { bd = d; best = { x, y }; } }
+    return best;
+  };
   const lots = findLots(g, hub, sizes, nLots, (x, y, w, h) => {
     if (!g.free(x, y, w, h, (gg) => gg === G.GRASS || gg === G.FLOWER || gg === G.FLAG)) return false;
     if (walled && (y < 4 || x < 2 || x + w > g.w - 2)) return false;
     // something to walk on in front of the door, a road not too far
     const fx = x + (w >> 1), fy = y + h;
     if (!g.open(fx, fy)) return false;
-    for (let d = 0; d < 4; d++) { const gg = g.get(fx, fy + d); if (gg === road || gg === G.COBBLE || gg === G.DIRT || gg === G.FLAG) return true; }
-    return false;
+    return nearRoad(fx, fy) !== null;
   }, 1);
   if (bg === "castle") {
     // the keep stands at the north of the courtyard
@@ -1496,7 +1518,20 @@ function settleBase(g: Gen) {
     g.markKeep(l.x, l.y, l.tw, l.th);
     // a short path from the door to the road
     const fx = l.x + (l.tw >> 1);
-    for (let y = l.y + l.th; y < g.h; y++) { const gg = g.get(fx, y); if (gg === road || gg === G.COBBLE || gg === G.GATE || gg === G.BRIDGE) break; if (UNWALK.has(gg)) break; g.set(fx, y, bg === "village" ? G.DIRT : G.COBBLE); g.keep[g.i(fx, y)] = 1; }
+    const to = nearRoad(fx, l.y + l.th);
+    if (to && bg !== "castle") {
+      const pathG = bg === "village" ? G.DIRT : G.COBBLE;
+      let x = fx, y = l.y + l.th;
+      const lay = () => { const gg = g.get(x, y); if (!UNWALK.has(gg) && !isRoad(gg) && gg !== G.GATE) g.set(x, y, pathG); g.keep[g.i(x, y)] = 1; };
+      lay();
+      if (to.y > y) { while (y < to.y) { y++; lay(); } while (x !== to.x) { x += Math.sign(to.x - x); lay(); } }
+      else {
+        const sideX = to.x < fx ? l.x - 1 : l.x + l.tw;
+        while (x !== sideX) { x += Math.sign(sideX - x); lay(); }
+        while (y !== to.y) { y += Math.sign(to.y - y); lay(); }
+        while (x !== to.x) { x += Math.sign(to.x - x); lay(); }
+      }
+    }
   }
   // ---- slots for people and things: around the plaza
   const ring: Pt[] = [];
@@ -1621,7 +1656,7 @@ function shipBase(g: Gen) {
   const halfL = 12, halfW = 4;
   for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
     const u = (x - cx) / halfL, v = (y - cy) / halfW;
-    const taper = u > 0.35 ? 1 - ((u - 0.35) / 0.75) ** 1.6 : u < -0.85 ? 0.85 : 1;
+    const taper = u > 0.2 ? Math.sqrt(Math.max(0, 1 - ((u - 0.2) / 0.85) ** 2)) : u < -0.8 ? 0.8 : 1;
     if (Math.abs(u) <= 1.05 && Math.abs(v) <= taper) g.set(x, y, Math.abs(v) > taper - 1 / halfW || Math.abs(u) > 0.98 ? G.RAIL : G.DECK);
   }
   // water near the hull is lighter
@@ -1918,6 +1953,8 @@ function placeObject(g: Gen, kind: ObjectKind, s: ExploreOpts["spots"][0], zoneO
     at = best;
     if (!at) kind = "marker";
   }
+  if (!at && kind === "fire" && bg === "camp") at = { ...g.hub };
+  if (!at && (kind === "altar" || kind === "statue") && g.kind === "interior" && g.walk(g.hub.x, 3)) at = { x: g.hub.x, y: 3 };
   if (!at && kind === "well" && g.kind === "settle" && g.free(g.hub.x, g.hub.y, 1, 1)) at = { ...g.hub };
   if (!at) {
     const slots = g.objSlots.filter((p) => g.free(p.x, p.y, 1, 1, (gg) => !UNWALK.has(gg) && gg !== G.BRIDGE) || (g.walk(p.x, p.y) && !g.block[g.i(p.x, p.y)]));
@@ -1949,6 +1986,7 @@ function placeObject(g: Gen, kind: ObjectKind, s: ExploreOpts["spots"][0], zoneO
       break;
     }
     case "fire": {
+      if (bg === "camp" && x === g.hub.x && y === g.hub.y) { topY = foot - 46; break; }
       put(prop("log", 1), { live: campfire });
       g.objs[g.objs.length - 1].img = undefined;
       g.lights.push({ x: cx, y: foot - 14, r: 140, col: "#ffb060", flick: 1, on: "always", glow: 0.5 });
@@ -2019,7 +2057,7 @@ function placeObject(g: Gen, kind: ObjectKind, s: ExploreOpts["spots"][0], zoneO
 function decorateWild(g: Gen) {
   const bg = g.scene.bg, s = g.seed, snow = g.scene.weather === "snow";
   const pine = snow ? SNOWPINE : PINE;
-  const dens: Partial<Record<Scene["bg"], number>> = { forest: 0.55, camp: 0.42, road: 0.3, field: 0.12, hill: 0.24, mountain: 0.22, sky: 0.15, river: 0.3, lake: 0.3, bridge: 0.3, swamp: 0.32, desert: 0.07, coast: 0.12, sea: 0.1, ruins: 0.28 };
+  const dens: Partial<Record<Scene["bg"], number>> = { forest: 0.55, camp: 0.42, road: 0.3, field: 0.12, hill: 0.24, mountain: 0.22, sky: 0.15, river: 0.3, lake: 0.3, bridge: 0.3, swamp: 0.22, desert: 0.05, coast: 0.12, sea: 0.1, ruins: 0.28 };
   const base = dens[bg] ?? 0.3;
   const motifs: [string, number, [string, string, string, string]?][] =
     bg === "desert" ? [["cactus", 3], ["rock", 2], ["dead_tree", 1]]
@@ -2032,6 +2070,18 @@ function decorateWild(g: Gen) {
                   : [["tree", 5], ["pine", 2, pine], ["birch", 1], ["bush", 1]];
   const total = motifs.reduce((a, m) => a + m[1], 0);
   const pickMotif = (h: number) => { let acc = 0; for (const m of motifs) { acc += m[1] / total; if (h < acc) return m; } return motifs[0]; };
+  // the camp: tents around the fire, bedrolls
+  if (bg === "camp") {
+    const tents = [[-6, -3], [5, -4], [-5, 3]];
+    tents.forEach(([dx, dy], i) => {
+      const x0 = g.hub.x + dx - 1, y0 = g.hub.y + dy - 1;
+      for (let yy = y0; yy < y0 + 2; yy++) for (let xx = x0; xx < x0 + 3; xx++) if (!g.inb(xx, yy) || g.block[g.i(xx, yy)] || UNWALK.has(g.get(xx, yy)) || g.get(xx, yy) === G.DIRT) return;
+      g.put({ x: (x0 + 1.5) * TW, y: (y0 + 2) * TW, img: buildingSprite({ style: "tent", tw: 3, th: 2, lit: g.lit, seed: g.seed + i }), s: 2, fade: true }, x0, y0, 3, 2);
+      if (g.free(x0 + 3, y0 + 1, 1, 1)) g.sprite(prop("bedroll", i), x0 + 3, y0 + 1, 1, 1, { flat: true, walkable: true, dy: 4 });
+    });
+    const spots = [[3, 2], [-3, -2]] as const;
+    for (const [dx, dy] of spots) if (g.free(g.hub.x + dx, g.hub.y + dy, 1, 1)) g.sprite(r2(g) ? prop("rack") : prop("woodpile"), g.hub.x + dx, g.hub.y + dy);
+  }
   for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
     const i = g.i(x, y), gg = g.gnd[i];
     if (g.keep[i] || g.block[i]) continue;
@@ -2040,7 +2090,7 @@ function decorateWild(g: Gen) {
     const clump = fbm(x / 5, y / 5, s + 11);
     const dHub = Math.hypot(x - g.hub.x, (y - g.hub.y) * 1.2);
     const near = (k: number) => { for (let dy = -k; dy <= k; dy++) for (let dx = -k; dx <= k; dx++) { if (g.inb(x + dx, y + dy) && g.keep[g.i(x + dx, y + dy)]) return true; } return false; };
-    let d = base * (0.4 + clump * 1.3) + (edge < 3 ? (3 - edge) * 0.18 * (base > 0.2 ? 1 : 0.4) : 0);
+    let d = base * (0.4 + clump * 1.3) + (edge < 3 ? (3 - edge) * 0.18 * (base > 0.2 ? 1 : 0.25) : 0);
     if (dHub < 6) d *= 0.35;
     if (near(1)) d *= 0.45;
     const h = cell(x, y, s + 1);
@@ -2068,18 +2118,6 @@ function decorateWild(g: Gen) {
     const h = cell(x, y, s + 9);
     if (bank && h < 0.3 && bg !== "coast" && bg !== "sea") g.put({ x: x * TW + TW / 2, y: (y + 1) * TW - 6, img: prop("reeds", x), s: 2 }, x, y, 1, 1);
     else if (!bank && h < 0.14 && (bg === "lake" || bg === "swamp" || bg === "river")) g.put({ x: x * TW + TW / 2, y: y * TW + 22, s: 1, flat: true, live: lily(x * 7 + y) }, x, y, 1, 1);
-  }
-  // the camp: tents around the fire, bedrolls
-  if (bg === "camp") {
-    const tents = [[-6, -3], [5, -4], [-5, 3]];
-    tents.forEach(([dx, dy], i) => {
-      const x0 = g.hub.x + dx - 1, y0 = g.hub.y + dy - 1;
-      if (!g.free(x0, y0, 3, 2)) return;
-      g.put({ x: (x0 + 1.5) * TW, y: (y0 + 2) * TW, img: buildingSprite({ style: "tent", tw: 3, th: 2, lit: g.lit, seed: g.seed + i }), s: 2, fade: true }, x0, y0, 3, 2);
-      if (g.free(x0 + 3, y0 + 1, 1, 1)) g.sprite(prop("bedroll", i), x0 + 3, y0 + 1, 1, 1, { flat: true, walkable: true, dy: 4 });
-    });
-    const spots = [[3, 2], [-3, -2]] as const;
-    for (const [dx, dy] of spots) if (g.free(g.hub.x + dx, g.hub.y + dy, 1, 1)) g.sprite(r2(g) ? prop("rack") : prop("woodpile"), g.hub.x + dx, g.hub.y + dy);
   }
   if (bg === "field") farmPlots(g, 2);
   if (bg === "road" && g.free(g.hub.x + 3, g.hub.y - 2, 1, 1)) g.sprite(prop("cart"), g.hub.x + 3, g.hub.y - 2);
@@ -2122,7 +2160,7 @@ function decorateSettle(g: Gen) {
     if (gg === G.WALL || gg === G.GATE) continue;
     if (nearHouse && h < 0.22) { g.sprite(prop(["barrel", "crates", "woodpile", "pot", "hay"][Math.floor(h * 22) % 5]), x, y); continue; }
     if (nearRoad && (bg === "town" || bg === "city") && (x * 7 + y * 3) % 9 === 0 && h < 0.6) { const o = g.sprite(prop("lamp"), x, y); g.lights.push({ x: o.x, y: o.y - 44, r: 56, col: "#ffd890", on: "dark", glow: 0.45, flick: 0.15 }); continue; }
-    if (bg === "castle" && h < 0.05) { g.sprite(prop(["rack", "dummy", "hay", "barrel"][Math.floor(h * 80) % 4]), x, y); continue; }
+    if (bg === "castle" && h < 0.03 && (nearHouse || x < 4 || x > g.w - 5)) { g.sprite(prop(["rack", "dummy", "hay", "barrel"][Math.floor(h * 80) % 4]), x, y); continue; }
     if (gg === G.GRASS || gg === G.FLOWER) {
       const edge = Math.min(x, y, g.w - 1 - x, g.h - 1 - y);
       const dens = bg === "village" ? 0.2 : bg === "town" ? 0.08 : 0.04;
@@ -2144,8 +2182,16 @@ function decorateSettle(g: Gen) {
     else if (g.free(g.hub.x, g.hub.y, 2, 2)) { const o = g.sprite(prop("fountain"), g.hub.x, g.hub.y, 2, 2); g.emit.push({ x: o.x, y: o.y - 40, kind: "spray", acc: 0 }); }
   }
   if (bg === "town" || bg === "village") { const p = g.nearFree({ x: g.hub.x - 3, y: g.hub.y - 2 }, (x, y) => g.free(x, y, 1, 1)); if (p) g.sprite(prop("notice"), p.x, p.y); }
-  // banners on the city wall, torches by the gates
+  // banners on the city wall, towers and torches by the gates
   if (bg === "city" || bg === "castle") {
+    const isGate = (x: number, y: number) => g.get(x, y) === G.GATE && (y <= 2 || y >= g.h - 1 || x <= 0 || x >= g.w - 1);
+    for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
+      if (g.get(x, y) !== G.WALL) continue;
+      const row = y <= 2 || y >= g.h - 1;
+      const nextTo = row ? isGate(x - 1, y) || isGate(x + 1, y) : isGate(x, y - 1) || isGate(x, y + 1);
+      if (!nextTo || (y <= 2 && y !== 2)) continue;
+      g.put({ x: x * TW + TW / 2, y: (y + 1) * TW - 1, img: prop("gatepost", bg === "castle" ? "#9a968c" : "#a8a294"), s: 2, fade: true }, x, y, 1, 1, true);
+    }
     for (let x = 2; x < g.w - 2; x += 5) if (g.get(x, 2) === G.WALL && g.get(x, 3) !== G.WALL) g.put({ x: x * TW + TW / 2, y: 2 * TW + 20, img: prop("banner", bg === "castle" ? "#2a4a8a" : "#8a1e2a"), s: 2, flat: true }, x, 2, 1, 1, true);
     for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
       if (g.get(x, y) !== G.WALL) continue;
@@ -2158,7 +2204,7 @@ function decorateSettle(g: Gen) {
 function wallTorch(g: Gen, x: number, y: number) {
   const wx = x * TW + TW / 2, wy = y * TW + 6;
   g.put({ x: wx, y: wy + 20, img: prop("torch"), s: 2, flat: true, dy: 0, live: torchLive }, x, y, 1, 1, true);
-  g.lights.push({ x: wx, y: wy + 10, r: 80, col: "#ffa850", flick: 1, on: "always", glow: 0.55 });
+  g.lights.push({ x: wx, y: wy + 14, r: 118, col: "#ffa850", flick: 1, on: "always", glow: 0.55 });
   g.emit.push({ x: wx, y: wy + 2, kind: "embers", acc: Math.random() * 500 });
 }
 
@@ -2240,12 +2286,10 @@ function decorateUnder(g: Gen) {
       else if (h < 0.04) { g.tree(x, y, "crystal", x % 2, ["#2a4a8a", "#5a8ae0", "#c8e8ff", "#6a3ab0"]); g.lights.push({ x: x * TW + 16, y: y * TW + 6, r: 60, col: "#7ab0ff", on: "always", glow: 0.35, flick: 0.2 }); }
       else if (h < 0.08) { g.sprite(prop("glowshroom"), x, y, 1, 1, { flat: true, walkable: true, dy: 6 }); g.lights.push({ x: x * TW + 16, y: y * TW + 20, r: 34, col: "#5ad8c8", on: "always", glow: 0.3 }); }
       else if (h < 0.11) g.sprite(prop("rock", "#6a5a50", x), x, y, 1, 1, { soft: true });
-      else if (h > 0.985) g.set(x, y, G.WATER);
     } else if (bg === "dungeon") {
       if (wallNear && h < 0.06) g.sprite(prop(["barrel", "crates", "barrel"][x % 3]), x, y);
       else if (h < 0.05) g.sprite(prop("bones"), x, y, 1, 1, { flat: true, walkable: true, dy: 8 });
       else if (h < 0.07) g.sprite(prop("rock", "#5a5860", x), x, y, 1, 1, { soft: true });
-      else if (h > 0.985) g.set(x, y, G.WATER);
     } else {
       if (wallNear && h < 0.1 && (x + y) % 3 === 0) { const o = g.sprite(prop("lantern2"), x, y); g.lights.push({ x: o.x, y: o.y - 24, r: 70, col: "#ffb860", flick: 0.6, on: "always", glow: 0.4 }); }
       else if (h < 0.06) g.sprite(prop("rock", "#6a5a50", x), x, y, 1, 1, { soft: true });
@@ -2261,7 +2305,7 @@ function decorateUnder(g: Gen) {
 
 function decorateShip(g: Gen) {
   const cx = g.hub.x, cy = g.hub.y;
-  for (const [dx, h] of [[-4, 0], [4, 1]] as const) if (g.free(cx + dx, cy - 1, 1, 1)) g.put({ x: (cx + dx) * TW + TW / 2, y: cy * TW - 2, img: prop("mast", h), s: 2, fade: true }, cx + dx, cy - 1, 1, 1);
+  for (const [dx, h] of [[-4, 0], [4, 1]] as const) if (g.get(cx + dx, cy - 1) === G.DECK && !g.block[g.i(cx + dx, cy - 1)]) g.put({ x: (cx + dx) * TW + TW / 2, y: cy * TW - 2, img: prop("mast", h), s: 2, fade: true }, cx + dx, cy - 1, 1, 1);
   if (g.free(cx - 10, cy, 1, 1)) g.sprite(prop("wheel"), cx - 10, cy);
   for (const [dx, dy, k] of [[-7, -2, "crates"], [-6, -2, "barrel"], [6, 2, "barrel"], [7, 2, "crates"], [1, -2, "rope"], [-2, 2, "cannon"], [3, -2, "cannon"], [9, 0, "rope"]] as const) {
     const x = cx + dx, y = cy + dy;
@@ -2345,7 +2389,7 @@ function windowLive(g: Gen, coloured = false) {
 // ------------------------------------------------------------ the static ground
 const FAMILY: Partial<Record<number, string>> = {
   [G.DIRT]: "dirt_road", [G.PATHSAND]: "sand_path", [G.COBBLE]: "cobble", [G.GATE]: "cobble", [G.FLAG]: "flagstone",
-  [G.PLANK]: "plank_deck", [G.DECK]: "plank_deck", [G.CARPET]: "red_carpet", [G.MARBLE]: "checker",
+  [G.PLANK]: "plank_deck", [G.DECK]: "plank_deck", [G.CARPET]: "red_carpet", [G.MARBLE]: "mosaic",
 };
 const sameFam = (a: number, b: number) => a === b || (FAMILY[a] && FAMILY[a] === FAMILY[b]) || ((a === G.DIRT || a === G.PATHSAND) && b === G.BRIDGE);
 const WALL_LOOK: Record<WallStyle, { face: string; kind: WallKind | "rock"; cap: string; trim: string }> = {
@@ -2743,7 +2787,7 @@ const CSS = `
 .ex-root{position:relative;width:100%;height:100%;overflow:hidden;background:#0c0a0e;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;outline:none}
 .ex-root>canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block;image-rendering:pixelated;image-rendering:crisp-edges;cursor:pointer}
 .ex-ui{position:absolute;inset:0;pointer-events:none;font-family:var(--pixel,"VT323",ui-monospace,monospace);overflow:hidden}
-.ex-label{position:absolute;left:0;top:0;transform:translate(-50%,-100%);white-space:nowrap;max-width:70vw;overflow:hidden;text-overflow:ellipsis;padding:0 7px 1px;font-size:17px;line-height:1.15;color:#fff3d6;background:rgba(18,12,8,.78);border:2px solid #0b0805;box-shadow:inset 0 0 0 1px rgba(216,178,90,.5);text-shadow:1px 1px 0 #000;opacity:0;transition:opacity .25s;display:flex;align-items:center;gap:4px}
+.ex-label{position:absolute;left:0;top:0;transform:translate(-50%,-100%);white-space:nowrap;max-width:70vw;overflow:hidden;text-overflow:ellipsis;padding:0 6px 1px;font-size:15px;line-height:1.15;color:#fff3d6;background:rgba(18,12,8,.78);border:2px solid #0b0805;box-shadow:inset 0 0 0 1px rgba(216,178,90,.5);text-shadow:1px 1px 0 #000;opacity:0;transition:opacity .25s;display:flex;align-items:center;gap:4px}
 .ex-label.on{opacity:1}
 .ex-label.locked{color:#c8b8a0}
 .ex-label .ex-arr{color:#f2c542}
@@ -2779,10 +2823,10 @@ interface Part { x: number; y: number; vx: number; vy: number; life: number; max
 
 /** Ambient light of the place at its time of day and weather (null: plain daylight). */
 function ambient(a: Area, sc: Scene): [number, number, number] | null {
-  if (a.kind === "under") return [30, 28, 44];
+  if (a.kind === "under") return [62, 58, 82];
   const w = sc.weather;
   if (a.kind === "interior") return sc.time === "night" ? [92, 80, 98] : sc.time === "dusk" ? [168, 140, 122] : [214, 196, 172];
-  const base: Record<Scene["time"], [number, number, number]> = { dawn: [236, 204, 196], day: [255, 255, 255], dusk: [232, 164, 136], night: [56, 66, 116] };
+  const base: Record<Scene["time"], [number, number, number]> = { dawn: [236, 204, 196], day: [255, 255, 255], dusk: [214, 146, 128], night: [56, 66, 116] };
   let c = base[sc.time];
   const k = w === "rain" ? 0.8 : w === "storm" ? 0.66 : w === "cloudy" ? 0.9 : w === "fog" ? 0.88 : w === "snow" ? 0.94 : 1;
   c = [c[0] * k, c[1] * k * (w === "fog" ? 1.01 : 1), c[2] * Math.min(1.05, k + 0.06)] as [number, number, number];
@@ -2942,6 +2986,7 @@ export function mountExplore(o: ExploreOpts): { destroy(): void; pause(on: boole
   };
   function hidePrompt() { prompt?.remove(); prompt = null; active = null; }
   const barks: { el: HTMLDivElement; a: Actor; until: number }[] = [];
+  const labelSize = new WeakMap<HTMLElement, { w: number; h: number }>();
   let barkReady = 0;
 
   const hint = document.createElement("div");
@@ -2952,13 +2997,26 @@ export function mountExplore(o: ExploreOpts): { destroy(): void; pause(on: boole
 
   function placeUi() {
     const near = tileOf(hero);
-    for (const s of A.spots) {
+    const placed: { x0: number; x1: number; y0: number; y1: number }[] = [];
+    const order = A.spots.map((s) => ({ s, p: toScreen(s.ax, s.ay - (s.npc ? s.npc.z : 0)) })).sort((a, b) => b.p.y - a.p.y);
+    for (const { s, p } of order) {
       const el = s.el!;
-      const p = toScreen(s.ax, s.ay - (s.npc ? s.npc.z : 0));
       const d = Math.hypot(s.stand.x - near.x, s.stand.y - near.y);
-      const on = s !== active && (d < 7 || target === s);
+      const on = s !== active && (d < 6 || target === s);
       el.classList.toggle("on", on);
-      el.style.transform = `translate(${Math.round(p.x)}px,${Math.round(p.y)}px) translate(-50%,-100%)`;
+      if (!on) continue;
+      let size = labelSize.get(el);
+      if (!size) { size = { w: el.offsetWidth, h: el.offsetHeight }; labelSize.set(el, size); }
+      const half = Math.min(size.w / 2, cssW / 2 - 2);
+      const lx = clamp(p.x, half + 2, cssW - half - 2);
+      let ly = Math.max(size.h + 2, Math.min(cssH - 2, p.y));
+      for (let k = 0; k < 4; k++) {
+        const hit = placed.find((r) => lx - half < r.x1 && lx + half > r.x0 && ly - size!.h < r.y1 && ly > r.y0);
+        if (!hit) break;
+        ly = hit.y0 - 2;
+      }
+      placed.push({ x0: lx - half, x1: lx + half, y0: ly - size.h, y1: ly });
+      el.style.transform = `translate(${Math.round(lx)}px,${Math.round(ly)}px) translate(-50%,-100%)`;
     }
     if (prompt && active) {
       const p = toScreen(active.ax, active.ay);
@@ -3475,13 +3533,13 @@ export function mountExplore(o: ExploreOpts): { destroy(): void; pause(on: boole
     }
     if (w === "fog") {
       const c = fogArt(""), s = 2;
-      for (const [k, sp, al] of [[0, 0.006, 0.55], [1, -0.004, 0.4]] as const) {
+      for (const [k, sp, al] of [[0, 0.006, 0.32], [1, -0.004, 0.22]] as const) {
         g.globalAlpha = al;
         const px = ((-ox * (0.9 + k * 0.2) - t * sp) % (256 * s) + 256 * s) % (256 * s) - 256 * s, py = ((-oy * (0.9 + k * 0.2) + k * 90) % (256 * s) + 256 * s) % (256 * s) - 256 * s;
         for (let yy = py; yy < bh; yy += 256 * s) for (let xx = px; xx < bw; xx += 256 * s) g.drawImage(c, xx, yy, 256 * s, 256 * s);
       }
       g.globalAlpha = 1;
-      g.fillStyle = "rgba(210,218,228,.14)";
+      g.fillStyle = "rgba(210,218,228,.08)";
       g.fillRect(0, 0, bw, bh);
     }
     if (w === "wind" || w === "storm") {
