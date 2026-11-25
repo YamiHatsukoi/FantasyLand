@@ -21,7 +21,7 @@ import { makeScene, type SceneSpec } from "./art/scene";
 import { Performance } from "./director";
 import {
   choiceState, condText, discsOf, drop, enter, epMax, itemName, newRun, pendingLoss, phase, pick10,
-  profile, randomResult, playChoice, retry, takeOffer, useItem, apply, continueRun, visibleChoices, type Change,
+  profile, randomResult, playChoice, retry, takeOffer, useItem, usable, answerRiddle, apply, continueRun, visibleChoices, type Change,
   baseCs, randomPicks, carryNeeds, loreCircles, masteryCount, newSeries, ownDiscs, rankName, tierOf,
 } from "./engine";
 import { runFight } from "./fight";
@@ -626,10 +626,12 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
     sceneBox.addEventListener("click", tap);
     capHost.addEventListener("click", () => { if (perf && !perf.finished) tap(); else logWindow(); });
 
-    // keys: space / enter go on, number keys pick choices
+    // keys: space / enter go on, number keys pick choices (or type into an open riddle pad)
+    let padKey: ((e: KeyboardEvent) => boolean) | null = null;
     const onKey = (e: KeyboardEvent) => {
       if (document.querySelector(".adv-win-back, .adv-fight, .adv-travel")) return;
       if ((e.target as HTMLElement)?.tagName === "INPUT") return;
+      if (padKey && padKey(e)) return;
       if ((e.key === " " || e.key === "Enter") && perf && !perf.finished) { e.preventDefault(); tap(); return; }
       if (e.key === "Escape" && perf && !perf.finished) { perf.skip(); return; }
       const n = Number(e.key);
@@ -752,7 +754,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       const spots: { key: number; label: string; via: NonNullable<Choice["via"]>; locked?: string; toLoc?: string }[] = [];
       list.forEach((c, i) => {
         const cs = choiceState(s, c);
-        if (cs === "hidden" || !c.via) return;
+        if (cs === "hidden" || !c.via || c.riddle) return;
         spots.push({ key: i, label: c.text, via: c.via, locked: cs === "locked" ? condText(book, c.if) : undefined, toLoc: book.sections[c.to]?.scene.loc });
       });
       return spots.length ? { list, spots } : null;
@@ -906,6 +908,14 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
         dock.append(
           h("div", { class: "adv-foes" }, ...c.foes.map((f) => h("div", { class: "adv-foe fr-foe" }, h("b", null, f.name), h("span", null, ui("cs", 1), String(f.cs), ui("ep", 1), String(f.ep))))),
           gameBtn("Vào trận", () => void fight(), { kind: "red", icon: "cs", cls: "block big" }));
+        // "instead of fighting…": choices offered before the fight starts
+        for (const alt of c.instead ?? []) {
+          const st = choiceState(s, alt);
+          if (st === "hidden") continue;
+          dock.append(h("button", { class: `adv-choice ${st === "locked" ? "locked fr-slot" : "fr-btn"}`, type: "button", disabled: st === "locked", onclick: () => { sfx("click"); pick(alt); } },
+            h("span", { class: "adv-choice-k" }, st === "locked" ? ui("lock", 1) : ui("flee", 1)),
+            h("span", { class: "adv-choice-t" }, alt.text, st === "locked" ? h("small", null, condText(book, alt.if)) : null)));
+        }
         return;
       }
       if (pendingLoss(s)) { dock.append(h("p", { class: "adv-dock-note" }, ui("info", 1), "Hãy chọn món đồ phải bỏ lại trước khi đi tiếp.")); return; }
@@ -931,7 +941,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       for (const c of visibleChoices(sec, s)) {
         const st = choiceState(s, c);
         if (st === "hidden") continue;
-        if (exploring && c.via) continue;
+        if (exploring && c.via && !c.riddle) continue;
         k++;
         dock.append(h("button", { class: `adv-choice ${st === "locked" ? "locked fr-slot" : "fr-btn"}`, type: "button", disabled: st === "locked", style: `--j:${k}`, onclick: () => { sfx("click"); pick(c); } },
           h("span", { class: "adv-choice-k" }, st === "locked" ? ui("lock", 1) : String(k)),
@@ -944,9 +954,52 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
     function pick(c: Choice) {
       entrySide = c.via?.exit ? OPPOSITE[c.via.exit] : undefined;
       if (c.roll) return void gamble(c);
+      if (c.riddle) return riddlePad(c);
       const ch = c.fx ? apply(book, s, c.fx) : [];
       if (c.repeat) { save(); render(); showChanges(ch); return; }
       void goTo(c.to, ch);
+    }
+
+    /**
+     * A riddle: the player types a number on a pad. The right answer is the choice's own section,
+     * which is never put on screen; a wrong one goes to `fail`, or says so and lets them try again.
+     */
+    function riddlePad(c: Choice) {
+      let val = "";
+      const shown = h("div", { class: "adv-pad-v fr-slot", "aria-live": "polite" });
+      const msg = h("div", { class: "adv-pad-msg" });
+      const sync = () => { shown.textContent = val || "…"; };
+      const close = () => { padKey = null; render(); };
+      const type = (d: string) => { if (val.length < 3) { val = (val + d).replace(/^0+(?=\d)/, ""); msg.textContent = ""; sync(); sfx("click"); } };
+      const back = () => { val = val.slice(0, -1); sync(); sfx("click"); };
+      const submit = () => {
+        if (!val) return;
+        const to = answerRiddle(c, val);
+        if (to === null) {
+          val = ""; sync(); sfx("debuff");
+          msg.textContent = "Sai rồi. Hãy nghĩ lại.";
+          bump(msg, "shake");
+          return;
+        }
+        padKey = null;
+        const ch = to === c.to && c.fx ? apply(book, s, c.fx) : [];
+        void goTo(to, ch);
+      };
+      padKey = (e) => {
+        if (/^[0-9]$/.test(e.key)) { type(e.key); return true; }
+        if (e.key === "Backspace") { back(); return true; }
+        if (e.key === "Enter") { e.preventDefault(); submit(); return true; }
+        if (e.key === "Escape") { close(); return true; }
+        return false;
+      };
+      const key = (label: string, on: () => void, cls = "") => h("button", { class: `adv-pad-k fr-btn ${cls}`, type: "button", onclick: on }, label);
+      sync();
+      dock.replaceChildren(h("div", { class: "adv-pad fr-parch" },
+        h("div", { class: "adv-pad-t" }, ui("book", 2), h("b", null, c.text)),
+        c.hint ? h("small", { class: "adv-pad-hint" }, c.hint) : null,
+        shown, msg,
+        h("div", { class: "adv-pad-grid" }, ...["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => key(d, () => type(d))), key("⌫", back, "del"), key("0", () => type("0")), key("OK", submit, "ok"))),
+        gameBtn("Quay lại", close, { cls: "block" }));
     }
 
     /** A game of chance in a choice: spin the wheel, pay or collect, then stay (another round) or go on. */
@@ -1038,12 +1091,12 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
         if (sel) {
           const { id, type } = sel;
           const def = book.items[id];
-          const canUse = type === "backpack" && def?.heal && !s.ended;
+          const canUse = type === "backpack" && (def?.heal || def?.use) && !s.ended;
           detail.append(h("span", { class: "adv-detail-ic fr-slot" }, iconEl(itemIcon(id, type as never), 3)),
             h("div", { class: "adv-detail-t" }, h("b", null, type === "meal" ? `Phần Ăn ×${s.meals}` : itemName(book, id)),
               h("small", null, type === "meal" ? "Mỗi Phần Ăn chiếm một chỗ trong Ba Lô. Chỉ ăn khi sách yêu cầu." : def?.desc ?? (type === "weapon" ? "Vũ khí" : type === "special" ? "Vật Phẩm Đặc Biệt" : "Đồ trong Ba Lô"))),
             h("div", { class: "adv-detail-b" }, ...nn(
-              canUse ? gameBtn("Dùng", () => { showChanges(useItem(book, s, id)); save(); renderChips(); if (!s.backpack.includes(id)) sel = null; draw(); }, { kind: "gold", cls: "small", disabled: s.ep >= max, icon: "heal" }) : null,
+              canUse ? gameBtn("Dùng", () => { showChanges(useItem(book, s, id)); save(); renderChips(); if (!s.backpack.includes(id)) sel = null; draw(); }, { kind: "gold", cls: "small", disabled: !usable(book, s, id), icon: def?.use ? "cs" : "heal" }) : null,
               s.ended ? null : gameBtn(type === "meal" ? "Bỏ 1" : "Bỏ", async () => {
                 if (type !== "meal" && !(await confirm("Bỏ đồ", `Bỏ ${itemName(book, id)} lại? Không lấy lại được.`, "Bỏ"))) return;
                 drop(book, s, id); save(); renderChips();

@@ -176,6 +176,7 @@ describe.skipIf(!DIR)("adventure book packages (random play-throughs)", () => {
       console.log(`  careful players: ${r.carefulWins} wins; deaths (from>at): ${[...r.carefulDeaths.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, n]) => `${k}×${n}`).join(" ")}`);
       console.log(`  deaths at: ${[...r.deaths.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, n]) => `§${k}×${n}${book.sections[k]?.combat ? "(trận)" : ""}`).join(" ")}`);
       if (r.crashes.length) console.log(r.crashes.slice(0, 10).join("\n"));
+      for (const m of (env.MS ?? '').split(',')) if (m) console.log('MS', m, PATHS.filter(p=>p.includes(` ${m}g`)).length, 'careful', PATHS.filter(p=>p.startsWith('C') && p.includes(` ${m}g`)).length);
       for (const p of PATHS.filter(p=>new RegExp(env.PAT ?? 'x').test(p)).slice(0, Number(env.NP ?? 20))) console.log('PATH', p); PATHS.length=0;
       expect(r.crashes).toEqual([]);
       expect(dead).toEqual([]);

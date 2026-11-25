@@ -613,3 +613,15 @@
 @media (max-width: 379px) and (max-aspect-ratio: 29/20) {
   .adv-zoombtn { top: calc(var(--safe-t) + var(--hud-h) + 2px); min-height: 26px; font-size: 15px; opacity: .8; }
 }
+
+/* riddle: a number pad (the right answer is never on screen) */
+.adv-pad { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px; }
+.adv-pad-t { display: flex; align-items: center; gap: 8px; }
+.adv-pad-hint { color: var(--tx2); text-align: center; }
+.adv-pad-v { min-width: 120px; padding: 4px 12px; text-align: center; font-family: var(--pixel); font-size: 32px; line-height: 1.2; color: #fff1c4; }
+.adv-pad-msg { min-height: 18px; color: #ff8a7a; font-size: 14px; }
+.adv-pad-msg.shake { animation: adv-pad-shake 0.35s; }
+@keyframes adv-pad-shake { 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+.adv-pad-grid { display: grid; grid-template-columns: repeat(3, 56px); gap: 6px; }
+.adv-pad-k { height: 44px; font-family: var(--pixel); font-size: 22px; }
+.adv-pad-k.ok { color: #ffe27a; }
