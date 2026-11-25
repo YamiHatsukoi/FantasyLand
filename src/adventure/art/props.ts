@@ -610,6 +610,51 @@ const arrows: Make = () => {
   return finish(p);
 };
 
+
+const altar: Make = (st) => {
+  const p = new Px(30, 22);
+  p.rect(2, 8, 26, 14, STONE[1]); p.rect(0, 5, 30, 4, STONE[2]); p.rect(0, 5, 30, 1, STONE[3]);
+  for (let x = 5; x < 26; x += 7) p.rect(x, 11, 3, 8, STONE[0]);
+  if (st !== "broken") { p.rect(12, 1, 6, 4, GOLD[1]); p.rect(13, 0, 4, 2, GOLD[3]); p.px(15, 2, "#c03020"); }
+  else p.g.clearRect(20, 5, 10, 8);
+  return finish(p, { flames: [{ x: -10, y: -22, w: 1, small: true }, { x: 10, y: -22, w: 1, small: true }] });
+};
+
+const throne: Make = () => {
+  const p = new Px(26, 40);
+  p.rect(3, 0, 20, 30, "#6a1a1a"); p.rect(5, 2, 16, 26, "#8a2a24"); p.rect(3, 0, 20, 2, GOLD[2]);
+  for (const x of [2, 12, 22]) { p.rect(x, 0, 2, 4, GOLD[2]); p.px(x, -1, GOLD[3]); }
+  p.rect(0, 24, 26, 6, GOLD[1]); p.rect(0, 24, 26, 1, GOLD[3]);
+  p.rect(1, 30, 4, 10, GOLD[1]); p.rect(21, 30, 4, 10, GOLD[1]); p.rect(5, 30, 16, 3, "#5a1414");
+  p.rect(12, 8, 2, 2, "#8ad0ff");
+  return finish(p);
+};
+
+const ladder: Make = (st) => {
+  const p = new Px(14, 46);
+  p.rect(1, 0, 2, 46, WOOD[2]); p.rect(11, 0, 2, 46, WOOD[2]); p.rect(1, 0, 1, 46, WOOD[3]);
+  for (let y = 4; y < 46; y += 6) { if (st === "broken" && y > 20 && y < 34) continue; p.rect(3, y, 8, 2, WOOD[1]); p.rect(3, y, 8, 1, WOOD[3]); }
+  return finish(p);
+};
+
+const rope: Make = () => {
+  const p = new Px(16, 12);
+  for (let i = 0; i < 3; i++) p.ellipse(8, 8 - i, 7 - i, 3, i % 2 ? "#a88a50" : "#c8a868");
+  p.ellipse(8, 7, 3, 1, "rgba(0,0,0,0)"); p.g.clearRect(6, 6, 5, 2);
+  p.line(13, 6, 16, 2, "#c8a868");
+  return finish(p);
+};
+
+const ruins: Make = () => {
+  const p = new Px(50, 34);
+  p.rect(2, 8, 8, 26, STONE[1]); p.rect(2, 8, 2, 26, STONE[3]); p.poly([[2, 8], [6, 2], [10, 8]], STONE[1]);
+  p.rect(12, 20, 26, 14, STONE[1]); p.poly([[12, 20], [20, 14], [26, 18], [32, 12], [38, 20]], STONE[1]);
+  for (let y = 22; y < 34; y += 4) p.rect(14, y, 22, 1, STONE[0]);
+  p.rect(40, 26, 8, 8, STONE[2]); p.rect(42, 30, 6, 4, STONE[0]);
+  p.rect(0, 32, 50, 2, "#3a4a2a");
+  return finish(p);
+};
+
 // flat ground decals
 function decal(w: number, h: number, paint: (p: Px) => void): PropArt {
   const p = new Px(w, h);
@@ -642,7 +687,8 @@ const MAKERS: Record<string, Make> = {
   statue, pillars, pillar: pillars, signpost, sign: signpost, campfire, fire: campfire, candle, torch, cart, wagon: cart, boat, raft: boat, ship: boat,
   tent, tents: tent, hut, cabin: hut, house: hut, watchtower, tower: watchtower, fence, wall, bridge, stairs, steps: stairs, trapdoor, hatch: trapdoor, lever,
   key, scroll, map: scroll, letter: scroll, book: scroll, gem, jewel: gem, crystal: gem, pouch, purse: pouch, coins: pouch, sack, bag: sack, bottles, potion: bottles, bottle: bottles,
-  table, bench, bed, tapestry, banners, banner: banners, flag: banners, rocks, rock: rocks, boulder: rocks, rubble: rocks, cliff, "cave-mouth": caveMouth, cave: caveMouth,
+  table, bench, bed, tapestry, banners, banner: banners, flag: banners, rocks, rock: rocks, boulder: rocks, stones: rocks, cliff, "cave-mouth": caveMouth, cave: caveMouth,
+  altar, shrine: altar, throne, ladder, rope, ruins, rubble: ruins, vial: bottles, flask: bottles, chair: bench, stool: bench, well: barrel, coffer: chest, box: crate, crates: crate, barrels: barrel,
   log, "fallen-tree": log, tree: log, ferns, bush: ferns, plants: ferns, farm, haystack: farm, hay: farm, arrows,
   path: pathDecal, road: pathDecal, track: pathDecal, crossroads: crossroadsDecal, stream: waterDecal, river: (s) => waterDecal(s || "open"), lake: (s) => waterDecal(s || "open"), pool: waterDecal, puddle: waterDecal,
   pawprints: pawDecal, footprints: pawDecal, tracks: pawDecal, blood: bloodDecal, scorch: scorchDecal, horse,
@@ -676,6 +722,9 @@ export function propArt(word: string, state: string = ""): PropArt {
   const st = (["open", "broken", "burning", "closed"].includes(state) ? (state === "closed" ? "" : state) : "") as PropState;
   return cache(`${propKind(word)}|${st}`);
 }
+
+/** True when the word names a prop the art knows (not the generic fallback). */
+export const isKnownProp = (word: string) => !!MAKERS[word.toLowerCase().trim()] || word.toLowerCase().split(/[-_\s]+/).some((w) => !!MAKERS[w]);
 
 /** Props that are alive (animated sprite) rather than a still object. */
 export const isLivingProp = (word: string) => propKind(word) === "horse";

@@ -1190,6 +1190,8 @@ interface Actor {
   sit?: boolean;
   /** How far a sitter's cropped body sits below the feet line. */
   sitDy?: number;
+  /** One of the section's people (not someone who lives at the place). */
+  sec?: boolean;
 }
 
 interface Area {
@@ -1331,6 +1333,10 @@ class Gen {
   /** Location mode: the place's features (stone-bridge, well...) and its name and description, lower case. */
   feat = new Set<string>();
   words = "";
+  /** Location mode: how thick the wood is here (1: as usual). */
+  dens = 1;
+  /** Location mode: labels of the ways no choice takes. */
+  signs: Area["signs"] = [];
   /** Location mode: buildings that have a door anyone can use (claimed by door spots). */
   anchors: Anchor[] = [];
   /** Location mode: landmarks a section's "look at" spot can stand by instead of adding another one. */
@@ -1626,6 +1632,7 @@ function wildBase(g: Gen) {
   if (bg === "camp") {
     const fire = g.put({ x: hub.x * TW + TW / 2, y: hub.y * TW + TW - 6, img: prop("log", 0), s: 0, live: campfire }, hub.x, hub.y);
     fire.img = undefined;
+    g.marks.push({ kind: "fire", x: hub.x, y: hub.y, top: hub.y * TW - 14 });
     g.lights.push({ x: hub.x * TW + TW / 2, y: hub.y * TW + 14, r: 150, col: "#ffb060", flick: 1, on: "always", glow: 0.5 });
     g.emit.push({ x: hub.x * TW + TW / 2, y: hub.y * TW + 8, kind: "fire", acc: 0 });
     g.emit.push({ x: hub.x * TW + TW / 2, y: hub.y * TW, kind: "smoke", acc: 0 });
@@ -2323,7 +2330,7 @@ function decorateWild(g: Gen) {
   const bg = g.scene.bg, s = g.seed, snow = g.scene.weather === "snow";
   const pine = snow ? SNOWPINE : PINE;
   const dens: Partial<Record<Scene["bg"], number>> = { forest: 0.4, camp: 0.32, road: 0.26, field: 0.12, hill: 0.22, mountain: 0.2, sky: 0.15, river: 0.26, lake: 0.26, bridge: 0.26, swamp: 0.17, desert: 0.05, coast: 0.12, sea: 0.1, ruins: 0.28 };
-  const base = dens[bg] ?? 0.3;
+  const base = (dens[bg] ?? 0.3) * g.dens;
   const motifs: [string, number, [string, string, string, string]?][] =
     bg === "desert" ? [["cactus", 3], ["rock", 2], ["dead_tree", 1]]
       : bg === "swamp" ? [["mangrove", 3], ["dead_tree", 2], ["willow", 2]]
@@ -2398,7 +2405,7 @@ function decorateWild(g: Gen) {
     else if (!bank && h < 0.14 && (bg === "lake" || bg === "swamp" || bg === "river")) g.put({ x: x * TW + TW / 2, y: y * TW + 22, s: 1, flat: true, live: lily(x * 7 + y) }, x, y, 1, 1);
   }
   if (bg === "field") farmPlots(g, 2);
-  if (bg === "road" && g.free(g.hub.x + 3, g.hub.y - 2, 1, 1)) g.sprite(prop("cart"), g.hub.x + 3, g.hub.y - 2);
+  if (bg === "road" && g.free(g.hub.x + 3, g.hub.y - 2, 1, 1)) { const o = g.sprite(prop("cart"), g.hub.x + 3, g.hub.y - 2); g.marks.push({ kind: "cart", x: g.hub.x + 3, y: g.hub.y - 2, top: o.y - 40 }); }
 }
 const r2 = (g: Gen) => g.r.chance(0.5);
 
@@ -2468,10 +2475,10 @@ function decorateSettle(g: Gen) {
   }
   // the centre piece of the square, if nothing took it
   if (g.free(g.hub.x, g.hub.y, 1, 1)) {
-    if (bg === "village") g.sprite(prop("well"), g.hub.x, g.hub.y);
-    else if (g.free(g.hub.x, g.hub.y, 2, 2)) { const o = g.sprite(prop("fountain"), g.hub.x, g.hub.y, 2, 2); g.emit.push({ x: o.x, y: o.y - 40, kind: "spray", acc: 0 }); }
+    if (bg === "village") { const o = g.sprite(prop("well"), g.hub.x, g.hub.y); g.marks.push({ kind: "well", x: g.hub.x, y: g.hub.y, top: o.y - 40 }); }
+    else if (g.free(g.hub.x, g.hub.y, 2, 2)) { const o = g.sprite(prop("fountain"), g.hub.x, g.hub.y, 2, 2); g.emit.push({ x: o.x, y: o.y - 40, kind: "spray", acc: 0 }); g.marks.push({ kind: "fountain", x: g.hub.x, y: g.hub.y + 1, top: o.y - 56 }); }
   }
-  if (bg === "town" || bg === "village") { const p = g.nearFree({ x: g.hub.x - 3, y: g.hub.y - 2 }, (x, y) => g.free(x, y, 1, 1)); if (p) g.sprite(prop("notice"), p.x, p.y); }
+  if (bg === "town" || bg === "village") { const p = g.nearFree({ x: g.hub.x - 3, y: g.hub.y - 2 }, (x, y) => g.free(x, y, 1, 1)); if (p) { const o = g.sprite(prop("notice"), p.x, p.y); g.marks.push({ kind: "sign", x: p.x, y: p.y, top: o.y - 40 }); } }
   // banners on the city wall, towers and torches by the gates
   if (bg === "city" || bg === "castle") {
     const isGate = (x: number, y: number) => g.get(x, y) === G.GATE && (y <= 2 || y >= g.h - 1 || x <= 0 || x >= g.w - 1);
@@ -2797,6 +2804,536 @@ function decorateShip(g: Gen) {
   for (const [dx, dy] of [[-10, -2], [10, 1], [-10, 2]] as const) { const o = on(dx, dy, prop("lamp")); if (o) g.lights.push({ x: o.x, y: o.y - 44, r: 60, col: "#ffd890", on: "dark", glow: 0.45, flick: 0.2 }); }
 }
 
+// ============================================================ location mode (book.locations)
+/*
+ * With a location (opts.loc) the area is the place itself, built only from the location's data:
+ * its id seeds everything, its kind and size shape it, its features become landmarks (a stone
+ * bridge over a river, a watchtower, graves, a well...), and its links become the ways out, each
+ * on the side its neighbour lies (or a door, a stair, a cave mouth for in / up / down). The base
+ * is laid before any section's spots, so every section at the place sees the same area; the
+ * section only adds its people and things, and its choices take the ways that lead where they go.
+ */
+const LOC_SIZE: Record<Loc["size"], [number, number]> = { small: [28, 20], medium: [36, 26], large: [44, 30] };
+const INDOOR_KINDS = new Set<Scene["bg"]>(["inn", "hall", "temple", "cave", "tunnel", "dungeon", "ship"]);
+const SIDE_OF: Partial<Record<LinkDir, Side>> = { north: "north", south: "south", east: "east", west: "west" };
+
+const kindOf = (bg: Scene["bg"]): Kind =>
+  ["inn", "hall", "temple"].includes(bg) ? "interior" : ["cave", "tunnel", "dungeon"].includes(bg) ? "under" : ["ship", "sea"].includes(bg) ? "ship" : ["village", "town", "city", "castle"].includes(bg) ? "settle" : "wild";
+
+/** Ground of the paths of a place. */
+function floorOf(g: Gen) {
+  const bg = g.scene.bg;
+  return g.kind === "under" ? (bg === "dungeon" ? G.FLAG : G.CAVE) : g.kind === "interior" ? g.gnd[g.i(g.hub.x, g.hub.y)] : g.kind === "ship" ? G.DECK : g.kind === "settle" ? (bg === "village" ? G.DIRT : G.COBBLE) : bg === "desert" || bg === "coast" ? G.PATHSAND : G.DIRT;
+}
+
+/** The building a door to another location looks like, from that location. */
+function wayStyle(dest: Loc | undefined, name: string): BStyle {
+  const byName = doorStyle(name, "settle", "village");
+  if (byName !== "house") return byName;
+  switch (dest?.kind) {
+    case "inn": return "inn";
+    case "temple": return "temple";
+    case "hall": return "manor";
+    case "castle": return "keep";
+    case "cave": case "tunnel": return "cave";
+    case "dungeon": return "ruin";
+    case "camp": return "tent";
+    default: return dest ? doorStyle(dest.desc, "settle", "village") : "house";
+  }
+}
+
+/** The ways out of a location, from its links (in a fixed order, so the same every visit). */
+function planWays(loc: Loc, self: string, kind: Kind, locations?: Record<string, Loc>): LocWay[] {
+  const ways: LocWay[] = [];
+  for (const to of Object.keys(loc.links).sort()) {
+    if (to === self) continue;
+    const dir = loc.links[to], dest = locations?.[to], name = dest?.name ?? to.split("-").join(" ");
+    let side = SIDE_OF[dir], door = false;
+    if (!side) {
+      if (kind === "interior" || kind === "under") { if (dir === "out") side = "south"; else door = true; }
+      else if (kind === "ship") { if (dir === "in" || dir === "down") door = true; else side = "south"; }
+      // outdoors: in (or up / down into a building, a cave, a cellar) is a door; up / down a slope is an edge
+      else if (dir === "in" || (dest && INDOOR_KINDS.has(dest.kind) && dir !== "out")) door = true;
+      else side = dir === "up" ? "north" : "south";
+    }
+    ways.push({ to, name, dir, side, door, style: door && (kind === "wild" || kind === "settle") ? wayStyle(dest, name) : undefined });
+  }
+  return ways;
+}
+
+/** Interior kind of a location's room, from its name, description and features. */
+function locIvar(loc: Loc): IVar {
+  const f = new Set(loc.features);
+  if (loc.kind === "temple" || (loc.kind === "hall" && (f.has("altar") || f.has("shrine")) && !f.has("throne"))) return "temple";
+  if (f.has("throne")) return "throne";
+  if (loc.kind === "inn" && f.has("bar")) return "tavern";
+  const v = interiorVar({ place: `${loc.name}`, bg: loc.kind } as Scene);
+  if (v === "tavern" && loc.kind === "inn" && !f.has("bar") && hasWord(loc.desc, ["nhà", "phòng", "căn nhà", "túp lều", "chòi", "lều"])) return "house";
+  return v;
+}
+
+/** A second (third...) way out on a side: a branch road from the hub to a free stretch of that edge. */
+function branchEnd(g: Gen, side: Side, taken: Pt[]): Pt {
+  const base = g.ends[side] ?? g.edgePoint(side, 3);
+  const along = side === "north" || side === "south";
+  let best: Pt | null = null;
+  for (const off of [7, -7, 12, -12, 4, -4, 16, -16]) {
+    const p = along ? { x: clamp(base.x + off, 2, g.w - 3), y: base.y } : { x: base.x, y: clamp(base.y + off, 3, g.h - 3) };
+    if (taken.every((q) => Math.abs(q.x - p.x) + Math.abs(q.y - p.y) >= 4)) { best = p; break; }
+  }
+  const end = best ?? base;
+  if (side === "north") end.y = g.kind === "interior" ? 2 : 0; if (side === "south") end.y = g.h - 1; if (side === "west") end.x = 0; if (side === "east") end.x = g.w - 1;
+  const floor = floorOf(g), walled = g.kind === "settle" && (g.scene.bg === "city" || g.scene.bg === "castle");
+  g.road(g.hub, end, floor, 1, 0.2, (cur) => (cur === G.WALL ? (walled ? G.GATE : g.kind === "under" || g.kind === "interior" ? floor : floor) : WATERY.has(cur) ? G.BRIDGE : cur === G.ROCK ? floor : floor));
+  if (walled) for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) if (g.get(x, y) === G.GATE) g.keep[g.i(x, y)] = 1;
+  return end;
+}
+
+const zoneOfG = (g: Gen) => (pts: Pt[]) => new Set(pts.filter((p) => g.inb(p.x, p.y)).map((p) => g.i(p.x, p.y)));
+
+/** A building of the place (a door anyone could use), on a prepared lot or a free one near `around`. */
+function landBuilding(g: Gen, style: BStyle, around: Pt, closed: boolean, to?: string): Anchor | null {
+  const [tw, th] = BSIZE[style];
+  const land = (gg: number) => gg === G.GRASS || gg === G.FLOWER || gg === G.SAND || gg === G.MUD || gg === G.SOIL || gg === G.FLAG;
+  let slot: Gen["doorSlots"][0] | undefined = g.doorSlots.filter((d) => !d.used && !d.wall && d.tw >= tw && d.th >= th && (!d.style || d.style === style))
+    .sort((a, b) => Math.hypot(a.x - around.x, a.y - around.y) - Math.hypot(b.x - around.x, b.y - around.y))[0];
+  if (!slot) {
+    const l = findLots(g, around, [[tw, th]], 1, (x, y, w, h) => g.free(x, y, w, h, land) && g.open(x + (w >> 1), y + h) && !g.block[g.i(x + (w >> 1), Math.min(g.h - 1, y + h))] && y + h < g.h - 1, 1)[0];
+    if (l) { slot = { x: l.x, y: l.y, tw, th }; g.doorSlots.push(slot); }
+  }
+  if (!slot) slot = g.doorSlots.find((d) => !d.used && !d.wall && !d.style);
+  if (!slot) return null;
+  slot.used = true;
+  const sp = placeDoor(g, slot, style, { key: -1, label: "", via: { door: style } }, zoneOfG(g), closed);
+  const a: Anchor = { spot: sp, style, to };
+  g.anchors.push(a);
+  return a;
+}
+
+/** Lays the ways out of the place (roads to the edges, doors), after the base and before the landmarks. */
+function layWays(g: Gen) {
+  const ways = g.plan!;
+  const ends: Pt[] = [];
+  const perSide = new Map<Side, number>();
+  for (const w of ways) {
+    if (w.door) continue;
+    const side = w.side!;
+    const n = perSide.get(side) ?? 0;
+    perSide.set(side, n + 1);
+    let end = n === 0 ? g.ends[side] : undefined;
+    if (!end) end = g.kind === "interior" || g.kind === "ship" ? g.ends[side] ?? branchEnd(g, side, ends) : branchEnd(g, side, ends);
+    if (n > 0 && (g.kind === "interior" || g.kind === "ship")) end = g.ends[side]!;
+    w.end = { ...end };
+    const v = SIDE_V[side];
+    w.stand = { x: end.x - v.x, y: end.y - v.y };
+    ends.push(w.end);
+    if (g.kind === "interior") g.set(end.x, end.y, g.gnd[g.i(g.hub.x, g.hub.y)]);
+    if (g.kind === "ship") shipGangway(g, side, end);
+    g.markKeep(end.x - 1, end.y - 1, 3, 3);
+    g.markKeep(w.stand.x - 1, w.stand.y - 1, 3, 3);
+    if (n === 0 || g.kind === "wild" || g.kind === "settle") signpost(g, side, end);
+  }
+  const zoneOf = zoneOfG(g);
+  for (const w of ways) {
+    if (!w.door) continue;
+    let a: Anchor | null = null;
+    if (g.kind === "wild" || g.kind === "settle") {
+      const style = w.style ?? "house";
+      a = landBuilding(g, style, { x: g.hub.x + (ways.indexOf(w) % 2 ? 4 : -4), y: g.hub.y - 3 }, false, w.to);
+    } else {
+      const label = w.dir === "up" ? "cầu thang lên" : w.dir === "down" ? "lối xuống" : w.name;
+      const slot = g.doorSlots.find((d) => !d.used && (g.kind === "ship" ? d.wall === "s" : d.wall === "n")) ?? g.doorSlots.find((d) => !d.used);
+      if (slot) {
+        slot.used = true;
+        a = { spot: placeDoor(g, slot, "house", { key: -1, label, via: { door: label } }, zoneOf), style: "house", to: w.to };
+        g.anchors.push(a);
+      }
+    }
+    if (a) { w.anchor = a; w.stand = a.spot.stand; continue; }
+    // no room for a door: the way leaves by the south edge instead
+    w.door = false;
+    w.side = g.ends.south ? "south" : (Object.keys(g.ends)[0] as Side | undefined);
+    if (w.side && g.ends[w.side]) { w.end = { ...g.ends[w.side]! }; const v = SIDE_V[w.side]; w.stand = { x: w.end.x - v.x, y: w.end.y - v.y }; }
+  }
+}
+
+/** The rest of the houses of a settlement, the doors of a dungeon or a room: doors a section can use. */
+function fillAnchors(g: Gen) {
+  const bg = g.scene.bg, s = g.seed;
+  if (g.kind === "settle") {
+    const looks: BStyle[] = bg === "village" ? ["cottage", "house", "hut", "barn", "house"] : bg === "castle" ? ["stable", "smith", "tower", "house"] : ["house", "shop", "house", "manor", "smith", "house", "inn"];
+    g.doorSlots.forEach((d, k) => {
+      if (d.used || d.wall) return;
+      const style = d.style ?? looks[(bg === "castle" ? k : k + s) % looks.length];
+      d.used = true;
+      g.anchors.push({ spot: placeDoor(g, d, style, { key: -1, label: "", via: { door: style } }, zoneOfG(g), true), style });
+    });
+  } else if (g.kind === "interior" || (g.kind === "under" && bg === "dungeon")) {
+    let n = 0;
+    for (const d of g.doorSlots) {
+      if (d.used || d.wall !== "n" || n >= (g.kind === "interior" ? 2 : 3)) continue;
+      d.used = true; n++;
+      g.anchors.push({ spot: placeDoor(g, d, "house", { key: -1, label: "", via: { door: "" } }, zoneOfG(g)), style: "house" });
+    }
+  } else if (g.kind === "wild") {
+    // lots nobody built on grow back into the wood
+    for (const d of g.doorSlots) {
+      if (d.used) continue;
+      for (let y = d.y - 1; y < d.y + d.th + 2; y++) for (let x = d.x - 1; x < d.x + d.tw + 1; x++) {
+        if (!g.inb(x, y)) continue;
+        const gg = g.get(x, y);
+        if (gg === G.GRASS || gg === G.FLOWER || gg === G.SAND || gg === G.MUD) g.keep[g.i(x, y)] = 0;
+      }
+      d.used = true;
+    }
+  }
+}
+
+/** Landmarks outdoors, from the features and the description: water, rocks, buildings, things. */
+function landmarksOut(g: Gen) {
+  const F = (...k: string[]) => k.some((x) => g.feat.has(x));
+  const W = (...w: string[]) => hasWord(g.words, w);
+  const r = new Rng(g.seed ^ 0x1a2d3);
+  const hub = g.hub, bg = g.scene.bg, walled = g.kind === "settle" && (bg === "city" || bg === "castle");
+  const land = (gg: number) => !UNWALK.has(gg) && gg !== G.BRIDGE && gg !== G.GATE;
+  const fits = (x: number, y: number, fw: number, fh: number) => g.free(x, y, fw, fh, land) && g.walk(x, y + fh) && y + fh < g.h - 1 && x > 0 && x + fw < g.w;
+  const near = (p: Pt, fw = 1, fh = 1, R = 10) => g.nearFree({ x: clamp(p.x, 1, g.w - 2), y: clamp(p.y, 1, g.h - 3) }, (x, y) => fits(x, y, fw, fh), R);
+  const ring = (d0: number, d1: number): Pt => { const a = r.next() * Math.PI * 2, d = d0 + r.next() * (d1 - d0); return { x: Math.round(hub.x + Math.cos(a) * d * 1.25), y: Math.round(hub.y + Math.sin(a) * d * 0.8) }; };
+  const put = (kind: ObjectKind | null, img: HTMLCanvasElement, p: Pt, fw = 1, fh = 1, o: Partial<Obj> & { walkable?: boolean } = {}) => {
+    const ob = g.sprite(img, p.x, p.y, fw, fh, o);
+    if (!o.walkable) g.markKeep(p.x, p.y + fh, fw, 1);
+    if (kind) g.marks.push({ kind, x: p.x, y: p.y, top: ob.y - img.height * ob.s - 3 });
+    return ob;
+  };
+  const putAt = (kind: ObjectKind | null, img: HTMLCanvasElement, p: Pt | null, fw = 1, fh = 1, o: Partial<Obj> & { walkable?: boolean } = {}) => (p ? put(kind, img, p, fw, fh, o) : null);
+  const closedSides = SIDES.filter((s) => !g.exits.has(s));
+  const awaySide = (): Side => closedSides.length ? closedSides[Math.floor(r.next() * closedSides.length)] : r.pick(SIDES);
+  const stone: [string, string, string, string] = ["#4a4a44", "#9a9488", "#d8d0c0", "#6a6258"];
+  const wet = !walled && !["river", "bridge", "lake", "coast", "sea", "desert"].includes(bg);
+
+  // ---- water and land
+  if (wet && F("river", "stream", "stone-bridge", "bridge")) {
+    const across = g.exits.has("north") || g.exits.has("south") || !(g.exits.has("east") || g.exits.has("west"));
+    const c = across ? hub.y : hub.x, lim = across ? g.h : g.w;
+    const off = c > lim / 2 ? -5 - r.int(0, 1) : 5 + r.int(0, 1);
+    carveRiver(g, across, c + off, F("river", "stone-bridge", "bridge") ? 2.4 : 1.6, true);
+  }
+  if (F("stone-bridge")) for (let k = 0; k < g.w * g.h; k++) if (g.gnd[k] === G.BRIDGE) g.extra.set(k, "stone");
+  if (bg !== "lake" && !walled && F("lake", "pool", "pond", "waterfall")) {
+    const s = awaySide(), v = SIDE_V[s], big = F("lake");
+    const cx = hub.x + v.x * (big ? 9 : 6) + (v.x ? 0 : r.int(-4, 4)), cy = hub.y + v.y * (big ? 7 : 5) + (v.y ? 0 : r.int(-2, 2));
+    const rx = big ? 5.5 : 2.6, ry = big ? 3.8 : 1.9;
+    for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
+      const d = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 + (noise(x / 3, y / 3, g.seed + 5) - 0.5) * 0.6;
+      if (d >= 1 || g.keep[g.i(x, y)] || g.block[g.i(x, y)] || Math.hypot(x - hub.x, y - hub.y) < 4) continue;
+      g.set(x, y, d < 0.45 && big ? G.DEEP : G.WATER);
+    }
+  }
+  if (bg !== "swamp" && !walled && F("marsh")) {
+    for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
+      if (g.keep[g.i(x, y)] || g.block[g.i(x, y)] || Math.hypot(x - hub.x, y - hub.y) < 4.5) continue;
+      const n = fbm(x / 6, y / 6, g.seed + 17);
+      if (n > 0.64) g.set(x, y, G.WATER); else if (n > 0.55) g.set(x, y, G.MUD);
+    }
+  }
+  if (F("cliff", "waterfall") && !walled) {
+    const s = closedSides.includes("north") ? "north" : awaySide(), v = SIDE_V[s];
+    for (let a = 0; a < (v.x ? g.h : g.w); a++) {
+      const depth = 2 + Math.round(noise(a / 4, 3, g.seed) * 2);
+      for (let k = 0; k < depth; k++) {
+        const x = v.x ? (v.x < 0 ? k : g.w - 1 - k) : a, y = v.y ? (v.y < 0 ? k : g.h - 1 - k) : a;
+        if (g.inb(x, y) && !g.keep[g.i(x, y)] && !g.block[g.i(x, y)]) g.set(x, y, G.ROCK);
+      }
+    }
+  }
+  if (F("rocks") || W("đá tảng", "tảng đá", "vách đá", "núi đá")) {
+    for (let k = 0; k < 7; k++) { const p = near(ring(4, 10)); if (p) g.tree(p.x, p.y, "rock", k % 3, ["#3a3a3e", "#7a7a80", "#b8b8bc", "#5a5a5e"]); }
+    for (let k = 0; k < 5; k++) putAt(k ? null : "stone", prop("rock", "#8a8a90", k), near(ring(3, 8)), 1, 1, { soft: false });
+  }
+  if (F("ice")) for (let k = 0; k < 4; k++) { const p = near(ring(4, 9)); if (p) g.tree(p.x, p.y, "ice_spike", k % 2, ["#5a8ab0", "#a8d8f8", "#e8f8ff", "#ffffff"]); }
+  if (F("dunes", "palms")) for (let k = 0; k < 6; k++) { const p = near(ring(3, 9)); if (p) g.tree(p.x, p.y, F("palms") ? "palm" : "sand_dune", k % 3); }
+
+  // ---- buildings of the place (doors a section can use)
+  const has = (st: BStyle) => g.anchors.some((a) => a.style === st);
+  const build = (st: BStyle) => { if (!has(st)) landBuilding(g, st, ring(4, 8), true); };
+  if (F("tower", "watchtower")) build("tower");
+  if (F("cabin")) build("cottage");
+  if (F("hut")) build(bg === "swamp" ? "hut" : "hut");
+  if (F("mill", "farm")) build("barn");
+  if (F("house")) build("house");
+  if (F("inn")) build("inn");
+  if (F("stable")) build("stable");
+  if (F("forge", "smithy")) build("smith");
+  if (F("cave-mouth")) build("cave");
+  if (F("ruins")) {
+    build("ruin");
+    for (let k = 0; k < 6; k++) { const p = near(ring(3, 9)); if (p) g.put({ x: p.x * TW + TW / 2, y: (p.y + 1) * TW - 4, img: tall(k % 3 ? "broken_pillar" : "ruin_wall", stone, k), s: 2, fade: true }, p.x, p.y); }
+    for (let k = 0; k < 40; k++) { const p = ring(1, 6); if (g.inb(p.x, p.y) && g.get(p.x, p.y) === G.GRASS && cell(p.x, p.y, g.seed) < 0.6) g.set(p.x, p.y, G.FLAG); }
+  }
+  if (F("tents", "camp")) for (let k = 0; k < (F("camp") ? 3 : 2); k++) {
+    const p = near(ring(4, 7), 3, 2);
+    if (p) g.put({ x: (p.x + 1.5) * TW, y: (p.y + 2) * TW, img: buildingSprite({ style: "tent", tw: 3, th: 2, lit: g.lit, seed: g.seed + k * 7 }), s: 2, fade: true }, p.x, p.y, 3, 2);
+  }
+
+  // ---- things
+  if (F("campfire", "camp") && bg !== "camp") {
+    const p = near({ x: hub.x + 2, y: hub.y - 1 });
+    if (p) {
+      const ob = put("fire", prop("log", 1), p, 1, 1, { live: campfire });
+      ob.img = undefined;
+      g.marks[g.marks.length - 1].top = ob.y - 46;
+      g.lights.push({ x: ob.x, y: ob.y - 10, r: 140, col: "#ffb060", flick: 1, on: "always", glow: 0.5 });
+      g.emit.push({ x: ob.x, y: ob.y - 18, kind: "fire", acc: 0 }, { x: ob.x, y: ob.y - 28, kind: "smoke", acc: 0 });
+      putAt(null, prop("log"), near({ x: p.x - 2, y: p.y }), 1, 1);
+      putAt(null, prop("bedroll", 1), near({ x: p.x + 1, y: p.y + 2 }), 1, 1, { flat: true, walkable: true, dy: 4 });
+    }
+  }
+  if (F("fire", "smoke", "battlefield") || W("cháy", "bốc cháy", "thiêu rụi", "khói", "cháy rụi", "tro tàn")) {
+    const burning = F("fire") || W("cháy", "bốc cháy");
+    for (let k = 0; k < 3; k++) {
+      const p = near(ring(3, 9));
+      if (!p) continue;
+      const ob = put(k === 0 && burning ? "fire" : null, prop(k % 2 ? "log" : "woodpile", k), p);
+      if (burning) { ob.live = campfire; g.lights.push({ x: ob.x, y: ob.y - 12, r: 110, col: "#ff9a40", flick: 1, on: "always", glow: 0.5 }); g.emit.push({ x: ob.x, y: ob.y - 18, kind: "fire", acc: 0 }); }
+      g.emit.push({ x: ob.x, y: ob.y - 30, kind: "smoke", acc: k * 300 });
+    }
+  }
+  if (F("well")) putAt("well", prop("well"), near(walled || g.kind === "settle" ? { x: hub.x + 2, y: hub.y + 1 } : ring(2, 4)));
+  if (F("signpost", "crossroads", "fork") && g.kind !== "settle") {
+    const ways = g.plan!.filter((w) => w.side);
+    putAt("sign", prop("signpost", (ways[0]?.side ?? "north")[0]), near({ x: hub.x + 1, y: hub.y - 1 }, 1, 1, 4));
+    if (ways.length > 1) putAt(null, prop("signpost", ways[1].side![0]), near({ x: hub.x - 1, y: hub.y + 1 }, 1, 1, 4));
+  }
+  if (F("statue", "shrine")) { const ob = putAt("statue", prop("statue", "#b0aca0"), near(ring(2, 5))); if (ob && F("shrine")) putAt(null, prop("candles"), near({ x: Math.floor(ob.x / TW) + 1, y: Math.floor(ob.y / TW) - 1 }), 1, 1, { walkable: true }); }
+  if (F("altar")) { const ob = putAt("altar", prop("altar"), near(ring(2, 5))); if (ob) { g.lights.push({ x: ob.x, y: ob.y - 40, r: 50, col: "#ffd890", on: "always", glow: 0.4, flick: 0.5 }); g.emit.push({ x: ob.x, y: ob.y - 50, kind: "incense", acc: 0 }); } }
+  if (F("graves")) {
+    const c = near(ring(4, 8), 5, 3);
+    if (c) for (let k = 0; k < 6; k++) { const x = c.x + (k % 3) * 2, y = c.y + Math.floor(k / 3) * 2; if (fits(x, y, 1, 1)) put(k === 0 ? "grave" : null, k === 4 ? prop("cross") : prop("tomb", k), { x, y }); }
+  }
+  if (F("cart")) putAt("cart", prop("cart"), near(ring(2, 5)));
+  if (F("wreckage")) { const p = near(ring(3, 7)); if (p) { put(F("cart") ? null : "cart", prop("cart"), p); putAt("crates", prop("crates"), near({ x: p.x + 1, y: p.y + 1 })); putAt(null, prop("barrel"), near({ x: p.x - 1, y: p.y })); g.emit.push({ x: p.x * TW + 16, y: p.y * TW, kind: "smoke", acc: 0 }); } }
+  if (F("dock") || F("boat")) {
+    // a jetty from the nearest shore and a boat beside it
+    let best: { x: number; y: number; dx: number; dy: number } | null = null, bd = Infinity;
+    for (let y = 1; y < g.h - 1; y++) for (let x = 1; x < g.w - 1; x++) {
+      if (!g.walk(x, y) || g.get(x, y) === G.BRIDGE) continue;
+      for (const [dx, dy] of DIR4) {
+        if (!WATERY.has(g.get(x + dx, y + dy)) || g.get(x + dx, y + dy) === G.BRIDGE) continue;
+        const d = Math.hypot(x - hub.x, y - hub.y) + cell(x, y, g.seed) * 2;
+        if (d < bd) { bd = d; best = { x, y, dx, dy }; }
+      }
+    }
+    if (best) {
+      let x = best.x + best.dx, y = best.y + best.dy, end = { x, y };
+      if (F("dock")) for (let k = 0; k < 4 && WATERY.has(g.get(x, y)) && g.get(x, y) !== G.BRIDGE; k++) { g.set(x, y, G.BRIDGE); g.keep[g.i(x, y)] = 1; end = { x, y }; x += best.dx; y += best.dy; }
+      // the boat on the water beside the jetty's end (or the shore)
+      const side = best.dx ? { x: 0, y: 1 } : { x: 1, y: 0 };
+      for (const c of [{ x: end.x + side.x, y: end.y + side.y }, { x: end.x - side.x, y: end.y - side.y }, { x: end.x + best.dx, y: end.y + best.dy }]) {
+        const g1 = g.get(c.x, c.y), g2 = g.get(c.x + 1, c.y);
+        if ((g1 === G.WATER || g1 === G.DEEP) && (g2 === G.WATER || g2 === G.DEEP) && !g.block[g.i(c.x, c.y)]) {
+          const ob = g.put({ x: c.x * TW + TW, y: (c.y + 1) * TW - 4, img: prop("boat"), s: 2 }, c.x, c.y, 2, 1);
+          g.marks.push({ kind: "boat", x: c.x, y: c.y, top: ob.y - 40 });
+          break;
+        }
+      }
+    }
+  }
+  if (F("fallen-tree")) {
+    const p = near(ring(3, 7), 3, 1);
+    if (p) { put("tree", prop("log"), p, 2, 1, { soft: false, dy: 3 }); put(null, prop("stump"), { x: p.x + 2, y: p.y }, 1, 1, { soft: false }); }
+  }
+  if (F("fence") && g.kind !== "settle") {
+    const p = near(ring(3, 6), 6, 1);
+    if (p) for (let k = 0; k < 6; k++) put(null, prop("fence", "h"), { x: p.x + k, y: p.y }, 1, 1, { dy: 0 });
+  }
+  if (F("field", "farm") && bg !== "field" && bg !== "village") farmPlots(g, 2);
+  if (F("orchard")) { const p = near(ring(4, 8), 6, 4); if (p) for (let k = 0; k < 6; k++) { const x = p.x + (k % 3) * 2, y = p.y + Math.floor(k / 3) * 2; if (g.free(x, y, 1, 1)) g.tree(x, y, "tree", 3, OAK[1]); } }
+  if (F("market") && bg !== "town" && bg !== "city") for (let k = 0; k < 3; k++) putAt(k ? null : "table", prop("stall"), near({ x: hub.x - 3 + k * 3, y: hub.y - 2 }, 2, 1), 2, 1);
+  if (F("gate", "wall") && !walled) {
+    // a palisade with a gate across the first road out
+    const w = g.plan!.find((x) => x.end && x.side);
+    if (w) {
+      const v = SIDE_V[w.side!], m = { x: Math.round((hub.x + w.end!.x) / 2), y: Math.round((hub.y + w.end!.y) / 2) };
+      for (let o = -6; o <= 6; o++) {
+        const x = m.x + (v.x ? 0 : o), y = m.y + (v.y ? 0 : o);
+        if (!g.inb(x, y)) continue;
+        const k = g.i(x, y);
+        if (g.keep[k]) { if (F("gate") && !g.block[k] && (g.get(x - (v.x ? 0 : 1), y - (v.y ? 0 : 1)) !== g.get(x, y))) { /* the opening */ } continue; }
+        if (!g.free(x, y, 1, 1, land)) continue;
+        g.put({ x: x * TW + TW / 2, y: (y + 1) * TW - 1, img: prop("gatepost", "#8a7a64"), s: 2, fade: true }, x, y);
+      }
+    }
+  }
+  if (F("banners")) for (let k = 0; k < 2; k++) putAt(null, prop("banner", k ? "#2a4a8a" : "#8a1e2a"), near({ x: hub.x + (k ? 3 : -3), y: hub.y - 2 }));
+  if (F("crates")) { const p = near(ring(2, 6)); if (p) { put("crates", prop("crates"), p); putAt(null, prop("crates"), near({ x: p.x + 1, y: p.y })); } }
+  if (F("barrels")) { const p = near(ring(2, 6)); if (p) { put("barrel", prop("barrel"), p); putAt(null, prop("barrel"), near({ x: p.x + 1, y: p.y })); } }
+  if (F("bones")) for (let k = 0; k < 4; k++) putAt(k ? null : "bones", prop(k ? "bones" : "corpseBones"), near(ring(2, 8)), 1, 1, k ? { flat: true, walkable: true, dy: 8 } : {});
+  if (F("corpses", "battlefield")) {
+    const n = F("battlefield") ? 8 : 4;
+    for (let k = 0; k < n; k++) {
+      const p = near(ring(2, 9));
+      if (!p) continue;
+      const look = lookFor(k % 3 === 2 ? "giak" : k % 2 ? "soldier" : "kai-lord");
+      const ob = g.put({ x: p.x * TW + TW / 2, y: (p.y + 1) * TW - 8, img: personFrame(look, k % 2 ? "left" : "right", "dead", 0), s: 1 }, p.x, p.y);
+      if (k === 0) g.marks.push({ kind: "corpse", x: p.x, y: p.y, top: ob.y - 22 });
+      if (k % 3 === 1) putAt(null, prop("rack"), near({ x: p.x + 1, y: p.y }));
+    }
+  }
+  if (F("mine-rails")) railsAlong(g);
+  if (F("pillars")) for (let k = 0; k < 4; k++) { const p = near(ring(2, 6)); if (p) g.put({ x: p.x * TW + TW / 2, y: (p.y + 1) * TW - 4, img: tall(k % 2 ? "pillar" : "broken_pillar", stone, k), s: 2, fade: true }, p.x, p.y); }
+  if (F("stairs") && g.kind === "wild") putAt(null, prop("stairsDown"), near(ring(2, 5)), 1, 1, { flat: true, walkable: true, dy: 2 });
+  if (F("trapdoor")) putAt(null, prop("hatch"), near(ring(2, 5)), 1, 1, { flat: true, walkable: true, dy: -6 });
+  if (F("totem")) putAt("statue", prop("totem"), near(ring(2, 5)));
+  if (F("scarecrow")) putAt(null, prop("scarecrow"), near(ring(3, 7)));
+}
+
+/** Rails along the paths of a mine (flat, walked over). */
+const railArt = memo((k: string) => {
+  const [c, p] = art(16, 16);
+  const v = k === "v";
+  for (let i = 1; i < 16; i += 4) v ? p.rect(2, i, 12, 2, "#5a3a22") : p.rect(i, 2, 2, 12, "#5a3a22");
+  if (v) { p.rect(4, 0, 2, 16, "#8a8a92"); p.rect(10, 0, 2, 16, "#8a8a92"); p.rect(4, 0, 1, 16, "#c8c8d0"); p.rect(10, 0, 1, 16, "#c8c8d0"); }
+  else { p.rect(0, 4, 16, 2, "#8a8a92"); p.rect(0, 10, 16, 2, "#8a8a92"); p.rect(0, 4, 16, 1, "#c8c8d0"); p.rect(0, 10, 16, 1, "#c8c8d0"); }
+  return c;
+});
+function railsAlong(g: Gen) {
+  const w = g.plan!.find((x) => x.end);
+  if (!w) return;
+  const pts: Pt[] = [];
+  let x = g.hub.x, y = g.hub.y;
+  const e = w.end!;
+  while ((x !== e.x || y !== e.y) && pts.length < 80) { if (x !== e.x && (y === e.y || pts.length % 3)) x += Math.sign(e.x - x); else y += Math.sign(e.y - y); pts.push({ x, y }); }
+  pts.forEach((p, i) => {
+    if (!g.walk(p.x, p.y)) return;
+    const n = pts[i + 1] ?? p, q = pts[i - 1] ?? p;
+    const vert = n.x === p.x && q.x === p.x;
+    g.put({ x: p.x * TW + TW / 2, y: (p.y + 1) * TW, img: railArt(vert ? "v" : "h"), s: 2, flat: true }, p.x, p.y, 1, 1, true);
+  });
+  const c = pts[Math.min(pts.length - 1, 3)];
+  if (c && g.free(c.x + 1, c.y, 1, 1)) { const ob = g.sprite(prop("cart"), c.x + 1, c.y); g.marks.push({ kind: "cart", x: c.x + 1, y: c.y, top: ob.y - 40 }); }
+}
+
+/** Landmarks inside (rooms, caves, dungeons), placed on free floor after the furniture. */
+function landmarksIn(g: Gen) {
+  const F = (...k: string[]) => k.some((x) => g.feat.has(x));
+  const r = new Rng(g.seed ^ 0x77e1);
+  const hub = g.hub;
+  const fits = (x: number, y: number, fw = 1) => g.free(x, y, fw, 1) && g.walk(x, y + 1) && y > 2;
+  const spotNear = (p: Pt, fw = 1) => g.nearFree(p, (x, y) => fits(x, y, fw), 8);
+  const anywhere = (fw = 1) => spotNear({ x: hub.x + r.int(-6, 6), y: hub.y + r.int(-3, 3) }, fw);
+  const put = (kind: ObjectKind | null, img: HTMLCanvasElement, p: Pt | null, fw = 1, o: Partial<Obj> & { walkable?: boolean } = {}) => {
+    if (!p) return null;
+    const ob = g.sprite(img, p.x, p.y, fw, 1, { dy: 2, ...o });
+    if (!o.walkable) g.markKeep(p.x, p.y + 1, fw, 1);
+    if (kind) g.marks.push({ kind, x: p.x, y: p.y, top: ob.y - img.height * ob.s - 3 });
+    return ob;
+  };
+  if (F("crates")) { put("crates", fur("crates"), anywhere()); put(null, fur("crates"), anywhere()); }
+  if (F("barrels")) { put("barrel", fur("barrels"), anywhere()); put(null, prop("barrel"), anywhere()); }
+  if (F("pillars")) for (const [dx, dy] of [[-4, -1], [4, -1], [-4, 2], [4, 2]] as const) { const p = { x: hub.x + dx, y: hub.y + dy }; if (fits(p.x, p.y)) g.sprite(fur("pillar", 1, g.kind === "under" ? "#8a8694" : "#c8c0b0"), p.x, p.y, 1, 1, { dy: 0 }); }
+  if (F("cells", "chains")) {
+    // bars let into the back wall where there is room
+    let n = 0;
+    for (let x = 2; x < g.w - 3 && n < 3; x += 3) {
+      const y = 3;
+      if (!(g.get(x, y - 1) === G.WALL && g.get(x + 1, y - 1) === G.WALL && fits(x, y, 2))) continue;
+      if (F("cells")) { g.put({ x: (x + 1) * TW, y: (y + 1) * TW, img: fur("cellbars"), s: 2 }, x, y, 2, 1); n++; }
+      g.put({ x: x * TW + TW / 2, y: (y - 1) * TW + 22, img: prop("chains"), s: 2, flat: true }, x, y - 1, 1, 1, true);
+      if (!F("cells")) n++;
+    }
+  }
+  if (F("bones")) { put("bones", prop("corpseBones"), anywhere()); put(null, prop("bones"), anywhere(), 1, { flat: true, walkable: true, dy: 8 }); }
+  if (F("corpses", "battlefield")) for (let k = 0; k < 3; k++) {
+    const p = anywhere();
+    if (!p) continue;
+    const ob = g.put({ x: p.x * TW + TW / 2, y: (p.y + 1) * TW - 8, img: personFrame(lookFor(k % 2 ? "soldier" : "prisoner"), k % 2 ? "left" : "right", "dead", 0), s: 1 }, p.x, p.y);
+    if (!k) g.marks.push({ kind: "corpse", x: p.x, y: p.y, top: ob.y - 22 });
+  }
+  if (F("altar") && g.ivar !== "temple") { const ob = put("altar", prop("altar"), spotNear({ x: hub.x, y: 4 })); if (ob) g.lights.push({ x: ob.x, y: ob.y - 40, r: 60, col: "#ffd890", on: "always", glow: 0.4, flick: 0.5 }); }
+  if (F("statue")) put("statue", prop("statue", g.kind === "under" ? "#7a7a80" : "#b0aca0"), anywhere());
+  if (F("graves")) { put("grave", fur("sarcophagus"), anywhere(2), 2, { dy: 3 }); }
+  if (F("banners")) for (const x of [hub.x - 3, hub.x + 3]) put(null, fur("banner", 1, x < hub.x ? "#8a1e2a" : "#2a4a8a"), spotNear({ x, y: 3 }), 1, { dy: 10, walkable: true });
+  if (F("trapdoor")) put(null, prop("hatch"), anywhere(), 1, { flat: true, walkable: true, dy: -6 });
+  if (F("stairs") && !g.hasStairs && g.kind === "under") put(null, prop("stairsDown"), anywhere(), 1, { flat: true, walkable: true, dy: 2 });
+  if (F("hearth") && g.ivar !== "tavern" && g.ivar !== "house" && g.kind === "interior") { const p = anywhere(); if (p) { const ob = put("fire", prop("brazier"), p); if (ob) { g.lights.push({ x: ob.x, y: ob.y - 20, r: 110, col: "#ffa040", flick: 1, on: "always", glow: 0.5 }); g.emit.push({ x: ob.x, y: ob.y - 26, kind: "embers", acc: 0 }); } } }
+  if (F("mine-rails")) railsAlong(g);
+  if ((F("pool", "lake", "river", "stream")) && g.kind === "under") {
+    const c = { x: hub.x + (r.chance(0.5) ? 6 : -6), y: hub.y + 2 };
+    for (let y = c.y - 2; y <= c.y + 2; y++) for (let x = c.x - 3; x <= c.x + 3; x++) {
+      if (!g.inb(x, y) || g.keep[g.i(x, y)] || g.block[g.i(x, y)] || UNWALK.has(g.get(x, y))) continue;
+      if (((x - c.x) / 3.2) ** 2 + ((y - c.y) / 2.2) ** 2 < 1) g.set(x, y, G.WATER);
+    }
+  }
+}
+
+/** Location mode, before decoration: ways, landmarks outdoors, the doors of the place, room for people. */
+function locBefore(g: Gen) {
+  layWays(g);
+  if (g.kind === "wild" || g.kind === "settle") landmarksOut(g);
+  fillAnchors(g);
+  // the places where the section's people and things will stand stay clear of trees and rocks
+  for (const p of [...g.npcSlots.slice(0, 6), ...g.objSlots.slice(0, 6)]) if (g.walk(p.x, p.y)) g.markKeep(p.x, p.y);
+}
+
+/** Location mode, after decoration: landmarks inside, and every way reachable from the middle. */
+function locAfter(g: Gen) {
+  if (g.kind === "interior" || g.kind === "under") landmarksIn(g);
+  const floor = floorOf(g);
+  const targets: Pt[] = [];
+  for (const w of g.plan!) if (w.stand && g.inb(w.stand.x, w.stand.y)) targets.push(w.stand);
+  for (const a of g.anchors) targets.push(a.spot.stand);
+  for (const a of g.anchors) if (!g.walk(a.spot.stand.x, a.spot.stand.y) && !UNWALK.has(g.get(a.spot.stand.x, a.spot.stand.y))) g.clearTile(g.i(a.spot.stand.x, a.spot.stand.y), floor);
+  for (const p of targets) if (!g.walk(p.x, p.y)) { const k = g.i(p.x, p.y); if (!g.objs.some((ob) => !ob.soft && ob.tiles.includes(k))) g.clearTile(k, floor); }
+  const start = g.walk(g.hub.x, g.hub.y) ? g.hub : g.nearFree(g.hub) ?? g.hub;
+  g.connect(start, targets.filter((p) => g.inb(p.x, p.y)), floor);
+}
+
+/** Location mode: the section's exit and door spots take the ways of the place. */
+function locSpots(g: Gen, spots: ExploreOpts["spots"], out: PSpot[], zoneOf: (p: Pt[]) => Set<number>) {
+  const ways = g.plan!;
+  const taken = new Set<LocWay>();
+  const ready = (w: LocWay) => (w.door ? !!w.anchor && !w.anchor.taken : !!w.end && !!w.side);
+  const wanted = (w: LocWay, s: ExploreOpts["spots"][0]) => spots.some((o) => o !== s && o.toLoc === w.to);
+  const claim = (s: ExploreOpts["spots"][0], w: LocWay) => {
+    taken.add(w);
+    if (w.door && w.anchor) {
+      w.anchor.taken = true;
+      out.push({ ...w.anchor.spot, key: s.key, label: s.label, via: s.via, locked: s.locked, dest: w.name, zone: new Set(w.anchor.spot.zone) });
+    } else out.push({ ...edgeSpot(g, s, w.side!, w.end!, zoneOf), dest: w.name });
+  };
+  for (const s of spots) {
+    if (!s.via.exit && !s.via.door) continue;
+    // the way to where the choice goes; else a way on the side the choice says
+    let w = s.toLoc ? ways.find((x) => x.to === s.toLoc && !taken.has(x) && ready(x)) : undefined;
+    if (!w && s.via.exit) w = ways.find((x) => !x.door && x.side === s.via.exit && !taken.has(x) && ready(x) && !wanted(x, s));
+    if (w) { claim(s, w); continue; }
+    if (s.via.door && !s.via.exit) {
+      // a building of the place that fits the label, else any free one
+      const style = doorStyle(s.label, g.kind, g.scene.bg);
+      const a = g.anchors.find((x) => !x.taken && !x.to && x.style === style) ?? g.anchors.find((x) => !x.taken && !x.to);
+      if (a) { a.taken = true; out.push({ ...a.spot, key: s.key, label: s.label, via: s.via, locked: s.locked, zone: new Set(a.spot.zone) }); continue; }
+      const slot = g.doorSlots.find((d) => !d.used && (d.wall ? true : g.free(d.x, d.y, d.tw, d.th)));
+      if (slot) { slot.used = true; out.push(placeDoor(g, slot, slot.style ?? style, s, zoneOf)); continue; }
+      spots.push({ ...s, via: { object: s.label } });
+      continue;
+    }
+    // an exit the place has no way for: a path off that side
+    const side = s.via.exit!;
+    const end = branchEnd(g, side, ways.filter((x) => x.end).map((x) => x.end!));
+    out.push(edgeSpot(g, s, side, end, zoneOf));
+    signpost(g, side, end);
+  }
+  // the ways this section does not take still show where they go
+  for (const w of ways) {
+    if (taken.has(w)) continue;
+    if (w.door && w.anchor && !w.anchor.taken) g.signs.push({ label: w.name, ax: w.anchor.spot.ax, ay: w.anchor.spot.ay, stand: w.anchor.spot.stand });
+    else if (!w.door && w.end && w.side) {
+      const v = SIDE_V[w.side];
+      g.signs.push({ label: w.name, ax: w.end.x * TW + TW / 2 - v.x * 8, ay: w.end.y * TW + (w.side === "south" ? 0 : w.side === "north" ? TW : 4), stand: { x: w.end.x - v.x, y: w.end.y - v.y }, side: w.side });
+    }
+  }
+}
+
 // ------------------------------------------------------------ live drawings (flames, sparkles...)
 function flame(c: CanvasRenderingContext2D, x: number, y: number, t: number, size = 1) {
   const f = t / 70;
@@ -2919,6 +3456,21 @@ const WALL_LOOK: Record<WallStyle, { face: string; kind: WallKind | "rock"; cap:
   palace: { face: "#b4a890", kind: "stone", cap: "#2e2620", trim: "#d8c080" },
 };
 
+/** A tile of a stone bridge: cut stones, a parapet where it meets the water. */
+function stoneBridge(p: Paint, X: number, Y: number, x: number, y: number, at: (x: number, y: number) => number, horiz: boolean) {
+  const c = p.g, base = "#9a948a";
+  c.fillStyle = base; c.fillRect(X, Y, 16, 16);
+  for (let row = 0; row < 4; row++) for (let k = 0; k < 3; k++) {
+    const ox = (row % 2) * 3, bx = X + k * 6 + ox - 2, by = Y + row * 4;
+    c.fillStyle = hs(base, (cell(x * 3 + k, y * 4 + row, 41) - 0.5) * 0.25); c.fillRect(bx + 1, by + 1, 5, 3);
+    c.fillStyle = hs(base, -0.3); c.fillRect(bx, by, 1, 4); c.fillRect(bx, by, 6, 1);
+  }
+  const water = (n: number) => n === G.WATER || n === G.DEEP;
+  const rail = (rx: number, ry: number, rw: number, rh: number) => { c.fillStyle = "#6a655e"; c.fillRect(rx, ry, rw, rh); c.fillStyle = "#c8c2b6"; c.fillRect(rx, ry, rw, 1); };
+  if (horiz) { if (water(at(x, y - 1))) rail(X, Y, 16, 3); if (water(at(x, y + 1))) { rail(X, Y + 12, 16, 4); c.fillStyle = "rgba(10,20,30,.35)"; c.fillRect(X, Y + 16 - 1, 16, 1); } }
+  else { if (water(at(x - 1, y))) rail(X, Y, 3, 16); if (water(at(x + 1, y))) rail(X + 13, Y, 3, 16); }
+}
+
 function renderGround(a: Area): HTMLCanvasElement {
   const { w, h, gnd } = a;
   const [nat, p] = art(w * 16, h * 16);
@@ -2973,7 +3525,8 @@ function renderGround(a: Area): HTMLCanvasElement {
       if (g === G.BRIDGE) {
         const lr = [at(x - 1, y), at(x + 1, y)], ud = [at(x, y - 1), at(x, y + 1)];
         const horiz = lr.some((n) => n === G.BRIDGE || (n >= 0 && !UNWALK.has(n))) && !ud.some((n) => n === G.BRIDGE);
-        c.drawImage(floorTile("boardwalk", m, same | (horiz ? 256 : 0), vv), X, Y);
+        if (a.extra.get(y * w + x) === "stone") stoneBridge(p, X, Y, x, y, at, horiz);
+        else c.drawImage(floorTile("boardwalk", m, same | (horiz ? 256 : 0), vv), X, Y);
       } else {
         const type = g === G.DEEP ? "deep_water" : a.bg === "lake" && cell(x, y, 3) > 0.9 ? "lotus_water" : "pond_water";
         let tile = floorTile(type, m, 0, vv);
@@ -3116,8 +3669,8 @@ function renderGround(a: Area): HTMLCanvasElement {
     if (a.kind === "under") { c.fillStyle = "#3a3640"; c.fillRect(X + 2, Y - 2, 12, 1); c.fillRect(X + 2, Y + 8, 12, 1); }
   }
   // openings that lead out: where an exit crosses a wall row of an interior
-  if (a.kind === "interior") for (const s of a.spots) {
-    if (s.kind !== "exit" || !s.side) continue;
+  if (a.kind === "interior") for (const s of a.openings ?? a.spots) {
+    if (("kind" in s && s.kind !== "exit") || !s.side) continue;
     const ex = s.side === "north" ? { x: s.stand.x, y: s.stand.y - 1 } : s.side === "south" ? { x: s.stand.x, y: s.stand.y + 1 } : s.side === "west" ? { x: s.stand.x - 1, y: s.stand.y } : { x: s.stand.x + 1, y: s.stand.y };
     const X = ex.x * 16, Y = ex.y * 16;
     if (s.side === "north") {
@@ -3167,33 +3720,75 @@ function interiorVar(sc: Scene): IVar {
 }
 
 function buildArea(o: ExploreOpts): Area {
-  const sc = o.scene, bg = sc.bg;
-  const kind: Kind = ["inn", "hall", "temple"].includes(bg) ? "interior" : ["cave", "tunnel", "dungeon"].includes(bg) ? "under" : ["ship", "sea"].includes(bg) ? "ship" : ["village", "town", "city", "castle"].includes(bg) ? "settle" : "wild";
+  const loc = o.loc ?? null;
+  const real = o.scene;
+  // what the place is (location mode: the location, not the moment of the section)
+  const snowy = !!loc && (loc.features.includes("snow") || loc.features.includes("ice") || hasWord(`${loc.name} ${loc.desc}`, ["tuyết", "băng giá", "phủ tuyết"]));
+  const sc: Scene = loc ? { ...real, bg: loc.kind, weather: snowy ? "snow" : "clear", place: loc.name } : real;
+  const bg = sc.bg;
+  const kind: Kind = kindOf(bg);
   const biome = biomeOf(bg, sc.weather);
-  const dark = sc.time === "night" || sc.time === "dusk" || kind === "under";
-  const seed = hashString(`${o.seed}|${bg}`);
-  const ivar = interiorVar(sc);
+  const dark = real.time === "night" || real.time === "dusk" || kind === "under";
+  const seed = loc ? hashString(`loc|${o.locId ?? loc.name}`) : hashString(`${o.seed}|${bg}`);
+  const ivar = loc ? locIvar(loc) : interiorVar(sc);
   const ISIZE: Record<IVar, [number, number]> = { tavern: [22, 15], shop: [16, 12], house: [16, 12], throne: [28, 19], guild: [24, 16], temple: [24, 18] };
-  const [w, h] = kind === "interior" ? ISIZE[ivar] : [36, 26];
+  const walledBig = loc && (bg === "city" || bg === "castle") && loc.size === "small";
+  const [w, h] = kind === "interior" ? ISIZE[ivar] : loc && kind !== "ship" ? LOC_SIZE[walledBig ? "medium" : loc.size] ?? [36, 26] : [36, 26];
   const g = new Gen(w, h, seed, sc, kind, biome, dark);
   g.ivar = ivar;
-  for (const s of o.spots) if (s.via.exit) g.exits.add(s.via.exit);
-  if (o.entryFrom) g.exits.add(o.entryFrom);
+  if (loc) {
+    g.plan = planWays(loc, o.locId ?? "", kind, o.locations);
+    g.feat = new Set(loc.features.map((f) => f.toLowerCase()));
+    g.words = `${loc.name} ${loc.desc}`.toLowerCase();
+    g.dens = hasWord(g.words, ["rậm", "rậm rạp", "dày đặc", "um tùm", "sâu", "rừng sâu", "chằng chịt"]) ? 1.3 : hasWord(g.words, ["thưa", "trống", "quang", "phát quang", "trống trải", "bãi trống"]) ? 0.6 : 0.85 + cell(seed & 1023, 3, 9) * 0.35;
+    for (const wy of g.plan) if (wy.side) g.exits.add(wy.side);
+    for (const sd of o.locSides ?? []) g.exits.add(sd);
+  } else {
+    for (const s of o.spots) if (s.via.exit) g.exits.add(s.via.exit);
+    if (o.entryFrom) g.exits.add(o.entryFrom);
+  }
   if (kind === "wild") wildBase(g);
   else if (kind === "settle") settleBase(g);
   else if (kind === "interior") interiorBase(g);
   else if (kind === "under") underBase(g);
   else shipBase(g);
-  const { spots, npcs } = attachSpots(g, o.spots, sc.actors, o.entryFrom);
-  if (kind === "wild") decorateWild(g);
-  else if (kind === "settle") decorateSettle(g);
-  else if (kind === "interior") decorateInterior(g);
-  else if (kind === "under") decorateUnder(g);
-  else decorateShip(g);
+  const decorate = () => {
+    if (kind === "wild") decorateWild(g);
+    else if (kind === "settle") decorateSettle(g);
+    else if (kind === "interior") decorateInterior(g);
+    else if (kind === "under") decorateUnder(g);
+    else decorateShip(g);
+  };
+  let res: ReturnType<typeof attachSpots>;
+  if (loc) {
+    // the place first (the same for every section), then the section's spots in it
+    locBefore(g);
+    decorate();
+    locAfter(g);
+    res = attachSpots(g, o.spots.map((s) => ({ ...s })), real.actors, undefined);
+  } else {
+    res = attachSpots(g, o.spots, sc.actors, o.entryFrom);
+    decorate();
+  }
+  const { spots, npcs } = res;
   // where the hero comes in
   let start: Pt, startWalk: Pt | undefined;
   const entry = o.entryFrom;
-  if (entry && g.ends[entry]) {
+  const way = loc && o.fromLoc ? g.plan!.find((x) => x.to === o.fromLoc && (x.end || x.anchor)) : undefined;
+  if (loc && o.at && g.walk(o.at.x, o.at.y)) {
+    start = { x: o.at.x, y: o.at.y };
+  } else if (way?.door && way.anchor) {
+    // out of the door he went in by
+    start = { ...way.anchor.spot.stand };
+    const below = { x: start.x, y: start.y + 1 };
+    startWalk = g.walk(below.x, below.y) ? below : undefined;
+  } else if (way?.end && way.side) {
+    const e = way.end, v = SIDE_V[way.side];
+    start = { x: e.x, y: e.y };
+    if (!g.walk(start.x, start.y)) start = { x: e.x - v.x, y: e.y - v.y };
+    startWalk = { x: e.x - v.x * 3, y: e.y - v.y * 3 };
+    g.markKeep(startWalk.x, startWalk.y);
+  } else if (entry && g.ends[entry]) {
     const e = g.ends[entry]!, v = SIDE_V[entry];
     start = { x: e.x, y: e.y };
     if (!g.walk(start.x, start.y)) start = { x: e.x - v.x, y: e.y - v.y };
@@ -3214,6 +3809,9 @@ function buildArea(o: ExploreOpts): Area {
   const area: Area = {
     w, h, gnd: g.gnd, block: g.block, objs: g.objs, lights: g.lights, emit: g.emit, spots, actors: [], start, startWalk, kind, bg, biome, wallStyle,
     floor: FAMILY[floorG] ?? "", extra: g.extra, water, indoor: kind === "interior" || kind === "under", dark, murky: bg === "swamp", snow: sc.weather === "snow", hub: g.hub,
+    signs: g.signs,
+    openings: g.plan ? g.plan.filter((x) => !x.door && x.side && x.stand).map((x) => ({ side: x.side!, stand: x.stand! })) : undefined,
+    ways: g.plan ? g.plan.filter((x) => x.stand).map((x) => ({ to: x.to, side: x.side, end: x.end, stand: x.stand!, door: x.door })) : undefined,
   };
   // the people of the section
   for (const n of npcs) {
@@ -3221,12 +3819,12 @@ function buildArea(o: ExploreOpts): Area {
     const a: Actor = {
       id: n.id, type: person ? "person" : "monster", look: person ? lookFor(n.id) : undefined, variant: 0,
       x: n.at.x * TW + TW / 2, y: n.at.y * TW + FEET, path: [], speed: 0.05, facing: n.facing ?? "down", moving: false, phase: Math.random() * 1000,
-      ai: n.spot ? "npc" : "still", home: n.at, range: 0, wait: 0, z: 0, alpha: 1, sit: n.sitDy !== undefined, sitDy: n.sitDy,
+      ai: n.spot ? "npc" : "still", home: n.at, range: 0, wait: 0, z: 0, alpha: 1, sit: n.sitDy !== undefined, sitDy: n.sitDy, sec: true,
     };
     if (n.spot) n.spot.npc = a;
     area.actors.push(a);
   }
-  populate(area, g, sc);
+  populate(area, g, real);
   return area;
 }
 
@@ -3464,11 +4062,18 @@ const cloudArt = memo(() => {
   return c;
 });
 
-export function mountExplore(o: ExploreOpts): { destroy(): void; pause(on: boolean): void } {
+export function mountExplore(o: ExploreOpts): ExploreHandle {
+  // the same location as the view on screen: keep it (and the hero where he stands), change the section
+  if (o.keepFrom) {
+    const k = o.keepFrom;
+    if (o.loc && o.locId && k.locId === o.locId && LIVE.has(k)) { k.update(o.spots, o.scene, o.onPick); return k; }
+    k.destroy();
+  }
   injectStyle();
-  const sc = o.scene;
-  const A = buildArea(o);
-  const ground = renderGround(A);
+  let sc = o.scene;
+  let onPick = o.onPick;
+  let A = buildArea(o);
+  let ground = renderGround(A);
   const MW = A.w * TW, MH = A.h * TW;
   const outdoor = !A.indoor;
 
@@ -3481,6 +4086,8 @@ export function mountExplore(o: ExploreOpts): { destroy(): void; pause(on: boole
   ui.className = "ex-ui";
   root.append(canvas, ui);
   o.host.append(root);
+  // walking in from another place: the view opens from black
+  if (o.fromLoc || o.entryFrom) root.classList.add("ex-in");
   const ctx = canvas.getContext("2d")!;
   const buf = document.createElement("canvas");
   const g = buf.getContext("2d")!;
@@ -3517,7 +4124,7 @@ export function mountExplore(o: ExploreOpts): { destroy(): void; pause(on: boole
   const canWalk = (x: number, y: number) => x >= 0 && y >= 0 && x < A.w && y < A.h && !UNWALK.has(A.gnd[y * A.w + x]) && !A.block[y * A.w + x];
   const pathTo = (from: Pt, to: Pt, walk = canWalk, limit = 6000) => (from.x === to.x && from.y === to.y ? [] : findPath({ w: A.w, h: A.h }, walk, from.x, from.y, to.x, to.y, limit));
   if (A.startWalk) hero.path = pathTo(A.start, A.startWalk) ?? [];
-  const actors = [hero, ...A.actors];
+  let actors = [hero, ...A.actors];
 
   // ---- camera
   const camT = () => ({ x: hero.x - (bw - 2) / 2, y: hero.y - 22 - (bh - 2) / 2 });
@@ -3529,16 +4136,37 @@ export function mountExplore(o: ExploreOpts): { destroy(): void; pause(on: boole
 
   // ---- labels and prompt
   const lockIcon = () => iconEl(uiIcon("lock"), 1);
-  for (const s of A.spots) {
-    const el = document.createElement("div");
-    el.className = `ex-label ${s.kind}${s.locked ? " locked" : ""}`;
-    if (s.locked) el.append(lockIcon());
-    if (s.kind === "exit") { const arr = document.createElement("span"); arr.className = "ex-arr"; arr.textContent = s.side === "north" ? "↑" : s.side === "south" ? "↓" : s.side === "east" ? "→" : "←"; el.append(arr); }
-    el.append(document.createTextNode(s.label));
-    ui.append(el);
-    s.el = el;
-  }
+  const arrow = (side?: Side) => (side === "north" ? "↑" : side === "south" ? "↓" : side === "east" ? "→" : side === "west" ? "←" : "");
+  const makeLabels = () => {
+    for (const s of A.spots) {
+      const el = document.createElement("div");
+      el.className = `ex-label ${s.kind}${s.locked ? " locked" : ""}${s.dest ? " has-dest" : ""}`;
+      const row = s.dest ? document.createElement("span") : el;
+      if (s.dest) {
+        // where the way goes, over what the choice says
+        const d = document.createElement("span");
+        d.className = "ex-dest";
+        d.textContent = `${arrow(s.side) || "⌂"} ${s.dest}`;
+        row.className = "ex-row";
+        el.append(d, row);
+      }
+      if (s.locked) row.append(lockIcon());
+      if (s.kind === "exit" && !s.dest) { const arr = document.createElement("span"); arr.className = "ex-arr"; arr.textContent = arrow(s.side); row.append(arr); }
+      row.append(document.createTextNode(s.label));
+      ui.append(el);
+      s.el = el;
+    }
+    for (const sg of A.signs) {
+      const el = document.createElement("div");
+      el.className = "ex-label sign";
+      el.textContent = `${arrow(sg.side) || "⌂"} ${sg.label}`;
+      ui.append(el);
+      sg.el = el;
+    }
+  };
+  makeLabels();
   let prompt: HTMLDivElement | null = null;
+  let leaveTimer: ReturnType<typeof setTimeout> | undefined;
   let active: PSpot | null = null;
   let target: PSpot | null = null;
   let picking = false;
@@ -3554,12 +4182,25 @@ export function mountExplore(o: ExploreOpts): { destroy(): void; pause(on: boole
       const out = { x: clamp(t.x + v.x, 0, A.w - 1), y: clamp(t.y + v.y, 0, A.h - 1) };
       if (canWalk(out.x, out.y)) hero.path = [out];
     }
-    setTimeout(() => { if (alive) o.onPick(s.key); }, s.kind === "exit" ? 260 : 140);
+    if (s.kind === "exit" && s.side) {
+      // walk off the edge and fade out
+      const end = s.end ?? null;
+      if (end && canWalk(end.x, end.y)) { const p = pathTo(tileOf(hero), end); if (p) hero.path = p; }
+      leaveTimer = setTimeout(() => root.classList.add("ex-out"), 160);
+    } else if (s.kind === "door") leaveTimer = setTimeout(() => root.classList.add("ex-out"), 60);
+    const go = onPick;
+    setTimeout(() => {
+      if (!alive) return;
+      go(s.key);
+      // nothing came of it (the story stayed here): show the place again
+      setTimeout(() => { if (alive) { root.classList.remove("ex-out"); picking = false; } }, 1400);
+    }, s.kind === "exit" ? 480 : s.kind === "door" ? 320 : 140);
   };
   const showPrompt = (s: PSpot) => {
     hidePrompt();
     const el = document.createElement("div");
     el.className = "ex-prompt";
+    if (s.dest) { const d = document.createElement("small"); d.className = "ex-dest"; d.textContent = `${arrow(s.side) || "⌂"} ${s.dest}`; el.append(d); }
     const b = document.createElement("b");
     b.textContent = s.label;
     el.append(b);
@@ -3618,6 +4259,16 @@ export function mountExplore(o: ExploreOpts): { destroy(): void; pause(on: boole
       }
       placed.push({ x0: lx - half, x1: lx + half, y0: ly - size.h, y1: ly });
       el.style.transform = `translate(${Math.round(lx)}px,${Math.round(ly)}px) translate(-50%,-100%)`;
+    }
+    for (const sg of A.signs) {
+      const el = sg.el!;
+      const on = Math.hypot(sg.stand.x - near.x, sg.stand.y - near.y) < 7;
+      el.classList.toggle("on", on);
+      if (!on) continue;
+      let size = labelSize.get(el);
+      if (!size) { size = { w: el.offsetWidth, h: el.offsetHeight }; labelSize.set(el, size); }
+      const p = toScreen(sg.ax, sg.ay), half = Math.min(size.w / 2, cssW / 2 - 2);
+      el.style.transform = `translate(${Math.round(clamp(p.x, half + 2, cssW - half - 2))}px,${Math.round(Math.max(size.h + 2, Math.min(cssH - 2, p.y)))}px) translate(-50%,-100%)`;
     }
     if (prompt && active) {
       const p = toScreen(active.ax, active.ay);
