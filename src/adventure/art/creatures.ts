@@ -2374,6 +2374,11 @@ export function isCreature(actorIdOrFoeName: string): boolean {
   return !!keyOf(actorIdOrFoeName);
 }
 
+/** The sprite key a foe id/name resolves to ("" when it is not a creature). */
+export function creatureKey(idOrName: string): string {
+  return keyOf(idOrName);
+}
+
 export function creatureSize(idOrName: string): { w: number; h: number; flying: boolean } {
   const d = defOf(keyOf(idOrName) || "giak");
   return { w: d.w, h: d.h, flying: d.flying };

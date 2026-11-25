@@ -28,7 +28,7 @@ import { iconEl, uiIcon } from "./art/icons";
 import { lookFor, personFrame, type Facing, type Look, type Pose } from "./art/people";
 import { Px, hs, mix, rgba } from "./art/px";
 import { isMonster } from "./stage";
-import type { Choice, Scene } from "./types";
+import type { Choice, Loc, Scene } from "./types";
 
 // ============================================================ public API
 type Side = "north" | "south" | "east" | "west";
@@ -40,8 +40,35 @@ export interface ExploreOpts {
   scene: Scene;
   heroLook: Look;
   entryFrom?: Side;
-  spots: { key: number; label: string; via: Via; locked?: string }[];
+  /** `toLoc`: the location (book.locations) the choice leads to, so it leaves by the way that goes there. */
+  spots: { key: number; label: string; via: Via; locked?: string; toLoc?: string }[];
   onPick: (key: number) => void;
+  // ---- location-aware areas (all optional: without `loc` the area comes from `seed` and the scene)
+  /** The location the section happens at: the area is built from it (same place = same area, every visit). */
+  loc?: Loc;
+  /** Its id in book.locations (the seed of the area). */
+  locId?: string;
+  /** The location the hero comes from: he walks in by the way that leads there. */
+  fromLoc?: string;
+  /** All locations of the book, for the names of the places the ways lead to. */
+  locations?: Record<string, Loc>;
+  /** Every side any section at this location leaves by (so the roads are the same in every section). */
+  locSides?: Side[];
+  /** Tile to put the hero on (coming back to where he stood). */
+  at?: { x: number; y: number };
+  /** The view of the section before: when it shows the same location it is kept and only its spots change. */
+  keepFrom?: ExploreHandle | null;
+}
+
+export interface ExploreHandle {
+  destroy(): void;
+  pause(on: boolean): void;
+  /** Location shown (undefined for areas made from a seed). */
+  readonly locId?: string;
+  /** Changes the section shown in the same area: new spots and people, the hero stays where he is. */
+  update(spots: ExploreOpts["spots"], scene: Scene, onPick: (key: number) => void): void;
+  /** The hero's tile now. */
+  heroTile(): { x: number; y: number };
 }
 
 // ============================================================ constants & small utilities
@@ -1096,6 +1123,13 @@ interface Obj {
 }
 
 interface Light { x: number; y: number; r: number; col: string; flick?: number; on: "always" | "dark"; glow?: number }
+type LinkDir = Loc["links"][string];
+/** Location mode: a way out of the place toward a linked location (an edge of the map or a door). */
+interface LocWay { to: string; name: string; dir: LinkDir; side?: Side; door: boolean; style?: BStyle; end?: Pt; stand?: Pt; anchor?: Anchor; taken?: boolean }
+/** A building or wall door of the place (its spot is copied for the section's door spot). */
+interface Anchor { spot: PSpot; style: BStyle; to?: string; taken?: boolean }
+/** A landmark object standing on a tile (top: world y of its top, for the label). */
+interface Mark { kind: ObjectKind; x: number; y: number; top: number; taken?: boolean }
 interface Emitter { x: number; y: number; kind: "smoke" | "fire" | "embers" | "incense" | "drip" | "steam" | "spray" | "sparkle"; on?: "always" | "dark"; acc: number }
 
 type SpotKind = "exit" | "door" | "npc" | "object";
@@ -1118,6 +1152,10 @@ interface PSpot {
   side?: Side;
   npc?: Actor;
   el?: HTMLDivElement;
+  /** Name of the location the way leads to. */
+  dest?: string;
+  /** Location mode: the tile at the edge the hero walks off by. */
+  end?: Pt;
 }
 
 type AI = "hero" | "still" | "npc" | "wander" | "patrol" | "flee" | "swim" | "fly" | "perch";
@@ -1179,6 +1217,12 @@ interface Area {
   murky: boolean;
   snow: boolean;
   hub: Pt;
+  /** Location mode: openings of an interior's walls (drawn whether or not a choice uses them). */
+  openings?: { side: Side; stand: Pt }[];
+  /** Location mode: names of the ways no choice of this section takes (shown as signposts). */
+  signs: { label: string; ax: number; ay: number; stand: Pt; side?: Side; el?: HTMLDivElement }[];
+  /** Location mode: where each way to another location ends (for walking in from it). */
+  ways?: { to: string; side?: Side; end?: Pt; stand: Pt; door: boolean }[];
 }
 
 type WallStyle = "stone" | "rock" | "wood" | "marble" | "brick" | "city" | "hedge" | "palace";
@@ -1282,6 +1326,15 @@ class Gen {
   exits = new Set<Side>();
   host: { at: Pt; stand: Pt; face: Facing; sitDy?: number; re: RegExp; used?: boolean } | null = null;
   seats: Seat[] = [];
+  /** Location mode: the ways out of the place (from its links), set before the base is laid. */
+  plan: LocWay[] | null = null;
+  /** Location mode: the place's features (stone-bridge, well...) and its name and description, lower case. */
+  feat = new Set<string>();
+  words = "";
+  /** Location mode: buildings that have a door anyone can use (claimed by door spots). */
+  anchors: Anchor[] = [];
+  /** Location mode: landmarks a section's "look at" spot can stand by instead of adding another one. */
+  marks: Mark[] = [];
   hasStairs = false;
   rooms: { x: number; y: number; w: number; h: number }[] = [];
   constructor(w: number, h: number, public seed: number, public scene: Scene, public kind: Kind, public biome: Biome, public lit: boolean) {
@@ -1469,6 +1522,27 @@ function findLots(g: Gen, around: Pt, sizes: [number, number][], n: number, ok: 
   return lots;
 }
 
+/** A river across the map (horizontal: west to east at row `c`; else north to south at column `c`), half-width `hw`. */
+function carveRiver(g: Gen, horizontal: boolean, c: number, hw: number, keepClear = false) {
+  const ph = g.r.next() * 6, n = horizontal ? g.w : g.h;
+  for (let a = 0; a < n; a++) {
+    const m = c + Math.sin(a / 7 + ph) * 1.4 + (noise(a / 5, 0, g.seed) - 0.5) * 0.8;
+    for (let b = 0; b < (horizontal ? g.h : g.w); b++) {
+      const d = Math.abs(b - m);
+      if (d >= hw) continue;
+      const x = horizontal ? a : b, y = horizontal ? b : a, k = g.i(x, y);
+      if (keepClear && g.keep[k]) {
+        // a road over the new water becomes a bridge, the rest of the kept ground stays dry
+        const cur = g.gnd[k];
+        if (cur === G.DIRT || cur === G.COBBLE || cur === G.FLAG || cur === G.PATHSAND) g.gnd[k] = G.BRIDGE;
+        continue;
+      }
+      if (g.block[k]) continue;
+      g.set(x, y, d < hw - 1.3 ? G.DEEP : G.WATER);
+    }
+  }
+}
+
 /** Wild places: forest clearings, roads, fields, hills, rivers, lakes, coasts, swamps, deserts, camps, ruins. */
 function wildBase(g: Gen) {
   const { r, scene } = g, bg = scene.bg;
@@ -1477,11 +1551,9 @@ function wildBase(g: Gen) {
   const path = bg === "desert" ? G.PATHSAND : bg === "ruins" ? G.FLAG : bg === "coast" || bg === "sea" ? G.PATHSAND : G.DIRT;
   // ---- water and land features
   if (bg === "river" || bg === "bridge") {
-    const yc = hub.y + (bg === "bridge" ? 4 : 5), hw = bg === "bridge" ? 3 : 2.3, ph = r.next() * 6;
-    for (let x = 0; x < g.w; x++) {
-      const c = yc + Math.sin(x / 7 + ph) * 1.4 + (noise(x / 5, 0, g.seed) - 0.5) * 0.8;
-      for (let y = 0; y < g.h; y++) { const d = Math.abs(y - c); if (d < hw) g.set(x, y, d < hw - 1.3 ? G.DEEP : G.WATER); }
-    }
+    // location mode: the river runs across the way the roads go, so the road crosses it on the bridge
+    const across = !g.plan || g.exits.has("north") || g.exits.has("south") || !(g.exits.has("east") || g.exits.has("west"));
+    carveRiver(g, across, (across ? hub.y : hub.x) + (bg === "bridge" ? 4 : 5) * (g.plan && r.chance(0.5) ? -1 : 1), bg === "bridge" ? 3 : 2.3);
   } else if (bg === "lake") {
     const cx = hub.x + (r.chance(0.5) ? 8 : -8), cy = hub.y - 4;
     for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
@@ -1514,8 +1586,9 @@ function wildBase(g: Gen) {
     if (n < 2 || (g.get(x, y + 1) !== G.ROCK && g.get(x, y - 1) !== G.ROCK)) g.set(x, y, G.GRASS);
   }
   // ---- roads to the four edges (an edge without an exit is closed later)
-  const width = bg === "road" ? 2 : 1;
+  const width = bg === "road" || g.feat.has("road") ? 2 : 1;
   for (const s of SIDES) {
+    if (g.plan && !g.exits.has(s)) continue;
     const end = g.edgePoint(s, 5);
     g.ends[s] = end;
     g.road(hub, end, path, width, 0.35, (cur) => (WATERY.has(cur) ? G.BRIDGE : cur === G.ROCK ? path : cur === G.MUD ? path : path));
@@ -1584,6 +1657,7 @@ function settleBase(g: Gen) {
   // ---- roads to the edges
   const width = bg === "village" ? 2 : bg === "city" ? 3 : 2;
   for (const s of SIDES) {
+    if (g.plan && !g.exits.has(s)) continue;
     const end = g.edgePoint(s, bg === "village" ? 4 : 2);
     if (walled) { if (s === "north") end.y = 0; }
     g.ends[s] = end;
@@ -1758,15 +1832,16 @@ function underBase(g: Gen) {
     // tunnel: a chamber where the passages meet
     g.rect(hub.x - 3, hub.y - 2, 7, 5, floor);
   }
-  // passages to the four edges
+  // passages to the four edges (location mode: only where a way goes)
   for (const s of SIDES) {
+    if (g.plan && !g.exits.has(s)) continue;
     const end = g.edgePoint(s, 3);
     g.ends[s] = end;
     if (bg === "dungeon") g.road(hub, end, G.CAVE, 1, 0, (cur) => (cur === G.WALL || cur === G.VOID ? G.CAVE : cur));
     else g.road(hub, end, floor, bg === "tunnel" ? 3 : 2, bg === "cave" ? 0.5 : bg === "tunnel" ? 0.4 : 0, (cur) => (cur === G.WALL || cur === G.VOID ? floor : cur));
   }
   // keep the north wall solid enough for a face (2 rows) everywhere
-  for (let x = 0; x < g.w; x++) { if (g.get(x, 1) !== G.WALL && g.ends.north!.x !== x && g.ends.north!.x + 1 !== x) g.set(x, 1, G.WALL); }
+  for (let x = 0; x < g.w; x++) { if (g.get(x, 1) !== G.WALL && g.ends.north?.x !== x && (g.ends.north?.x ?? -9) + 1 !== x) g.set(x, 1, G.WALL); }
   // drop floor pockets that are not reachable
   const reach = g.flood(hub);
   for (let k = 0; k < g.w * g.h; k++) if (!reach[k] && !UNWALK.has(g.gnd[k])) g.gnd[k] = G.WALL;
