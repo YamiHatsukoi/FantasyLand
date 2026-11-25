@@ -405,7 +405,7 @@ export interface Battle {
   round: number;
   /** Mind attack in use: index into the profile's `mind` list, or -1. */
   mind: number;
-  over?: "win" | "lose" | "evaded" | "timeout" | "beaten";
+  over?: "win" | "lose" | "evaded" | "timeout" | "beaten" | "hurt";
   compare?: "more" | "less" | "equal";
   /** ENDURANCE the hero lost in this fight. */
   lost: number;
@@ -488,6 +488,8 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
   if (!evade) foe.ep = Math.max(0, foe.ep - foeLoss);
   s.ep = Math.max(0, s.ep - heroLoss);
   if (heroLoss > 0) s.hurt = true;
+  // "If you lose any ENDURANCE, turn immediately to …"
+  if (c.onHurt && heroLoss > 0 && s.ep > 0) { b.over = "hurt"; s.fought = true; s.csNext = 0; return { n, ratio, foe: foeIdx, foeLoss, heroLoss, mindCost, foeKilled: !evade && foe.ep <= 0, heroKilled: false, evaded: evade }; }
   b.lost += heroLoss;
   if (s.ep <= 0 && c.lose) { s.ep = 1; b.over = "beaten"; s.fought = true; s.csNext = 0; return { n, ratio, foe: foeIdx, foeLoss, heroLoss, mindCost, foeKilled: false, heroKilled: false, evaded: false }; }
   const heroKilled = s.ep <= 0;
@@ -515,6 +517,7 @@ export function battleExit(book: Book, s: AdvState, b: Battle): string | null {
   const c = book.sections[s.section].combat!;
   if (b.over === "lose") { s.ended = "death"; return null; }
   if (b.over === "beaten") return c.lose ?? "";
+  if (b.over === "hurt") return c.onHurt ?? "";
   if (b.over === "win" && c.winBy) return b.round <= c.winBy.rounds ? c.winBy.fast : c.winBy.slow;
   if (b.over === "evaded") return c.evade?.to ?? "";
   if (c.compare && b.compare) return c.compare[b.compare];

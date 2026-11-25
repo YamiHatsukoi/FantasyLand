@@ -17,7 +17,7 @@ W, H = 96, 72  # map size in tiles
 
 def load(book):
     secs = {}
-    for f in sorted(glob.glob(os.path.join(book, "vi", "*.json"))):
+    for f in sorted(glob.glob(os.path.join(book, "vi", "sections-*.json"))):
         for k, v in json.load(open(f, encoding="utf-8")).items():
             if k not in ("new_terms", "_meta"):
                 secs[k] = v
@@ -25,7 +25,7 @@ def load(book):
 
 
 def links(s):
-    out = [c["to"] for c in s.get("choices", [])] + [o["to"] for o in (s.get("random") or {}).get("out", [])]
+    out = [c["to"] for c in s.get("choices", []) if c.get("to")] + [o["to"] for o in (s.get("random") or {}).get("out", []) if o.get("to")]
     c = s.get("combat") or {}
     out += [x for x in (c.get("win"), (c.get("evade") or {}).get("to"), (c.get("maxRounds") or {}).get("to")) if x]
     return out

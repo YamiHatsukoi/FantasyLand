@@ -238,7 +238,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       const exit = battleExit(book, s, b);
       onChange();
       const win = b.over === "win";
-      const title = win ? "CHIẾN THẮNG" : b.over === "evaded" ? "ĐÃ THOÁT" : b.over === "timeout" ? (c.compare ? "HẾT HIỆP" : "HẾT GIỜ") : b.over === "beaten" ? "THUA TRẬN" : "BẠI TRẬN";
+      const title = win ? "CHIẾN THẮNG" : b.over === "evaded" ? "ĐÃ THOÁT" : b.over === "timeout" ? (c.compare ? "HẾT HIỆP" : "HẾT GIỜ") : b.over === "beaten" ? "THUA TRẬN" : b.over === "hurt" ? "TRÚNG ĐÒN!" : "BẠI TRẬN";
       if (win) { hero.pose = "idle"; stage.play(hero, "cast", 900); stage.burst(hero.x, gy - 40, "#ffd27a", 30, 2.2, { glow: true }); }
       sfx(b.over === "lose" ? "defeat" : "victory");
       const done = (to: string | null) => { stage.destroy(); el.remove(); playMusic("title"); resolve({ battle: b, exit: to }); };

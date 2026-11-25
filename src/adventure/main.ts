@@ -15,7 +15,7 @@ import { withWeapon, type Look } from "./art/people";
 import { makeScene } from "./art/scene";
 import { playCutscene } from "./cutscene";
 import {
-  choiceState, condText, discsOf, drop, eatMeal, enter, epMax, itemName, newRun, pendingLoss, phase, pick10,
+  choiceState, condText, discsOf, drop, enter, epMax, itemName, newRun, pendingLoss, phase, pick10,
   profile, randomResult, retry, takeOffer, useItem, apply, continueRun, visibleChoices, type Change,
 } from "./engine";
 import { runFight } from "./fight";
@@ -378,11 +378,11 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       el.append(wrap);
       sfx("step");
       return (async () => {
-        await sleep(250);
+        await sleep(500);
         await view.travel(to);
         v.add(to);
         view.setVisited(v, to);
-        await sleep(450);
+        await sleep(900);
         wrap.classList.add("out");
         await sleep(300);
         view.destroy();
@@ -509,8 +509,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
             h("div", null, ui("cs"), h("span", null, "Kỹ Năng Chiến Đấu"), h("b", null, String(s.cs))),
             h("div", null, ui("ep"), h("span", null, "Sức Bền"), h("b", null, `${s.ep}/${max}`)),
             h("div", null, ui("gold"), h("span", null, "Vương Miện Vàng"), h("b", null, `${s.gold}/50`)),
-            h("div", null, ui("meal"), h("span", null, "Phần Ăn"), h("b", null, String(s.meals)),
-              h("button", { class: "btn small", type: "button", disabled: !!s.ended || s.meals <= 0 || s.ep >= max, title: "Ăn để hồi sức không có tác dụng ngoài luật sách; chỉ ăn khi sách yêu cầu", onclick: () => { showChanges(eatMeal(book, s)); save(); draw(); } }, "Ăn"))),
+            h("div", null, ui("meal"), h("span", null, "Phần Ăn"), h("b", null, String(s.meals)))),
           h("div", { class: "section-title" }, "Kỹ năng"),
           h("div", { class: "adv-discs-own" }, ...s.disciplines.map((d) => h("span", { class: "adv-chip-item" }, iconEl(discIcon(d), 1), book.names.disc[d] ?? d))),
           s.weaponskill ? h("p", { class: "muted small" }, `Vũ khí sở trường: ${itemName(book, s.weaponskill)}`) : null,
@@ -518,6 +517,8 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
           h("div", { class: "section-title" }, `Vũ khí (${s.weapons.length}/2)`),
           ...s.weapons.map((w) => row(w, "weapon")),
           h("div", { class: "section-title" }, `Ba Lô (${s.backpack.length + s.meals}/8)`),
+          s.meals ? h("div", { class: "adv-item" }, iconEl(itemIcon("Meal", "meal"), 2), h("div", { class: "grow" }, h("b", null, `Phần Ăn ×${s.meals}`), h("small", null, "Mỗi Phần Ăn chiếm một chỗ trong Ba Lô. Chỉ ăn khi sách yêu cầu.")),
+            s.ended ? null : h("button", { class: "btn small", type: "button", onclick: () => { drop(book, s, "Meal"); save(); renderChips(); draw(); } }, "Bỏ 1")) : null,
           ...s.backpack.map((w) => row(w, "backpack", book.items[w]?.heal && !s.ended ? h("button", { class: "btn small good", type: "button", disabled: s.ep >= max, onclick: () => { showChanges(useItem(book, s, w)); save(); renderChips(); draw(); } }, "Dùng") : null)),
           h("div", { class: "section-title" }, "Vật Phẩm Đặc Biệt"),
           ...s.special.map((w) => row(w, "special")),
@@ -527,7 +528,12 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       draw();
     }
 
-    render();
+    const first = book.sections[s.section];
+    if (s.steps <= 1 && first.scene.cutscene && !s.flags[`cut:${s.section}`]) {
+      s.flags[`cut:${s.section}`] = true;
+      save();
+      void playCutscene(el, book, s.section, heroLook()).then(render);
+    } else render();
   }
 
   void library();

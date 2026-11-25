@@ -275,7 +275,7 @@ export class WorldMapView {
     this.o.here = to;
     if (!pts.length) { const n = this.o.map.nodes[to]; if (n) { this.hero.x = n.x; this.hero.y = n.y; } return Promise.resolve(); }
     const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    const ms = reduce ? 0 : Math.max(700, Math.min(3200, pts.length * 70));
+    const ms = reduce ? 0 : Math.max(1400, Math.min(3600, pts.length * 90));
     return new Promise((res) => {
       const start = performance.now();
       let skip = false;
