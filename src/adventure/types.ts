@@ -55,6 +55,8 @@ type EffectBase =
 
 export interface FoeDef {
   name: string;
+  /** Sprite id (glossary actor) to draw the foe with; the name is used when absent. */
+  actor?: string;
   cs: number;
   ep: number;
   immune?: string[];
