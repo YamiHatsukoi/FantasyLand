@@ -558,7 +558,7 @@ const HAIR: Record<HairStyle, HairDef> = {
   bun: { fringe: [8, 6, 4, 3, 3, 3, 3, 3, 3, 4, 6, 8], side: 6, back: 11, sideFringe: 3, tail: "bun" },
   bald: { fringe: Array(12).fill(-1), side: -1, back: -1, sideFringe: -1, bald: true },
   balding: { fringe: [10, 8, -1, -1, -1, -1, -1, -1, -1, -1, 8, 10], side: 10, back: 12, sideFringe: -1, bald: true },
-  wild: { fringe: [14, 11, 8, 7, 9, 6, 7, 9, 7, 8, 11, 14], side: 15, back: 19, sideFringe: 8, wild: true, tufts: [1, 4, 7, 10] },
+  wild: { fringe: [14, 11, 7, 5, 6, 4, 5, 6, 4, 6, 11, 14], side: 15, back: 19, sideFringe: 8, wild: true, tufts: [1, 4, 7, 10] },
   cropped: { fringe: [6, 5, 4, 3, 3, 3, 3, 3, 3, 4, 5, 6], side: 6, back: 11, sideFringe: 3 },
   curly: { fringe: [10, 8, 6, 5, 5, 4, 4, 5, 5, 6, 8, 10], side: 11, back: 14, sideFringe: 5, curly: true },
 };
@@ -568,8 +568,8 @@ interface Head { x0: number; T: number; face: Face; view: "front" | "back" | "si
 const SCLERA = "#f3eee6";
 const lipOf = (L: Look) => (L.fem ? mx(skinTone(L.skin).d, "#c04a58", 0.5) : mx(skinTone(L.skin).d, "#8a4048", 0.3));
 const lineOf = (L: Look) => mx(sh(L.skin, -0.7), "#1c1018", 0.45);
-const browOf = (L: Look) => mx(sh(L.hair, -0.35), lineOf(L), 0.3);
-const blushOf = (L: Look) => mx(L.skin, "#e8705a", 0.22);
+const browOf = (L: Look) => mx(mix(sh(L.hair, -0.3), "#3a2a2a", 0.35), lineOf(L), 0.25);
+const blushOf = (L: Look) => mx(L.skin, "#e87a6a", 0.15);
 
 /** Skull rows (front/back view): [x from, x to] relative to x0, for T-relative rows 0..14. */
 const SKULL: [number, number][] = [
@@ -706,7 +706,8 @@ function faceSide(g: Grid, L: Look, h: Head) {
     }
   }
   // nose
-  g.px(x0 + 12, T + 11, sk.b); g.px(x0 + 11, T + 12, sk.d); g.px(x0 + 12, T + 12, sk.d);
+  if (L.fem || L.build === "child") { g.px(x0 + 12, T + 11, null); g.px(x0 + 11, T + 12, sk.d); }
+  else { g.px(x0 + 12, T + 11, sk.b); g.px(x0 + 11, T + 12, sk.d); g.px(x0 + 12, T + 12, sk.d); }
   g.px(x0 + 11, T + 10, sk.l);
   // mouth
   const lip = lipOf(L);
@@ -991,8 +992,12 @@ function hatDraw(g: Grid, L: Look, h: Head) {
           for (let i = 0; i < 7; i++) { g.px(x0 + 5 - i, T - 3 + Math.floor(i / 2), i < 2 ? p.l : p.b); g.px(x0 + 5 - i, T - 2 + Math.floor(i / 2), p.d); }
           g.px(x0 - 2, T + 1, p.d2);
         } else {
-          for (let y = T - 5; y <= T - 2; y++) { g.px(x0 + 5, y, y === T - 5 ? p.l2 : p.l); g.px(x0 + 6, y, p.b); g.px(x0 + 4, y, p.d); g.px(x0 + 7, y, p.d); }
-          if (back) for (let y = T - 2; y <= T + 4; y++) { g.px(x0 + 5, y, p.b); g.px(x0 + 6, y, p.d); }
+          // a crest of feathers running over the top of the helmet
+          const top = Math.max(0, T - 4);
+          for (let y = top; y <= T + (back ? 4 : 1); y++) {
+            const w = y <= top + 1 ? 1 : 2;
+            for (let x = 6 - w; x <= 5 + w; x++) g.px(x0 + x, y, y === top ? p.l2 : x === 6 - w ? p.l : x === 5 + w ? p.d : (x + y) % 3 === 0 ? p.d : p.b);
+          }
         }
       }
       return;
@@ -1926,8 +1931,10 @@ function paint(L: Look, facing: Facing, pose: Pose, frame: number): Grid {
     if (!back && L.beard === "long") beardFront(g, L, head, true);
     if (!back) { if (!R.wBack) weapon(); offItem(); }
     else { if (raised) weapon(); if (L.off === "shield") offItem(); }
-    if (R.fx === "arc" || R.fx === "over") { const a = R.fxArc!; const aa: [number, number] = back ? [180 - a[0], 180 - a[1]] : a; tipFx = () => smear(g, handR, REACH[L.weapon] * 0.45, REACH[L.weapon] + 0.5, aa[0], aa[1]); }
-    if (R.fx === "thrust") tipFx = () => { const u = dirOf(wA), len = REACH[L.weapon]; sparkle(g, handR[0] + u[0] * (len + 1), handR[1] + u[1] * (len + 1), "#fff4c8", true); };
+    // seen from behind, a blow that lands in front of the body is hidden by it
+    const shown = !back || raised;
+    if ((R.fx === "arc" || R.fx === "over") && shown) { const a = R.fxArc!; const aa: [number, number] = back ? [180 - a[0], 180 - a[1]] : a; tipFx = () => smear(g, handR, REACH[L.weapon] * 0.45, REACH[L.weapon] + 0.5, aa[0], aa[1]); }
+    if (back) { /* no tip effects */ } else if (R.fx === "thrust") tipFx = () => { const u = dirOf(wA), len = REACH[L.weapon]; sparkle(g, handR[0] + u[0] * (len + 1), handR[1] + u[1] * (len + 1), "#fff4c8", true); };
     if (R.fx === "release") tipFx = () => sparkle(g, handL[0], handL[1] + (back ? -4 : 4), "#ffffff", false);
     if (R.fx === "cast") {
       castAt = R.castR ? (L.weapon === "staff" ? add(handR, [Math.cos(rad(wA)) * 16.4, Math.sin(rad(wA)) * 16.4]) : handR) : handL;
@@ -1978,10 +1985,12 @@ function paintDead(L: Look): Grid {
   const D = dims(L);
   const s = new Grid(32, 48);
   const R = rigSide("dead", 0, L.weapon);
-  R.hdy = 3; R.lean = 0;
-  R.fR = [-1, 13]; R.fL = [1, 12];
+  // a slightly shortened body so that the whole figure fits across 32 pixels
+  const k = L.build === "child" ? 0 : 1;
+  R.hdy = 5 * k; R.lean = 0;
+  R.fR = [-2, 10 * k], R.fL = [0, 9 * k];
   const T = D.T + R.hdy;
-  const b: Body = { g: s, L, D, R, view: "side", T, sy: D.sy + 1, wy: D.wy, hy: D.hy, cloakHem: D.hy + 1 };
+  const b: Body = { g: s, L, D, R, view: "side", T, sy: D.sy + 4 * k, wy: D.wy + k, hy: D.hy + k, cloakHem: D.hy + 2 };
   const ln = Math.round(R.lean);
   const S: V = [15 + ln, b.sy + 2];
   cloakSideBehind(b);
@@ -1998,16 +2007,15 @@ function paintDead(L: Look): Grid {
   let x0 = 99, x1 = -1, y1 = -1;
   for (let y = 0; y < r.h; y++) for (let x = 0; x < r.w; x++) if (r.get(x, y)) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
   const g = new Grid(32, 48);
-  // the dropped weapon lies behind the body
-  if (L.weapon !== "none") {
-    const len = L.weapon === "bow" ? 0 : REACH[L.weapon];
-    if (L.weapon === "bow") drawWeapon(g, L, "bow", [16, 43], -90, {});
-    else drawWeapon(g, L, L.weapon, [Math.round(16 - len / 2) + 2, 44], -4, { flipEdge: true });
-  }
-  if (L.off === "shield") drawShield(g, L, [25, 42], "front");
   // centre it; if it is too long, keep the head (left side) and lose the feet
   const bw = x1 - x0 + 1;
   g.blit(r, bw <= 30 ? Math.round((32 - bw) / 2) - x0 : 1 - x0, 46 - y1);
+  // the dropped weapon lies on the ground in front
+  if (L.weapon !== "none") {
+    if (L.weapon === "bow") drawWeapon(g, L, "bow", [20, 45], -90, {});
+    else { const len = REACH[L.weapon]; drawWeapon(g, L, L.weapon, [Math.round(18 - len / 2), 46], -6, { flipEdge: true }); }
+  }
+  if (L.off === "shield") drawShield(g, L, [26, 41], "front");
   g.outline();
   return g;
 }
@@ -2131,30 +2139,32 @@ const PRESETS: Record<string, Partial<Look> & { vary?: boolean }> = {
 };
 
 /** Generic looks picked by a keyword in an unknown id. */
+/** Matches any of the words at a word start ("old" does not match "soldier"). */
+const kw = (words: string) => new RegExp(`(^|[^a-z])(${words})`);
 const KEYWORDS: [RegExp, Partial<Look>][] = [
-  [/king|queen/, { outfit: "robe", main: "#f0ece4", trim: "#d9a93a", cloak: "#6a3a92", lining: "#4a2a6a", hat: "crown", hatCol: "#e3b23c", mood: "stern" }],
-  [/prince/, { outfit: "armor", metal: "#cdd3de", trim: "#e0b040", main: "#6a3a9a", hat: "circlet", hatCol: "#e3b23c", weapon: "sword" }],
-  [/knight|paladin/, { outfit: "armor", metal: "#c0c6d0", trim: "#d9a93a", main: "#3a5aa8", hat: "helmet", plume: "#d83a3a", weapon: "sword", off: "shield", offCol: "#3a5aa8" }],
-  [/cavalry|rider/, { ...SOMMER, weapon: "broadsword", cloak: "#6a3a9a", lining: "#4a2a6a", plume: "#7a3aa8" }],
-  [/soldier|guard|warrior|sentry|captain|army|militia/, { ...SOMMER, weapon: "spear" }],
-  [/ranger|hunter|archer|scout|woodsman/, { ...RANGER }],
-  [/bandit|robber|thief|brigand|outlaw|cutthroat/, { ...BANDIT }],
-  [/pirate/, { ...BANDIT, mask: undefined, hat: "wrap", hatCol: "#b8302a", main: "#3a3a5a", weapon: "sword" }],
-  [/sailor|fisher|boatman|ferry/, { outfit: "peasant", main: "#4a6a8a", shirt: "#e0d8c8", hat: "wrap", hatCol: "#3a4a6a" }],
-  [/wizard|mage|magician|sorcer|theurg|apprentice/, { outfit: "robe", main: "#4e5cb0", trim: "#e0c060", weapon: "staff", magic: "#c8a8ff" }],
-  [/druid|cultist|warlock|necromancer/, { outfit: "robe", main: "#2c3326", trim: "#6a2a24", cloak: "#232a1f", lining: "#141a12", hood: "up", weapon: "staff", magic: "#8aff5a", eyes: "#c8402a" }],
-  [/priest|cleric|monk|friar|abbot|healer/, { outfit: "robe", main: "#8a6a44", trim: "#e8dcc0", sash: "#5a4024", hairStyle: "cropped" }],
-  [/physician|doctor|herbal|apothec/, { outfit: "noble", main: "#3a3244", trim: "#d8d0bf", hat: "cap", hatCol: "#2a2430", pouch: true }],
-  [/merchant|trader|innkeep|shopkeep|guild|noble|lord|baron|duke|courtier/, { outfit: "noble", main: "#7a2e3a", trim: "#e2d2b0", shirt: "#d8b860", chain: true, hat: "cap", hatCol: "#3a2a4a" }],
-  [/lady|princess/, { fem: true, outfit: "gown", main: "#8a4aa0", trim: "#e8c870", hat: "circlet", hatCol: "#e3b23c", hairStyle: "long" }],
-  [/hermit|beggar|madman|mad|refugee|prisoner|slave/, { outfit: "rags", main: "#7a6a4e", trim: "#a08a6a", hairStyle: "wild" }],
-  [/sage|elder|old|grand/, { build: "old", hair: "#dcdad4", beard: "long", beardCol: "#e8e6e0", wrinkles: true, outfit: "robe", main: "#5a6a7a", trim: "#c8b080" }],
-  [/child|boy|girl|kid|urchin/, { build: "child", outfit: "peasant" }],
-  [/woman|wife|maid|mother|widow|girl|daughter|sister|nurse|lady/, { fem: true, outfit: "gown", apron: "#e8dcc0" }],
-  [/villager|peasant|farmer|townsman|townsfolk|man|stranger|traveller|traveler|pilgrim/, { outfit: "peasant" }],
+  [kw("king|queen"), { outfit: "robe", main: "#f0ece4", trim: "#d9a93a", cloak: "#6a3a92", lining: "#4a2a6a", hat: "crown", hatCol: "#e3b23c", mood: "stern" }],
+  [kw("prince"), { outfit: "armor", metal: "#cdd3de", trim: "#e0b040", main: "#6a3a9a", hat: "circlet", hatCol: "#e3b23c", weapon: "sword" }],
+  [kw("knight|paladin"), { outfit: "armor", metal: "#c0c6d0", trim: "#d9a93a", main: "#3a5aa8", hat: "helmet", plume: "#d83a3a", weapon: "sword", off: "shield", offCol: "#3a5aa8" }],
+  [kw("cavalry|rider"), { ...SOMMER, weapon: "broadsword", cloak: "#6a3a9a", lining: "#4a2a6a", plume: "#7a3aa8" }],
+  [kw("soldier|guard|warrior|sentry|captain|army|militia"), { ...SOMMER, weapon: "spear" }],
+  [kw("ranger|hunter|archer|scout|woodsman"), { ...RANGER }],
+  [kw("bandit|robber|thief|brigand|outlaw|cutthroat"), { ...BANDIT }],
+  [kw("pirate"), { ...BANDIT, mask: undefined, hat: "wrap", hatCol: "#b8302a", main: "#3a3a5a", weapon: "sword" }],
+  [kw("sailor|fisher|boatman|ferry"), { outfit: "peasant", main: "#4a6a8a", shirt: "#e0d8c8", hat: "wrap", hatCol: "#3a4a6a" }],
+  [kw("wizard|mage|magician|sorcer|theurg|apprentice"), { outfit: "robe", main: "#4e5cb0", trim: "#e0c060", weapon: "staff", magic: "#c8a8ff" }],
+  [kw("druid|cultist|warlock|necromancer"), { outfit: "robe", main: "#2c3326", trim: "#6a2a24", cloak: "#232a1f", lining: "#141a12", hood: "up", weapon: "staff", magic: "#8aff5a", eyes: "#c8402a" }],
+  [kw("priest|cleric|monk|friar|abbot|healer"), { outfit: "robe", main: "#8a6a44", trim: "#e8dcc0", sash: "#5a4024", hairStyle: "cropped" }],
+  [kw("physician|doctor|herbal|apothec"), { outfit: "noble", main: "#3a3244", trim: "#d8d0bf", hat: "cap", hatCol: "#2a2430", pouch: true }],
+  [kw("merchant|trader|innkeep|shopkeep|guild|noble|lord|baron|duke|courtier"), { outfit: "noble", main: "#7a2e3a", trim: "#e2d2b0", shirt: "#d8b860", chain: true, hat: "cap", hatCol: "#3a2a4a" }],
+  [kw("lady|princess"), { fem: true, outfit: "gown", main: "#8a4aa0", trim: "#e8c870", hat: "circlet", hatCol: "#e3b23c", hairStyle: "long" }],
+  [kw("hermit|beggar|madman|mad|refugee|prisoner|slave"), { outfit: "rags", main: "#7a6a4e", trim: "#a08a6a", hairStyle: "wild" }],
+  [kw("sage|elder|old|grand"), { build: "old", hair: "#dcdad4", beard: "long", beardCol: "#e8e6e0", wrinkles: true, outfit: "robe", main: "#5a6a7a", trim: "#c8b080" }],
+  [kw("child|boy|girl|kid|urchin"), { build: "child", outfit: "peasant" }],
+  [kw("woman|wife|maid|mother|widow|girl|daughter|sister|nurse|lady"), { fem: true, outfit: "gown", apron: "#e8dcc0" }],
+  [kw("villager|peasant|farmer|townsman|townsfolk|man|stranger|traveller|traveler|pilgrim"), { outfit: "peasant" }],
 ];
-const HUMAN = /lonewolf|lone-wolf|kai|king|queen|prince|princess|knight|paladin|soldier|guard|warrior|captain|cavalry|ranger|hunter|archer|scout|bandit|robber|thief|brigand|pirate|sailor|fisher|ferry|wizard|mage|magician|sorcer|theurg|apprentice|druid|priest|cleric|monk|healer|physician|herbal|merchant|trader|innkeep|guild|noble|lord|lady|baron|duke|courtier|hermit|beggar|madman|refugee|prisoner|sage|elder|child|boy|girl|woman|man|villager|peasant|farmer|stranger|traveller|traveler|pilgrim|bodyguard|elf|human|person|people|crowd|messenger|herald|servant|smith|cook|woodsman|scholar|nomad|mercenary|sentry|militia|trimis|banedon|ulnar|pelathar/;
-const NOT_HUMAN = /kakarmi|giak|gourgaz|kraan|zlanbeast|vordak|helghast|doomwolf|wolf|bear|boar|snake|serpent|rat|dog|hound|horse|dragon|wyvern|zombie|skeleton|ghoul|ghost|spirit|wraith|spider|bat|troll|ogre|goblin|orc|lizard|crocodile|bird|eagle|hawk|beast|monster|creature|demon|daemon|darklord|gnaag|crypt|spawn|burrow|kalkoth|elemental|golem|slime|worm|insect|fish|shark|squid|plant|tree|vine|statue|undead|hellhound|automaton|construct/;
+const HUMAN = kw("lonewolf|lone-wolf|kai|king|queen|prince|princess|knight|paladin|soldier|guard|warrior|captain|cavalry|ranger|hunter|archer|scout|bandit|robber|thief|brigand|pirate|sailor|fisher|ferry|wizard|mage|magician|sorcer|theurg|apprentice|druid|priest|cleric|monk|healer|physician|herbal|merchant|trader|innkeep|guild|noble|lord|lady|baron|duke|courtier|hermit|beggar|madman|refugee|prisoner|sage|elder|child|boy|girl|woman|man|villager|peasant|farmer|stranger|traveller|traveler|pilgrim|bodyguard|elf|human|person|people|crowd|messenger|herald|servant|smith|cook|woodsman|scholar|nomad|mercenary|sentry|militia|trimis|banedon|ulnar|pelathar");
+const NOT_HUMAN = kw("kakarmi|giak|gourgaz|kraan|zlanbeast|vordak|helghast|doomwolf|wolf|bear|boar|snake|serpent|rat|dog|hound|horse|dragon|wyvern|zombie|skeleton|ghoul|ghost|spirit|wraith|spider|bat|troll|ogre|goblin|orc|lizard|crocodile|bird|eagle|hawk|beast|monster|creature|demon|daemon|darklord|gnaag|crypt|spawn|burrow|kalkoth|elemental|golem|slime|worm|insect|fish|shark|squid|plant|tree|vine|statue|undead|hellhound|automaton|construct");
 
 /** True for human / elf / wizard actors (people), false for monsters and animals. */
 export function isPersonActor(actorId: string): boolean {
@@ -2245,8 +2255,8 @@ export function personFrame(look: Look | string, facing: Facing, pose: Pose, fra
 
 // ------------------------------------------------------------------ portrait (32x32 bust)
 const PSKULL: [number, number][] = [
-  [4, 11], [2, 13], [1, 14], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15],
-  [1, 14], [1, 14], [2, 13], [3, 12], [5, 10],
+  [4, 11], [2, 13], [1, 14], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [1, 14], [1, 14],
+  [2, 13], [2, 13], [3, 12], [4, 11], [6, 9],
 ];
 /** Sprite fringe (12 columns, 15 rows) resampled for the 16-column, 21-row portrait head. */
 const pf = (arr: number[], i: number) => {
@@ -2366,9 +2376,10 @@ function paintPortrait(L: Look): Grid {
   for (const e of [2, 10]) {
     g.span(x0 + e, x0 + e + 3, T + 10, ln);
     if (L.fem) { g.px(x0 + (e === 2 ? e - 1 : e + 4), T + 10, ln); g.px(x0 + (e === 2 ? e - 1 : e + 4), T + 9, ln); }
-    g.px(x0 + e, T + 11, SCLERA); g.px(x0 + e + 1, T + 11, "#ffffff"); g.px(x0 + e + 2, T + 11, pupil); g.px(x0 + e + 3, T + 11, e === 2 ? SCLERA : mx(SCLERA, sk.d, 0.4));
-    g.px(x0 + e, T + 12, sk.d); g.px(x0 + e + 1, T + 12, ir.b); g.px(x0 + e + 2, T + 12, ir.d); g.px(x0 + e + 3, T + 12, sk.d);
-    g.span(x0 + e, x0 + e + 3, T + 13, mx(sk.b, sk.d, 0.5));
+    const sc2 = mx(SCLERA, sk.d, 0.35);
+    g.px(x0 + e, T + 11, e === 2 ? SCLERA : sc2); g.px(x0 + e + 1, T + 11, "#ffffff"); g.px(x0 + e + 2, T + 11, pupil); g.px(x0 + e + 3, T + 11, e === 2 ? sc2 : sc2);
+    g.px(x0 + e, T + 12, sc2); g.px(x0 + e + 1, T + 12, ir.b); g.px(x0 + e + 2, T + 12, ir.l); g.px(x0 + e + 3, T + 12, sc2);
+    g.px(x0 + e, T + 13, mx(sk.b, sk.d, 0.5)); g.span(x0 + e + 1, x0 + e + 2, T + 13, sk.d); g.px(x0 + e + 3, T + 13, mx(sk.b, sk.d, 0.5));
     if (L.eyes === "#c8402a" || L.eyes === "#e04a2a") { g.glow(x0 + e + 1, T + 12, L.eyes, 0.6); g.glow(x0 + e + 2, T + 11, L.eyes, 0.5); }
     // brows
     const inner = e === 2 ? e + 3 : e, outer = e === 2 ? e : e + 3;
@@ -2403,11 +2414,11 @@ function paintPortrait(L: Look): Grid {
   // beard
   if (L.beard !== "none") {
     const bt = tone(L.beardCol ?? L.hair);
-    if (L.beard === "stubble") for (let r = 15; r <= 20; r++) { const [a, b] = PSKULL[r]; for (let x = a; x <= b; x++) if ((x + r) % 2 === 0 && !(r === 17 && x >= 5 && x <= 10)) g.px(x0 + x, T + r, mx(L.skin, bt.d, 0.4)); }
+    if (L.beard === "stubble") for (let r = 15; r <= 20; r++) { const [a, b] = PSKULL[r]; for (let x = a; x <= b; x++) if ((x * 3 + r * 2) % 5 === 0 && !(r === 17 && x >= 5 && x <= 10)) g.px(x0 + x, T + r, mx(L.skin, bt.d, 0.35)); }
     else {
       const mo = () => { g.span(x0 + 4, x0 + 11, T + 16, bt.b); g.px(x0 + 4, T + 17, bt.d); g.px(x0 + 11, T + 17, bt.d); g.span(x0 + 5, x0 + 7, T + 16, bt.l); g.px(x0 + 3, T + 17, bt.d); g.px(x0 + 12, T + 17, bt.d2); };
       if (L.beard === "moustache") mo();
-      else if (L.beard === "goatee") { mo(); for (let r = 18; r <= 22; r++) for (let x = 6; x <= 9; x++) if (r < 22 || (x > 6 && x < 9)) g.px(x0 + x, T + r, x === 9 ? bt.d : r === 22 ? bt.d2 : bt.b); }
+      else if (L.beard === "goatee") { mo(); for (let r = 19; r <= 22; r++) for (let x = 6; x <= 9; x++) if (r < 22 || (x > 6 && x < 9)) g.px(x0 + x, T + r, x === 9 ? bt.d2 : r === 22 ? bt.d2 : (x + r) % 3 === 0 ? bt.b : bt.d); g.span(x0 + 6, x0 + 9, T + 17, sh(lip, -0.3)); }
       else {
         const extra = L.beard === "short" ? 1 : L.beard === "full" ? 3 : 12;
         for (let r = 11; r <= 20 + extra; r++) {
@@ -2455,7 +2466,10 @@ function paintPortrait(L: Look): Grid {
   }
   // highlight sheen across the crown
   if (!H.bald) for (const [x, y] of [[4, 0], [5, 0], [3, 1], [6, 1], [7, 1], [9, 0]] as V[]) if (g.get(x0 + x, T + y - 1)) g.px(x0 + x, T + y - 1, y === 0 && x < 6 ? ht.l2 : ht.l);
-  if (H.tufts) for (const i of H.tufts) { const x = x0 + Math.round(i * 1.36); g.px(x, T - 2, ht.b); g.px(x + 1, T - 2, ht.d); if (H.wild) g.px(x - 1, T - 3, ht.d); }
+  // glossy band following the curve of the head, broken by strands
+  if (!H.bald) for (let i = 2; i <= 12; i++) { const y = T + 2 + Math.round(Math.abs(i - 6) * 0.35); if (i % 3 !== 0 && g.get(x0 + i, y) && y < T + pf(H.fringe, i)) g.px(x0 + i, y, i < 8 ? ht.l : ht.b); }
+  if (H.tufts && H.wild) for (const i of H.tufts) { const x = x0 + Math.round(i * 1.36); g.px(x, T - 2, ht.b); g.px(x + 1, T - 2, ht.d); g.px(x - 1, T - 3, ht.d); }
+  else if (H.tufts) { g.px(x0 + 5, T - 2, ht.b); g.px(x0 + 11, T - 2, ht.d); }
   if (H.wild) for (const [x, y] of [[-3, 6], [-3, 11], [18, 7], [18, 13], [-3, 15], [18, 16]] as V[]) g.px(x0 + x, T + y, ht.d);
   if (H.tail === "bun") { g.ellipse(x0 + 7.5, T - 3, 3.5, 2.2, ht.b); g.px(x0 + 5, T - 4, ht.l); g.px(x0 + 6, T - 5, ht.l2); g.span(x0 + 6, x0 + 10, T - 1, ht.d); }
   if (H.tail === "braid") for (let y = T + 14; y < 32; y++) { const x = x0 + 16 + ((y >> 1) % 2); g.px(x, y, y % 2 ? ht.b : ht.l); g.px(x + 1, y, ht.d); }
