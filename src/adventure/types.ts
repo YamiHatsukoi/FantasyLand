@@ -26,6 +26,7 @@ export type Cond =
   | { rank: number }
   | { notRank: number }
   | { noWeapon: true }
+  | { armed: true }
   | { arrows: number }
   | { all: Cond[] }
   | { any: Cond[] };

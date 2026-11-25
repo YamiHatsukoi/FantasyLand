@@ -182,6 +182,7 @@ export function check(s: AdvState, c: Cond | undefined): boolean {
   if ("notRank" in c) return s.disciplines.length < c.notRank;
   if ("rank" in c) return s.disciplines.length >= c.rank;
   if ("noWeapon" in c) return !armed(s);
+  if ("armed" in c) return armed(s);
   if ("arrows" in c) return s.arrows >= c.arrows;
   if ("notFlag" in c) return !s.flags[c.notFlag];
   if ("flag" in c) return !!s.flags[c.flag];
@@ -317,6 +318,8 @@ export function enter(book: Book, s: AdvState, id: string): Change[] {
   s.offers = [];
   if (!s.visited.includes(id)) s.visited.push(id);
   s.updated = Date.now();
+  // an open wound bleeds every section until a Laumspur potion is drunk
+  if (s.flags.bleeding) ch.push(...changeEp(book, s, -2).map((c) => ({ ...c, label: `${c.label} (vết thương chảy máu)` })));
   ch.push(...apply(book, s, sec.fx));
   if (sec.end) s.ended = sec.end;
   if (s.ep <= 0) s.ended = "death";
@@ -370,6 +373,7 @@ export function useItem(book: Book, s: AdvState, id: string): Change[] {
   const it = book.items[id];
   if (!it?.heal || !has(s, id) || s.ep >= epMax(book, s)) return [];
   drop(book, s, id);
+  if (/laumspur/i.test(id)) delete s.flags.bleeding;
   return [{ kind: "item", label: `Dùng ${it.name}`, good: true, item: id }, ...changeEp(book, s, it.heal)];
 }
 
