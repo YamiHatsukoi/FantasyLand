@@ -388,12 +388,14 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
             h("div", { class: "adv-disc-grid" }, ...discs.map((d) => discCard(book, d, chosen.has(d), () => {
               if (chosen.has(d)) chosen.delete(d); else if (chosen.size < book.discCount) chosen.add(d); else { toast(`Chỉ chọn được ${book.discCount} kỹ năng.`); return; }
               sfx("click"); wiz.redraw();
+              // the extra choice a discipline brings (weapon roll / mastery) appears below: bring it into view
+              if (chosen.has(d) && (d === "weaponskill" || d === wsDisc)) requestAnimationFrame(() => el.querySelector(".adv-ws")?.scrollIntoView({ behavior: reduced() ? "auto" : "smooth", block: "nearest" }));
             }))),
-            chosen.has("weaponskill") ? h("div", { class: "adv-card fr-panel" }, h("div", { class: "adv-panel-t" }, ui("weapons", 2), `${book.names.disc.weaponskill}: vũ khí sở trường`),
+            chosen.has("weaponskill") ? h("div", { class: "adv-card fr-panel adv-ws" }, h("div", { class: "adv-panel-t" }, ui("weapons", 2), `${book.names.disc.weaponskill}: vũ khí sở trường`),
               r.ws < 0
                 ? h("div", { class: "adv-roll-row" }, wsBox, gameBtn("Bốc số", async (e) => { (e.currentTarget as HTMLButtonElement).disabled = true; r.ws = await wheelRoll(wsBox); await sleep(350); wiz.redraw(); }, { kind: "gold", icon: "dice" }))
                 : h("div", { class: "adv-found fr-parch" }, h("span", { class: "adv-item-l" }, iconEl(itemIcon(book.weaponskill[r.ws], "weapon"), 2), h("b", null, itemName(book, book.weaponskill[r.ws]))))) : null,
-            wsDisc !== "weaponskill" && chosen.has(wsDisc) ? h("div", { class: "adv-card fr-panel" },
+            wsDisc !== "weaponskill" && chosen.has(wsDisc) ? h("div", { class: "adv-card fr-panel adv-ws" },
               h("div", { class: "adv-panel-t" }, ui("weapons", 2), `${book.names.disc[wsDisc]}: vũ khí thành thạo`, h("span", { class: "adv-count" }, `${mastered.size}/3`)),
               h("div", { class: "adv-opt-grid" }, ...[...new Set(book.weaponskill)].map((w) => h("button", { class: `adv-opt ${mastered.has(w) ? "fr-sel on" : "fr-btn"}`, type: "button", onclick: () => { if (mastered.has(w)) mastered.delete(w); else if (mastered.size < 3) mastered.add(w); sfx("click"); wiz.redraw(); } },
                 h("span", { class: "adv-item-l" }, iconEl(itemIcon(w, "weapon"), 2), h("b", null, itemName(book, w))))))) : null));
@@ -431,6 +433,8 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
     let explore: ExploreView | null = null;
     /** Side of the place the hero walks in from (the opposite of the exit taken). */
     let entrySide: Side | undefined;
+    let exploring = false;
+    const noExplore = new Set<string>();
     const save = (now = false) => saves!.save(slot, s, now);
     const heroLook = (): Look => withWeapon("lonewolf", s.weapons[0]);
     const killScene = () => { explore?.destroy(); explore = null; fit?.destroy(); fit = null; stage?.destroy(); stage = null; };
@@ -489,7 +493,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
     });
     grip.addEventListener("pointercancel", () => { drag = null; });
     grip.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSheet(view.dataset.sheet === "full" ? "half" : "full"); } });
-    sceneBox.addEventListener("click", () => { if (!explore) setSheet(view.dataset.sheet === "min" ? "half" : "min"); });
+    sceneBox.addEventListener("click", () => { if (!exploring) setSheet(view.dataset.sheet === "min" ? "half" : "min"); });
     // tap the text to show it all at once
     body.addEventListener("pointerdown", () => view.classList.add("shown"));
 
@@ -595,46 +599,60 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
     }
 
     /** The scene: a Stage, or the walkable explore view when the section is one and the module exists. */
+    /** The section's walkable spots when it plays in explore mode (null: a static scene). */
+    function exploreSpots() {
+      const sec = book.sections[s.section];
+      if (!sec.scene.explore || noExplore.has(s.section) || s.ended || pendingLoss(s) || phase(book, s) !== "choices") return null;
+      const list = visibleChoices(sec, s);
+      const spots: { key: number; label: string; via: NonNullable<Choice["via"]>; locked?: string }[] = [];
+      list.forEach((c, i) => {
+        const cs = choiceState(s, c);
+        if (cs === "hidden" || !c.via) return;
+        spots.push({ key: i, label: c.text, via: c.via, locked: cs === "locked" ? condText(book, c.if) : undefined });
+      });
+      return spots.length ? { list, spots } : null;
+    }
+
     function mountScene() {
       const sec = book.sections[s.section];
       killScene();
+      sceneBox.replaceChildren();
+      sceneBox.classList.toggle("dead", s.ended === "death");
+      sceneBox.classList.toggle("won", s.ended === "victory");
+      const ex = exploreSpots();
+      exploring = !!ex;
+      sceneBox.classList.toggle("explore", exploring);
+      view.classList.toggle("exploring", exploring);
+      if (ex) {
+        const sid = s.section, steps = s.steps;
+        const entryFrom = entrySide;
+        sceneBox.append(h("div", { class: "adv-loading" }, h("div", { class: "adv-spinner" })));
+        void import("./explore").then((mod) => {
+          if (s.section !== sid || s.steps !== steps || !view.isConnected || !alive || explore) return;
+          sceneBox.replaceChildren();
+          explore = mod.mountExplore({
+            host: sceneBox, seed: `${book.id}-${sec.scene.place}`, scene: sec.scene, heroLook: heroLook(), entryFrom, spots: ex.spots,
+            onPick: (key) => { const c = ex.list[key]; if (c && choiceState(s, c) === "ok" && s.section === sid) pick(c); },
+          });
+        }).catch(() => {
+          // explore failed to load: play the section with a static scene and plain buttons
+          if (s.section !== sid || !view.isConnected) return;
+          noExplore.add(sid);
+          render();
+        });
+        return;
+      }
       const spec: SceneSpec = { bg: sec.scene.bg, time: sec.scene.time, weather: sec.scene.weather, mood: sec.scene.mood, seed: `${book.id}-${s.section}` };
       const st = new Stage(spec);
       st.cast(sec.scene.actors.length ? sec.scene.actors : ["lonewolf"], heroLook());
       stage = st;
-      sceneBox.replaceChildren();
       fit = new StageFit(sceneBox, st, { minVis: 0.56, anchorY: 0.8 });
-      sceneBox.classList.toggle("dead", s.ended === "death");
-      sceneBox.classList.toggle("won", s.ended === "victory");
-      if (sec.scene.explore && !s.ended) {
-        const sid = s.section;
-        const entryFrom = entrySide;
-        void import("./explore").then((mod) => {
-          if (s.section !== sid || !view.isConnected || !alive) return;
-          const list = visibleChoices(sec, s);
-          const spots: { key: number; label: string; via: NonNullable<Choice["via"]>; locked?: string }[] = [];
-          list.forEach((c, i) => {
-            const cs = choiceState(s, c);
-            if (cs === "hidden" || !c.via) return;
-            spots.push({ key: i, label: c.text, via: c.via, locked: cs === "locked" ? condText(book, c.if) : undefined });
-          });
-          if (!spots.length) return;
-          killScene();
-          sceneBox.replaceChildren();
-          sceneBox.classList.add("explore");
-          explore = mod.mountExplore({
-            host: sceneBox, seed: `${book.id}-${sec.scene.place}`, scene: sec.scene, heroLook: heroLook(), entryFrom, spots,
-            onPick: (key) => { const c = list[key]; if (c && choiceState(s, c) === "ok") pick(c); },
-          });
-          render(undefined, true);
-        }).catch(() => { /* explore failed to load: the static stage stays */ });
-      } else sceneBox.classList.remove("explore");
     }
 
-    function render(_from?: string, keepScene = false) {
+    function render(_from?: string) {
       renderChips();
       const sec = book.sections[s.section];
-      if (!keepScene) mountScene();
+      mountScene();
       view.classList.remove("shown", "ended", "won", "dead");
       if (view.dataset.sheet === "min") view.dataset.sheet = "half";
       const pn = placeName(placeOf(s.section));
@@ -677,13 +695,13 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       for (const c of visibleChoices(sec, s)) {
         const st = choiceState(s, c);
         if (st === "hidden") continue;
-        if (explore && c.via) continue;
+        if (exploring && c.via) continue;
         k++;
         dock.append(h("button", { class: `adv-choice ${st === "locked" ? "locked fr-slot" : "fr-btn"}`, type: "button", disabled: st === "locked", style: `--j:${k}`, onclick: () => { sfx("click"); pick(c); } },
           h("span", { class: "adv-choice-k" }, st === "locked" ? ui("lock", 1) : String(k)),
           h("span", { class: "adv-choice-t" }, c.text, st === "locked" ? h("small", null, condText(book, c.if)) : null)));
       }
-      if (sceneBox.classList.contains("explore") && !k) dock.append(h("p", { class: "adv-dock-note" }, ui("info", 1), "Đi tới một lối ra hoặc một người trong cảnh để chọn hướng."));
+      if (exploring && !k) dock.append(h("p", { class: "adv-dock-note" }, ui("info", 1), "Đi tới một lối ra hoặc một người trong cảnh để chọn hướng."));
     }
 
     /** A choice: pay its price / apply its effects, then go (or stay, for repeatable purchases). */

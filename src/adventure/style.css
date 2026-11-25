@@ -208,7 +208,9 @@
   background: linear-gradient(90deg, rgba(0,0,0,.78) 60%, rgba(0,0,0,0)); text-shadow: 0 2px 0 #000; max-width: 80%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .adv-place::before { content: ""; display: inline-block; width: 6px; height: 6px; background: var(--brass); margin: 0 8px 3px 0; box-shadow: 0 0 0 2px #1a0d03; }
 .adv-place.in { animation: advPlace .7s both; }
-.adv-peek { display: none; }
+.adv-scene > .adv-loading { position: absolute; inset: 0; justify-content: center; }
+.adv-scene.explore { cursor: default; }
+.adv-play.exploring .adv-sheet { max-height: 46%; min-height: 0; }
 
 /* HUD */
 .adv-hud { position: absolute; top: 0; left: 0; right: 0; z-index: 4; display: flex; align-items: flex-start; gap: 6px; padding: calc(8px + var(--safe-t)) 8px 0; pointer-events: none; }
