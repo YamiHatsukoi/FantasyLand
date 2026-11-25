@@ -24,6 +24,8 @@ export type Cond =
   | { notFlag: string }
   | { epBelow: number }
   | { rank: number }
+  | { notRank: number }
+  | { noWeapon: true }
   | { arrows: number }
   | { all: Cond[] }
   | { any: Cond[] };
@@ -41,37 +43,60 @@ export type Effect =
   | { gain: string; type: ItemType; n?: number; optional?: boolean; desc?: string }
   | { lose: string }
   | { loseAll: "weapons" | "backpack" | "special" | "gold" | "everything" }
-  | { eat: true }
-  | { flag: string };
+  | { eat: true; noHunt?: boolean }
+  | { flag: string }
+  | { unflag: string }
+  | { stash: string }
+  | { unstash: string };
 
 export interface FoeDef {
   name: string;
   cs: number;
   ep: number;
   immune?: string[];
+  /** Undead: the Sommerswerd doubles the damage they take. */
+  undead?: boolean;
+  /** The foe does not strike back during the first n rounds. */
+  holdRounds?: number;
 }
 
 export interface Combat {
   foes: FoeDef[];
   together?: boolean;
   mods?: { cs?: number };
-  evade?: { after: number; to: string };
+  evade?: { after: number; to: string; alt?: { text: string; to: string }[] };
   win?: string;
   maxRounds?: { n: number; to: string };
   noMindblast?: boolean;
   csIf?: { if: Cond; add: number }[];
   onHurt?: string;
+  firstRound?: { cs: number; rounds?: number };
+  foeExtraLoss?: number;
+  heroDrain?: { ep: number; if?: Cond };
+  /** One-round fight decided by who lost more ENDURANCE (hero more / less / equal). */
+  compare?: { more: string; less: string; equal: string };
+  /** Losing the fight is not death: go there with 1 ENDURANCE. */
+  lose?: string;
+  winBy?: { rounds: number; fast: string; slow: string };
+  restoreHalf?: boolean;
+  foeHoldLoss?: number;
 }
 
 export interface Choice {
   text: string;
   to: string;
   if?: Cond;
+  /** Effects of choosing it (paying a price...). */
+  fx?: Effect[];
+  /** When available, it must be taken (the section's random pick is for everyone else). */
+  force?: boolean;
+  /** Buying more: applies its fx and stays in the section. */
+  repeat?: boolean;
 }
 
 export interface RandomPick {
   mods?: { if: Cond; add: number }[];
-  out: { min: number; max: number; to: string; fx?: Effect[] }[];
+  out: { min: number; max: number; to?: string; end?: "death" | "victory"; fx?: Effect[] }[];
   bow?: boolean;
 }
 
@@ -108,6 +133,8 @@ export interface ItemDef {
   name: string;
   type: ItemType;
   desc?: string;
+  /** Counts as a weapon in hand although carried as a special item (Sommerswerd). */
+  weapon?: boolean;
   /** Passive bonus while carried (Helmet: epMax 2, Chainmail: epMax 4...). */
   epMax?: number;
   cs?: number;
@@ -178,6 +205,8 @@ export interface AdvState {
   mastered?: string[];
   /** ENDURANCE lost in the current section's combat (for "onHurt"). */
   hurt?: boolean;
+  /** Gear taken away (confiscated) by name, to be given back later. */
+  stashes?: Record<string, { weapons: string[]; backpack: string[]; special: string[]; meals: number; gold: number; arrows: number }>;
   flags: Record<string, boolean>;
   /** COMBAT SKILL changes: for the next combat only, and for the rest of the book. */
   csNext: number;

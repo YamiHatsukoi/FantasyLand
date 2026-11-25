@@ -85,6 +85,11 @@ export function epMax(book: Book, s: AdvState) {
   return s.epBase + s.special.reduce((a, id) => a + (book.items[id]?.epMax ?? 0), 0);
 }
 
+/** Holds a weapon: one in the weapon slots, or the Sommerswerd. */
+export function armed(s: AdvState, book?: Book) {
+  return s.weapons.length > 0 || s.special.some((id) => id === "Sommerswerd" || !!book?.items[id]?.weapon);
+}
+
 export function has(s: AdvState, id: string) {
   if (id === "Meal") return s.meals > 0;
   return s.weapons.includes(id) || s.backpack.includes(id) || s.special.includes(id);
@@ -142,7 +147,9 @@ export function check(s: AdvState, c: Cond | undefined): boolean {
   if ("gold" in c) return s.gold >= c.gold;
   if ("epBelow" in c) return s.ep < c.epBelow;
   if ("ep" in c) return s.ep >= c.ep;
+  if ("notRank" in c) return s.disciplines.length < c.notRank;
   if ("rank" in c) return s.disciplines.length >= c.rank;
+  if ("noWeapon" in c) return !armed(s);
   if ("arrows" in c) return s.arrows >= c.arrows;
   if ("notFlag" in c) return !s.flags[c.notFlag];
   if ("flag" in c) return !!s.flags[c.flag];
@@ -165,7 +172,7 @@ export function condText(book: Book, c: Cond | undefined): string {
 /** A choice the player can pick, one shown locked (a missing discipline...), or one not shown. */
 export function choiceState(s: AdvState, c: { if?: Cond }): "ok" | "locked" | "hidden" {
   if (check(s, c.if)) return "ok";
-  const negative = (x: Cond): boolean => "notDisc" in x || "notItem" in x || "notFlag" in x || "epBelow" in x || ("all" in x && x.all.some(negative)) || ("any" in x && x.any.every(negative));
+  const negative = (x: Cond): boolean => "notDisc" in x || "notItem" in x || "notFlag" in x || "epBelow" in x || "notRank" in x || "noWeapon" in x || ("all" in x && x.all.some(negative)) || ("any" in x && x.any.every(negative));
   return c.if && negative(c.if) ? "hidden" : "locked";
 }
 
@@ -219,9 +226,29 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined): Change
       s.ep = Math.min(s.ep, epMax(book, s));
       out.push({ kind: "item", label: k === "gold" ? "Mất hết Vương Miện Vàng" : k === "everything" ? "Mất toàn bộ hành trang" : k === "weapons" ? "Mất hết vũ khí" : k === "backpack" ? "Mất Ba Lô và mọi thứ trong đó" : "Mất các Vật Phẩm Đặc Biệt", good: false });
     } else if ("eat" in e) {
-      if (s.disciplines.includes(profile(book).hunt)) out.push({ kind: "meal", label: `${book.names.disc[profile(book).hunt]}: tự kiếm được cái ăn`, good: true });
+      if (!e.noHunt && !s.flags.nohunt && s.disciplines.includes(profile(book).hunt)) out.push({ kind: "meal", label: `${book.names.disc[profile(book).hunt]}: tự kiếm được cái ăn`, good: true });
       else if (s.meals > 0) { s.meals--; out.push({ kind: "meal", label: "Ăn 1 Phần Ăn", good: true, item: "Meal" }); }
       else out.push({ kind: "meal", label: "Không có gì ăn", good: false }, ...changeEp(book, s, -3));
+    } else if ("stash" in e) {
+      s.stashes ??= {};
+      s.stashes[e.stash] = { weapons: s.weapons, backpack: s.backpack, special: s.special, meals: s.meals, gold: s.gold, arrows: s.arrows };
+      s.weapons = []; s.backpack = []; s.special = []; s.meals = 0; s.gold = 0; s.arrows = 0;
+      s.ep = Math.min(s.ep, epMax(book, s));
+      out.push({ kind: "item", label: "Bị tịch thu toàn bộ hành trang", good: false });
+    } else if ("unstash" in e) {
+      const st = s.stashes?.[e.unstash];
+      if (st) {
+        for (const w of st.weapons) give(book, s, w, "weapon");
+        for (const b of st.backpack) give(book, s, b, "backpack");
+        for (const x of st.special) give(book, s, x, "special");
+        give(book, s, "Meal", "meal", st.meals);
+        s.gold = Math.min(MAX_GOLD, s.gold + st.gold);
+        s.arrows += st.arrows;
+        delete s.stashes![e.unstash];
+        out.push({ kind: "item", label: "Lấy lại hành trang", good: true });
+      }
+    } else if ("unflag" in e) {
+      delete s.flags[e.unflag];
     } else if ("flag" in e) {
       s.flags[e.flag] = true;
     }
@@ -272,8 +299,20 @@ export function phase(book: Book, s: AdvState): "end" | "combat" | "random" | "c
   const sec = book.sections[s.section];
   if (s.ended) return "end";
   if (sec.combat && !s.fought) return "combat";
-  if (sec.random) return "random";
+  if (sec.random && !forcedChoices(sec, s).length) return "random";
   return "choices";
+}
+
+/** "If you have X, go to Y": those choices take precedence over the section's random pick. */
+export function forcedChoices(sec: Section, s: AdvState) {
+  return (sec.choices ?? []).filter((c) => c.force && check(s, c.if));
+}
+
+/** Choices shown in the section (forced ones alone when one applies). */
+export function visibleChoices(sec: Section, s: AdvState) {
+  const forced = forcedChoices(sec, s);
+  if (forced.length) return forced;
+  return (sec.choices ?? []).filter((c) => !c.force);
 }
 
 /** The random number picked for the section's table, with modifiers, and where it leads. */
@@ -283,7 +322,7 @@ export function randomResult(book: Book, sec: Section, s: AdvState, n: number) {
   if (r.bow && s.weapons.includes("Bow") && s.disciplines.includes(profile(book).weapon.disc)) add += profile(book).weapon.bonus;
   const v = n + add;
   const out = r.out.find((o) => v >= o.min && v <= o.max) ?? (v < r.out[0].min ? r.out[0] : r.out[r.out.length - 1]);
-  return { n, add, value: v, to: out.to, fx: out.fx };
+  return { n, add, value: v, to: out.to ?? "", end: out.end, fx: out.fx };
 }
 
 export function eatMeal(book: Book, s: AdvState): Change[] {
@@ -334,12 +373,15 @@ export interface Battle {
   round: number;
   /** Mind attack in use: index into the profile's `mind` list, or -1. */
   mind: number;
-  over?: "win" | "lose" | "evaded" | "timeout";
+  over?: "win" | "lose" | "evaded" | "timeout" | "beaten";
+  compare?: "more" | "less" | "equal";
+  /** ENDURANCE the hero lost in this fight. */
+  lost: number;
 }
 
 export function startBattle(book: Book, s: AdvState, sec: Section): Battle {
   const avail = profile(book).mind.findIndex(([d]) => s.disciplines.includes(d));
-  return { foes: sec.combat!.foes.map((def) => ({ def, ep: def.ep })), idx: 0, round: 0, mind: avail };
+  return { foes: sec.combat!.foes.map((def) => ({ def, ep: def.ep })), idx: 0, round: 0, mind: avail, lost: 0 };
 }
 
 export interface CsBreakdown {
@@ -358,10 +400,11 @@ export function weaponBonus(book: Book, s: AdvState): { label: string; v: number
 }
 
 /** Hero COMBAT SKILL for this fight, with its parts (shown on the battle screen). */
-export function heroCs(book: Book, s: AdvState, c: Combat, foe: FoeDef, mind = -1): CsBreakdown {
+export function heroCs(book: Book, s: AdvState, c: Combat, foe: FoeDef, mind = -1, round = 0): CsBreakdown {
   const parts: { label: string; v: number }[] = [{ label: "Cơ bản", v: s.cs }];
-  if (!s.weapons.length) parts.push({ label: "Tay không", v: -4 });
+  if (!armed(s, book)) parts.push({ label: "Tay không", v: -4 });
   else { const w = weaponBonus(book, s); if (w) parts.push(w); }
+  if (c.firstRound && round < (c.firstRound.rounds ?? 1)) parts.push({ label: round ? `Hiệp ${round + 1}` : "Hiệp đầu", v: c.firstRound.cs });
   const m = profile(book).mind[mind];
   if (m && s.disciplines.includes(m[0]) && !c.noMindblast && !mindImmune(foe)) parts.push({ label: `${book.names.disc[m[0]]}${m[2] ? ` (−${m[2]} Sức Bền/hiệp)` : ""}`, v: m[1] });
   for (const id of s.special) if (book.items[id]?.cs) parts.push({ label: itemName(book, id), v: book.items[id].cs! });
@@ -398,17 +441,23 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
   const c = book.sections[s.section].combat!;
   const foeIdx = b.idx;
   const foe = b.foes[foeIdx];
-  const ratio = heroCs(book, s, c, foe.def, b.mind).total - foe.def.cs;
+  const ratio = heroCs(book, s, c, foe.def, b.mind, b.round).total - foe.def.cs;
   const n = pick10(rng);
   const [fl, hl] = book.crt[n][crtColumnOf(ratio)];
   b.round++;
   const m = profile(book).mind[b.mind];
   const mindCost = m && !c.noMindblast && !mindImmune(foe.def) ? m[2] : 0;
-  const foeLoss = evade ? 0 : fl === KILL ? foe.ep : fl;
-  const heroLoss = (hl === KILL ? s.ep : hl) + mindCost;
+  const sommer = (s.special.includes("Sommerswerd") || s.weapons.includes("Sommerswerd")) && foe.def.undead;
+  const hit = fl === KILL ? foe.ep : (fl + (c.foeExtraLoss ?? 0)) * (sommer ? 2 : 1);
+  const foeLoss = evade || (c.foeHoldLoss ?? 0) >= b.round ? 0 : hit;
+  const held = (foe.def.holdRounds ?? 0) >= b.round;
+  const drain = c.heroDrain && check(s, c.heroDrain.if) ? c.heroDrain.ep : 0;
+  const heroLoss = (held ? 0 : hl === KILL ? s.ep : hl) + mindCost + drain;
   if (!evade) foe.ep = Math.max(0, foe.ep - foeLoss);
   s.ep = Math.max(0, s.ep - heroLoss);
   if (heroLoss > 0) s.hurt = true;
+  b.lost += heroLoss;
+  if (s.ep <= 0 && c.lose) { s.ep = 1; b.over = "beaten"; s.fought = true; s.csNext = 0; return { n, ratio, foe: foeIdx, foeLoss, heroLoss, mindCost, foeKilled: false, heroKilled: false, evaded: false }; }
   const heroKilled = s.ep <= 0;
   const foeKilled = !evade && foe.ep <= 0;
   if (heroKilled) b.over = "lose";
@@ -417,7 +466,10 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
     if (b.idx < b.foes.length - 1) b.idx++;
     else b.over = "win";
   } else if (c.maxRounds && b.round >= c.maxRounds.n) b.over = "timeout";
+  if (c.compare && !b.over) b.over = "timeout";
+  if (c.compare) b.compare = heroLoss > foeLoss ? "more" : heroLoss < foeLoss ? "less" : "equal";
   if (b.over) { s.fought = true; s.csNext = 0; }
+  if (b.over === "win" && c.restoreHalf && b.lost > 0) s.ep = Math.min(epMax(book, s), s.ep + Math.floor(b.lost / 2));
   return { n, ratio, foe: foeIdx, foeLoss, heroLoss, mindCost, foeKilled, heroKilled, evaded: evade };
 }
 
@@ -430,7 +482,10 @@ export function canEvade(book: Book, s: AdvState, b: Battle) {
 export function battleExit(book: Book, s: AdvState, b: Battle): string | null {
   const c = book.sections[s.section].combat!;
   if (b.over === "lose") { s.ended = "death"; return null; }
+  if (b.over === "beaten") return c.lose ?? "";
+  if (b.over === "win" && c.winBy) return b.round <= c.winBy.rounds ? c.winBy.fast : c.winBy.slow;
   if (b.over === "evaded") return c.evade?.to ?? "";
+  if (c.compare && b.compare) return c.compare[b.compare];
   if (b.over === "timeout") return c.maxRounds?.to ?? "";
   if (c.onHurt && s.hurt) return c.onHurt;
   return c.win ?? "";
@@ -445,10 +500,11 @@ export function validateBook(book: Book): string[] {
   if (!book.sections?.[book.start]) errs.push(`Đoạn mở đầu §${book.start} không tồn tại`);
   if (!Array.isArray(book.crt) || book.crt.length !== 10 || book.crt.some((r) => r.length !== 13)) errs.push("Bảng Kết Quả Chiến Đấu không hợp lệ (cần 10 × 13 ô)");
   for (const [id, sec] of Object.entries(book.sections ?? {})) {
-    const links = [...(sec.choices ?? []).map((c) => c.to), ...(sec.random?.out ?? []).map((o) => o.to),
-      sec.combat?.win, sec.combat?.evade?.to, sec.combat?.maxRounds?.to, sec.combat?.onHurt].filter((x): x is string => !!x);
+    const c = sec.combat;
+    const links = [...(sec.choices ?? []).map((x) => x.to), ...(sec.random?.out ?? []).map((o) => o.to),
+      c?.win, c?.lose, c?.winBy?.fast, c?.winBy?.slow, c?.evade?.to, ...(c?.evade?.alt ?? []).map((a) => a.to), c?.maxRounds?.to, c?.onHurt, c?.compare?.more, c?.compare?.less, c?.compare?.equal].filter((x): x is string => !!x);
     for (const t of links) if (!book.sections[t]) errs.push(`§${id} → §${t}: không có đoạn này`);
-    if (!links.length && !sec.end) errs.push(`§${id}: ngõ cụt`);
+    if (!links.length && !sec.end && !(sec.random?.out ?? []).some((o) => o.end)) errs.push(`§${id}: ngõ cụt`);
   }
   return errs;
 }
