@@ -201,7 +201,7 @@
 .adv-intro-text p:first-child::first-letter { float: left; font-family: var(--pixel); font-size: 64px; line-height: .78; margin: 4px 6px 0 0; color: #8a2a12; }
 
 /* ------------------------------------------------------------ the story */
-.adv-play { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; background: #050403; }
+.adv-play { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; background: radial-gradient(ellipse at 50% 100%, #2a1c10, #070504 70%); }
 .adv-scene-wrap { position: relative; flex: 1 1 auto; min-height: calc(var(--hud-h) + var(--safe-t) + 24px); z-index: 0; }
 .adv-scene-wrap.hurt::after, .adv-fight.hurt::after { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 9; animation: advHurt .45s both; }
 .adv-scene { position: absolute; inset: 0; cursor: pointer; }
@@ -431,7 +431,7 @@
 .adv-travel-label b { font-family: var(--pixel); font-weight: normal; font-size: 36px; line-height: 1; color: #ffe4a0; }
 
 /* ------------------------------------------------------------ battle */
-.adv-fight { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; background: #050403; animation: advFade .25s both; }
+.adv-fight { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; background: radial-gradient(ellipse at 50% 100%, #2a1c10, #070504 70%); animation: advFade .25s both; }
 .adv-fight.out { animation: advFadeOut .25s both; }
 .adv-fight-stage { position: relative; flex: 1 1 auto; min-height: 160px; }
 .adv-fight-scene { position: absolute; inset: 0; }
