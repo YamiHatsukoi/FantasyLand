@@ -1,146 +1,175 @@
 /**
- * Data format of an Adventure book (gamebook). A book is pure data: sections linked by
- * choices, plus the items and enemies they mention. The engine and the screens read it.
- *
- * Images are optional: a path is relative to `public/adventure/<book id>/`.
- * Without one (or if it fails to load) a generated illustration is shown instead.
+ * Data format of an Adventure book, Lone Wolf rules (see FORMAT.md of the private book repo).
+ * Book packages hold licensed text, so they are never part of this repository: the player
+ * imports their own personal copy, kept in their account only.
  */
 
-export type StatId = "skill" | "stamina" | "luck";
+export type Disc =
+  | "camouflage" | "hunting" | "sixthsense" | "tracking" | "healing"
+  | "weaponskill" | "mindshield" | "mindblast" | "animalkinship" | "mindovermatter";
+
+export const DISCS: Disc[] = ["camouflage", "hunting", "sixthsense", "tracking", "healing", "weaponskill", "mindshield", "mindblast", "animalkinship", "mindovermatter"];
 
 export type Cond =
-  | { has: string; n?: number }
+  | { disc: Disc }
+  | { notDisc: Disc }
+  | { item: string }
+  | { notItem: string }
+  | { gold: number }
+  | { ep: number }
   | { flag: string }
   | { notFlag: string }
-  | { gold: number }
-  | { stat: StatId; min: number }
-  | { visited: string }
   | { all: Cond[] }
   | { any: Cond[] };
 
+export type ItemType = "weapon" | "backpack" | "special" | "meal";
+
 export type Effect =
-  /** Changes a stat; it never goes above its starting value (FF rule) unless `over`. */
-  | { stat: StatId; add: number; over?: boolean }
-  /** Changes the starting (maximum) value of a stat, and the stat with it. */
-  | { statMax: StatId; add: number }
+  | { ep: number }
+  | { cs: number; for?: "combat" | "book" }
   | { gold: number }
-  | { give: string; n?: number }
-  | { take: string; n?: number }
-  | { flag: string; v?: boolean }
-  | { provisions: number };
+  | { gain: string; type: ItemType; n?: number; optional?: boolean; desc?: string }
+  | { lose: string }
+  | { loseAll: "weapons" | "backpack" | "special" | "gold" | "everything" }
+  | { eat: true }
+  | { flag: string };
+
+export interface FoeDef {
+  name: string;
+  cs: number;
+  ep: number;
+  immune?: string[];
+}
+
+export interface Combat {
+  foes: FoeDef[];
+  together?: boolean;
+  mods?: { cs?: number };
+  evade?: { after: number; to: string };
+  win?: string;
+  maxRounds?: { n: number; to: string };
+  noMindblast?: boolean;
+}
 
 export interface Choice {
   text: string;
   to: string;
-  cond?: Cond;
-  /** Hide the choice when its condition fails (default: shown greyed out). */
-  hide?: boolean;
-  fx?: Effect[];
+  if?: Cond;
 }
 
-export interface Fight {
-  enemies: string[];
-  win: string;
-  /** Without it, losing the fight is death. */
-  lose?: string;
-  /** Escape is allowed: the hero takes 2 damage and goes there. */
-  flee?: string;
-  /** All enemies attack each round (otherwise they come one at a time). */
-  together?: boolean;
+export interface RandomPick {
+  mods?: { if: Cond; add: number }[];
+  out: { min: number; max: number; to: string }[];
 }
 
-export interface Test {
-  stat: StatId;
-  pass: string;
-  fail: string;
-  /** Number of d6 rolled (default 2); pass when the total is <= stat + mod. */
-  dice?: number;
-  mod?: number;
+export type Bg =
+  | "forest" | "hill" | "road" | "river" | "lake" | "field" | "village" | "town" | "city" | "castle" | "hall" | "ruins"
+  | "cave" | "tunnel" | "swamp" | "mountain" | "bridge" | "camp" | "inn" | "ship" | "sea" | "coast" | "desert"
+  | "temple" | "dungeon" | "sky";
+
+export interface Scene {
+  place: string;
+  bg: Bg;
+  time: "dawn" | "day" | "dusk" | "night";
+  weather: "clear" | "cloudy" | "rain" | "storm" | "fog" | "snow" | "wind";
+  actors: string[];
+  mood: "calm" | "tense" | "danger" | "combat" | "sad" | "mystery" | "triumph";
+  cutscene?: boolean;
 }
 
 export interface Section {
-  title?: string;
-  text: string;
-  img?: string;
-  /** Mood of the generated illustration when there is no image. */
-  mood?: Mood;
+  text: string[];
+  scene: Scene;
   fx?: Effect[];
+  combat?: Combat;
   choices?: Choice[];
-  fight?: Fight;
-  test?: Test;
-  end?: "victory" | "death";
+  random?: RandomPick;
+  end?: "death" | "victory";
+  note?: string;
 }
 
-export type Mood = "forest" | "sea" | "cave" | "ruin" | "town" | "night" | "fire" | "storm";
+/** Combat Results Table: [random number 0-9][ratio column 0-12] = [enemy loss, hero loss]; -1 = killed. */
+export type CRT = [number, number][][];
 
 export interface ItemDef {
   name: string;
-  icon: string;
+  type: ItemType;
   desc?: string;
-  use?: { fx: Effect[]; consume?: boolean; combat?: boolean; label?: string };
+  /** Passive bonus while carried (Helmet: epMax 2, Chainmail: epMax 4...). */
+  epMax?: number;
+  cs?: number;
+  /** Usable item: restores ENDURANCE when used outside combat (Healing Potion: 4). */
+  heal?: number;
 }
 
-export interface EnemyDef {
-  name: string;
-  skill: number;
-  stamina: number;
-  /** Damage dealt when it wins a round (default 2). */
-  damage?: number;
-  icon?: string;
-  img?: string;
-  desc?: string;
-  color?: string;
-}
-
-export interface DiceStat {
-  dice: number;
-  plus: number;
+export interface StartPick {
+  /** "random": one option by a random number (option index = number); "choose": player picks `count`. */
+  mode: "random" | "choose";
+  count: number;
+  options: ({ gain: string; type: ItemType; n?: number } | { gold: number })[];
 }
 
 export interface Book {
   id: string;
+  series: "lw";
+  num: number;
   title: string;
-  subtitle?: string;
-  blurb: string;
-  author?: string;
-  cover?: string;
-  accent?: string;
+  /** Vietnamese "The Story So Far" paragraphs, shown before the adventure starts. */
+  intro: string[];
   start: string;
-  rules: {
-    skill: DiceStat;
-    stamina: DiceStat;
-    luck: DiceStat;
-    provisions?: number;
-    provisionHeal?: number;
-    gold?: number;
-    items?: Record<string, number>;
+  crt: CRT;
+  /** Weaponskill weapon by random number 0-9. */
+  weaponskill: string[];
+  /** Kai disciplines a new hero picks. */
+  discCount: number;
+  kit: {
+    items: { gain: string; type: ItemType; n?: number }[];
+    gold: { random: boolean; add: number };
+    picks: StartPick[];
   };
   items: Record<string, ItemDef>;
-  enemies: Record<string, EnemyDef>;
+  /** Vietnamese names: disciplines, stats and terms used by the screens. */
+  names: { disc: Record<Disc, string>; discDesc?: Partial<Record<Disc, string>>; [k: string]: unknown };
+  actors?: Record<string, string>;
+  places?: Record<string, string>;
   sections: Record<string, Section>;
+}
+
+export interface Offer {
+  gain: string;
+  type: ItemType;
+  n: number;
+  desc?: string;
 }
 
 /** Progress of one play-through (what a save slot holds). */
 export interface AdvState {
-  v: 1;
+  v: 2;
   book: string;
   name: string;
   section: string;
-  skill: number;
-  skillMax: number;
-  stamina: number;
-  staminaMax: number;
-  luck: number;
-  luckMax: number;
+  cs: number;
+  ep: number;
+  epBase: number;
+  disciplines: Disc[];
+  weaponskill?: string;
+  weapons: string[];
+  backpack: string[];
+  special: string[];
+  meals: number;
   gold: number;
-  provisions: number;
-  items: Record<string, number>;
   flags: Record<string, boolean>;
+  /** COMBAT SKILL changes: for the next combat only, and for the rest of the book. */
+  csNext: number;
+  csBook: number;
+  /** Items the section offers that the player has not taken or left yet. */
+  offers: Offer[];
+  /** Section whose fx were applied, so a reload does not apply them twice. */
+  fought: boolean;
   visited: string[];
   steps: number;
   created: number;
   updated: number;
   ended?: "victory" | "death";
-  /** Snapshot taken on entering the current section: "try again" after a death. */
   back?: Omit<AdvState, "back">;
 }
