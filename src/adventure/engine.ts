@@ -406,6 +406,7 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined): Change
     const when = (e as { if?: Cond }).if;
     if (when && !check(s, when)) continue;
     if ("ep" in e) out.push(...changeEp(book, s, e.ep));
+    else if ("restoreHalf" in e) out.push(...changeEp(book, s, Math.floor((epMax(book, s) - s.ep) / 2)));
     else if ("epMax" in e) { s.epBase += e.epMax; out.push(...changeEp(book, s, e.epMax > 0 ? e.epMax : 0)); out.push({ kind: "ep", label: `Sức Bền tối đa ${e.epMax > 0 ? "+" : ""}${e.epMax}`, good: e.epMax > 0 }); }
     else if ("csBase" in e) { s.cs += e.csBase; out.push({ kind: "cs", label: `Kỹ Năng Chiến Đấu ${e.csBase > 0 ? "+" : ""}${e.csBase}`, good: e.csBase > 0 }); }
     else if ("cs" in e) {
@@ -534,9 +535,15 @@ export function retry(s: AdvState): AdvState | null {
 export function phase(book: Book, s: AdvState): "end" | "combat" | "random" | "choices" {
   const sec = book.sections[s.section];
   if (s.ended) return "end";
-  if (sec.combat && !s.fought) return "combat";
-  if (sec.random && !forcedChoices(sec, s).length) return "random";
+  if (sec.combat && !s.fought && !skipChoice(sec, s)) return "combat";
+  if (sec.random && !skipChoice(sec, s) && !forcedChoices(sec, s).length) return "random";
   return "choices";
+}
+
+/** The way past a fight that does not happen (combat.skipIf holds: "with Psi-screen it never attacks"). */
+export function skipChoice(sec: Section, s: AdvState): Choice | null {
+  const k = sec.combat?.skipIf;
+  return k && !s.fought && check(s, k.if) ? { text: k.text ?? "Đi tiếp", to: k.to } : null;
 }
 
 /** "If you have X, go to Y": those choices take precedence over the section's random pick. */
@@ -546,6 +553,8 @@ export function forcedChoices(sec: Section, s: AdvState) {
 
 /** Choices shown in the section (forced ones alone when one applies). */
 export function visibleChoices(sec: Section, s: AdvState) {
+  const skip = skipChoice(sec, s);
+  if (skip) return [skip];
   const forced = forcedChoices(sec, s);
   if (forced.length) return forced;
   return (sec.choices ?? []).filter((c) => !c.force);
@@ -878,7 +887,7 @@ export function validateBook(book: Book): string[] {
   for (const [id, sec] of Object.entries(book.sections ?? {})) {
     const c = sec.combat;
     const links = [...[...(sec.choices ?? []), ...(c?.instead ?? [])].flatMap((x) => [x.to, x.fail]), ...(sec.random?.out ?? []).map((o) => o.to),
-      c?.win, c?.lose, c?.winBy?.fast, c?.winBy?.slow, c?.evade?.to, ...(c?.evade?.alt ?? []).map((a) => a.to), c?.maxRounds?.to, c?.stopAt?.to, c?.onHurt, c?.compare?.more, c?.compare?.less, c?.compare?.equal].filter((x): x is string => !!x);
+      c?.win, c?.skipIf?.to, c?.lose, c?.winBy?.fast, c?.winBy?.slow, c?.evade?.to, ...(c?.evade?.alt ?? []).map((a) => a.to), c?.maxRounds?.to, c?.stopAt?.to, c?.onHurt, c?.compare?.more, c?.compare?.less, c?.compare?.equal].filter((x): x is string => !!x);
     for (const t of links) if (!book.sections[t]) errs.push(`§${id} → §${t}: không có đoạn này`);
     if (!links.length && !sec.end && !(sec.random?.out ?? []).some((o) => o.end)) errs.push(`§${id}: ngõ cụt`);
   }

@@ -53,7 +53,7 @@ function doomed(book: Book): Set<string> {
   const links = (id: string) => {
     const x = book.sections[id];
     const c = x.combat;
-    return [...(x.choices ?? []).map((y) => y.to), ...(x.random?.out ?? []).map((o) => o.to ?? (o.end === "death" ? "†" : "")),
+    return [...[...(x.choices ?? []), ...(c?.instead ?? [])].flatMap((y) => [y.to, y.fail]), c?.skipIf?.to, ...(x.random?.out ?? []).map((o) => o.to ?? (o.end === "death" ? "†" : "")),
       c?.win, c?.lose, c?.onHurt, c?.stopAt?.to, c?.evade?.to, c?.maxRounds?.to, ...Object.values(c?.winBy ?? {}), ...Object.values(c?.compare ?? {})].filter((t): t is string => typeof t === "string" && !!t);
   };
   let changed = true;
@@ -89,6 +89,14 @@ function playOnce(book: Book, s: AdvState, rng: () => number, r: Report, careful
       return;
     }
     if (ph === "combat") {
+      // now and then take a way out offered instead of the fight
+      const alts = (sec.combat!.instead ?? []).filter((c) => choiceState(s, c) === "ok");
+      if (alts.length && rng() < 0.3) {
+        const c = alts[Math.floor(rng() * alts.length)];
+        if (c.fx) apply(book, s, c.fx);
+        enter(book, s, c.to);
+        continue;
+      }
       const b = startBattle(book, s, sec);
       for (let round = 0; round < 200 && !b.over; round++) playRound(book, s, b, canEvade(book, s, b) && rng() < 0.15, rng);
       if (!b.over) throw new Error(`§${s.section}: combat never ended`);
@@ -110,7 +118,8 @@ function playOnce(book: Book, s: AdvState, rng: () => number, r: Report, careful
       const rep = visibleChoices(sec, s).filter((c) => c.repeat && choiceState(s, c) === "ok");
       const games = rep.filter((c) => c.roll);
       if (!rep.length || rng() > (games.length ? 0.9 : 0.3)) break;
-      const c = (games.length ? games : rep)[Math.floor(rng() * (games.length || rep.length))];
+      // a careful player stakes the least (the first game listed)
+      const c = careful && games.length ? games[0] : (games.length ? games : rep)[Math.floor(rng() * (games.length || rep.length))];
       if (c.roll) leave = playChoice(book, s, c, rollRandom(c.roll, rng)).to;
       else if (c.fx) apply(book, s, c.fx);
     }

@@ -42,6 +42,8 @@ export type Effect = EffectBase & { if?: Cond };
 
 type EffectBase =
   | { ep: number }
+  /** Restores half of the ENDURANCE lost so far (rounded down). */
+  | { restoreHalf: true }
   | { cs: number; for?: "combat" | "book" }
   | { gold: number; optional?: boolean }
   | { arrows: number }
@@ -124,6 +126,8 @@ export interface Combat {
   mindMul?: number;
   /** Choices offered on the fight-start screen instead of fighting ("use the Fireseed instead"). */
   instead?: Choice[];
+  /** The fight does not happen when `if` holds: the section offers one way on, to `to` (button `text`, default "Đi tiếp"). */
+  skipIf?: { if: Cond; to: string; text?: string };
 }
 
 export interface Choice {
