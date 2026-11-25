@@ -168,7 +168,7 @@ const stdSlots = (y: number, dy = 3, xs = SLOTS_DEFAULT) => xs.map((x, i) => ({ 
 function newC(s: SceneSpec): C {
   const tp = TIMES[s.time] ?? TIMES.day;
   const over = OVER[s.weather] ?? 0;
-  const grey = GREY[s.time];
+  const grey = GREY[s.time] ?? GREY.day;
   const sky = tp.sky.map((c) => mix(c, grey, over * 0.78));
   let grade = mix(tp.grade, s.time === "night" ? "#3a4060" : "#aab0bc", over * 0.42);
   if (s.weather === "storm") grade = mix(grade, "#6a7088", 0.3);
@@ -1087,7 +1087,7 @@ function plinth(L: Layer, x: number, y: number, w: number, col = STONE) {
   }
 }
 
-interface HouseO { wall: string; kind: WallKind; roof: string; roofKind: RoofK; chimney?: boolean; door?: string; trim?: string; shutters?: string; box?: boolean; lantern?: boolean; s: number }
+interface HouseO { wall: string; kind: WallKind; roof: string; roofKind: RoofK; chimney?: boolean; door?: string; trim?: string; shutters?: string; box?: boolean; lantern?: boolean; s: number; big?: boolean }
 
 /** Long cottage with a hipped roof (thatch or shingles), chimney, door, windows. */
 function cottage(c: C, L: Layer, x: number, base: number, w: number, wallH: number, o: HouseO) {
@@ -1096,15 +1096,26 @@ function cottage(c: C, L: Layer, x: number, base: number, w: number, wallH: numb
   wallTex(L.p, x, top, w, wallH, o.wall, o.kind, o.s);
   plinth(L, x, base - 3, w);
   const trim = o.trim ?? "#efe2c4";
-  const dx = Math.round(x + w * 0.5 - 3 + r.int(-Math.floor(w / 6), Math.floor(w / 6)));
-  doorAt(L.p, dx, base - 13, { w: 7, h: 11, col: o.door ?? "#7a4a2c", arch: true });
-  if (o.lantern) { L.rect(dx + 8, base - 14, 1, 2, IRON); lanternAt(c, L, dx + 8, base - 12); }
+  const dw = o.big ? 9 : 7, dh = o.big ? 15 : 11, ww = o.big ? 9 : 7, wh = o.big ? 9 : 7;
+  const dx = Math.round(x + w * 0.5 - dw / 2 + r.int(-Math.floor(w / 6), Math.floor(w / 6)));
+  // flower bed along the foot of the wall
+  if (o.big) for (let xx = x + 1; xx < x + w - 1; xx++) { if (xx > dx - 3 && xx < dx + dw + 3) continue; L.px(xx, base - 4, hn(xx, 5) > 0.5 ? "#3f7a34" : "#5a9a40"); if (hn(xx, 6, o.s) > 0.55) L.px(xx, base - 5, ["#e84a6a", "#f7d44c", "#ffffff", "#b88aff"][Math.floor(hn(xx, 7, o.s) * 4)]); }
+  doorAt(L.p, dx, base - dh - 2, { w: dw, h: dh, col: o.door ?? "#7a4a2c", arch: true });
+  L.rect(dx - 2, base - dh - 4, dw + 4, 1, DARKWOOD);
+  if (o.lantern) { L.rect(dx + dw + 1, base - dh - 3, 1, 2, IRON); lanternAt(c, L, dx + dw + 1, base - dh - 1); }
   const slots: number[] = [];
-  for (let wx = x + 4; wx + 7 < x + w - 3; wx += 13) if (wx + 8 < dx - 1 || wx > dx + 9) slots.push(wx);
+  const step = ww + 7;
+  for (let wx = x + 5; wx + ww < x + w - 4; wx += step) if (wx + ww + 3 < dx || wx > dx + dw + 3) slots.push(wx);
   for (const wx of slots) {
-    windowAt(L.p, wx, top + 5, { w: 7, h: 7, trim, shutters: o.shutters, box: o.box });
-    addWin(c, wx, top + 5, 7, 7, r.chance(0.8));
+    windowAt(L.p, wx, top + (o.big ? 6 : 5), { w: ww, h: wh, trim, shutters: o.shutters, box: o.box });
+    addWin(c, wx, top + (o.big ? 6 : 5), ww, wh, r.chance(0.8));
   }
+  // climbing roses / ivy at a corner, and a bench
+  if (o.big && r.chance(0.6)) {
+    const vx0 = r.chance(0.5) ? x + 2 : x + w - 3, rose = r.chance(0.5);
+    for (let k = 0; k < wallH - 2; k++) { const px = vx0 + Math.round(Math.sin(k * 0.6 + o.s) * 1.2); L.px(px, base - 3 - k, "#3a6a2a"); if (k % 2 === 0) L.px(px + 1, base - 3 - k, "#5a9a3a"); if (rose && k % 3 === 1) L.px(px - 1, base - 3 - k, "#e84a6a"); }
+  }
+  if (o.big && r.chance(0.5)) { const bx = slots.length ? slots[0] : x + 3; L.rect(bx, base - 6, 10, 1, "#8a6440"); L.rect(bx, base - 7, 10, 1, "#a8805a"); L.rect(bx + 1, base - 5, 1, 2, "#5a3a22"); L.rect(bx + 8, base - 5, 1, 2, "#5a3a22"); }
   // roof
   const ov = 3, rh = Math.round(Math.min(w * 0.4, 22)), eave = top + 1, ridge = top - rh, inset = Math.round(rh * 0.75);
   const pts: [number, number][] = [[x - ov, eave + 2], [x + inset - ov, ridge], [x + w - inset + ov, ridge], [x + w + ov, eave + 2]];
@@ -1120,6 +1131,15 @@ function cottage(c: C, L: Layer, x: number, base: number, w: number, wallH: numb
     for (let xx = x + inset - ov + 2; xx < x + w - inset + ov; xx += 4) L.px(xx, ridge, hs(o.roof, -0.35));
   } else L.rect(x - ov, eave + 2, span + 1, 1, dk);
   L.g.fillStyle = "rgba(30,14,40,0.35)"; L.g.fillRect(x, eave + 3, w, 2);
+  if (o.roofKind !== "thatch") for (let i = 0; i < w / 6; i++) { const mx = x + r.int(4, w - 4), my = ridge + r.int(2, rh - 2); L.px(mx, my, "#6a8a3a"); L.px(mx + 1, my, "#5a7a32"); }
+  if (o.big && w > 54) {
+    // eyebrow dormer window in the roof
+    const ex = Math.round(x + w * (r.chance(0.5) ? 0.3 : 0.62)), ey = ridge + Math.round(rh * 0.45);
+    for (let k = -8; k <= 8; k++) { const hh = Math.round(Math.sqrt(1 - (k / 8.5) ** 2) * 6); for (let j = 0; j < hh; j++) L.px(ex + k, ey - j, roofCol(o.roofKind, hs(o.roof, 0.06), ex + k, j, 0.3, 0.3, o.s)); L.px(ex + k, ey - hh, hs(o.roof, 0.25)); }
+    L.rect(ex - 3, ey - 3, 7, 4, trim); L.rect(ex - 2, ey - 2, 5, 3, "#3e5a80"); L.px(ex - 2, ey - 2, "#9ac0e0"); L.rect(ex, ey - 2, 1, 3, trim);
+    addWin(c, ex - 3, ey - 3, 7, 5, r.chance(0.6));
+    L.rect(ex - 8, ey + 1, 17, 1, hs(o.roof, -0.4));
+  }
   if (o.chimney) {
     const cx = Math.round(r.chance(0.5) ? x + w * 0.22 : x + w * 0.7), ct = ridge - 7;
     const cb = ridge + Math.round(rh * 0.45);
@@ -1232,7 +1252,13 @@ function townHouse(c: C, L: Layer, x: number, base: number, w: number, floors: n
   const ov = 2, half = Math.round(fw / 2) + ov, cx = fx + fw / 2, rh = Math.round(half * 1.15);
   const apex = top - rh;
   // gable wall (triangle) with attic window
-  L.tex([[cx - half + ov + 1, top], [cx, apex + 4], [cx + half - ov - 1, top]], (px, py) => ((px + py) % 7 === 0 ? hs(o.wall, -0.1) : (px - cx) > 0 ? hs(o.wall, -0.08) : o.wall));
+  const tim = o.kind === "timber";
+  L.tex([[cx - half + ov + 1, top], [cx, apex + 4], [cx + half - ov - 1, top]], (px, py) => {
+    if (tim) {
+      if (Math.abs(px - cx) < 1 || py === top - 1 || py === top - Math.round(rh * 0.45) || Math.abs(Math.abs(px - cx) - (top - py) * 0.4 - half * 0.32) < 0.9) return hs(DARKWOOD, px > cx ? -0.15 : 0);
+    }
+    return hn(px, py, o.s) > 0.9 ? hs(o.wall, -0.08) : px - cx > 0 ? hs(o.wall, -0.08) : o.wall;
+  });
   const aw = top - Math.round(rh * 0.5);
   L.rect(Math.round(cx) - 3, aw - 2, 6, 6, trim); L.rect(Math.round(cx) - 2, aw - 1, 4, 4, "#3e5a80"); L.px(Math.round(cx) - 2, aw - 1, "#9ac0e0");
   addWin(c, Math.round(cx) - 3, aw - 2, 6, 6, r.chance(0.5));
@@ -2179,19 +2205,23 @@ function bVillage(c: C) {
   }
   commit(c, L2, 0.22);
   const L3 = lay(c);
-  ground(c, L3, 126, "grass", { flowers: 30, tufts: 40 });
-  // trodden village green / square
-  for (let y = 132; y < H; y++) for (let x = 0; x < W; x++) {
-    const f = (y - 132) / (H - 132), d = Math.abs(x - 160) / (120 + f * 100);
-    if (d + vnoise(x, y, 9, 4) * 0.35 < 0.8) L3.px(x, y, c.snow ? (bay(x, y) > 0.5 ? "#dce4f0" : "#c8d0e0") : vnoise(x, y * 2, 5, 5) > 0.55 ? "#b08a5a" : bay(x, y) > 0.7 ? "#8a6a44" : "#a07a4c");
+  ground(c, L3, 124, "grass", { flowers: 30, tufts: 40 });
+  // a trodden path winding between the houses toward the viewer
+  const pc = r.int(120, 200);
+  for (let y = 132; y < H; y++) {
+    const f = (y - 132) / (H - 132), cx = pc + Math.sin(f * 2.2 + pc) * 26 * f, hw = 8 + f * 46;
+    for (let x = Math.round(cx - hw - 4); x <= cx + hw + 4; x++) {
+      const d = Math.abs(x - cx) / hw + (vnoise(x, y, 6, 4) - 0.5) * 0.3;
+      if (d < 1) L3.px(x, y, c.snow ? (bay(x, y) > 0.5 ? "#dce4f0" : "#c8d0e0") : vnoise(x, y * 2, 5, 5) > 0.55 ? "#b08a5a" : bay(x, y) > 0.7 ? "#8a6a44" : "#a07a4c");
+    }
   }
   const n = r.int(2, 3), slotsX: number[] = [];
   for (let i = 0; i < n; i++) {
-    const w = r.int(46, 60), x = Math.round(i * (W / n) + r.int(0, Math.max(1, W / n - w)));
+    const w = n === 2 ? r.int(76, 92) : r.int(58, 72), x = Math.round(i * (W / n) + r.int(0, Math.max(1, W / n - w - 8)) + 4);
     slotsX.push(x + w / 2);
-    cottage(c, L3, x, 134, w, r.int(15, 19), { wall: r.pick(walls), kind: r.pick(kinds), roof: r.chance(0.65) ? "#d0a850" : r.pick(["#a85a3a", "#7a5a8a", "#5a7a9a"]), roofKind: r.chance(0.65) ? "thatch" : "shingle", chimney: r.chance(0.8), s: r.int(0, 999), box: r.chance(0.6), lantern: r.chance(0.5), shutters: r.chance(0.5) ? r.pick(["#4a7a5a", "#7a3a3a", "#3a5a8a"]) : undefined });
+    cottage(c, L3, x, 134, w, r.int(24, 28), { big: true, wall: r.pick(walls), kind: r.pick(kinds), roof: r.chance(0.65) ? "#d0a850" : r.pick(["#a85a3a", "#7a5a8a", "#5a7a9a"]), roofKind: r.chance(0.65) ? "thatch" : "shingle", chimney: r.chance(0.8), s: r.int(0, 999), box: r.chance(0.6), lantern: r.chance(0.6), shutters: r.chance(0.5) ? r.pick(["#4a7a5a", "#7a3a3a", "#3a5a8a"]) : undefined });
   }
-  for (let i = 0; i < 3; i++) { const fx = r.int(-10, 260); fence(L3, fx, fx + r.int(20, 50), 140); }
+  for (let i = 0; i < 2; i++) { const fx = r.int(-10, 260); fence(L3, fx, fx + r.int(20, 44), 142); }
   if (r.chance(0.7)) well(c, L3, r.int(40, 280), 144);
   for (let i = 0; i < 3; i++) { const bx = r.int(10, 300); if (r.chance(0.5)) barrelAt(L3, bx, 140); else crateAt(L3, bx, 140); }
   for (let i = 0; i < 4; i++) bush(L3, r.int(0, W), 135, r.int(4, 6), "#4a8a3c", r, r.chance(0.4) ? r.pick(["#f0a0c0", "#f8e060", "#ffffff"]) : undefined);
@@ -2656,7 +2686,7 @@ function bCamp(c: C) {
     const f = flick(t, 1);
     addGlow(g, fx, fy - 6, 90, "#ff8a30", 0.28 * f * (0.5 + c.dark * 0.7));
     addGlow(g, fx, fy - 4, 30, "#ffc060", 0.45 * f);
-    flame(g, fx - 2, fy, 5, t, 1); flame(g, fx + 2, fy, 4.5, t, 2.7); flame(g, fx, fy + 1, 6.5, t, 5.1);
+    flame(g, fx - 3, fy, 6.5, t, 1); flame(g, fx + 3, fy, 6, t, 2.7); flame(g, fx, fy + 1, 9, t, 5.1);
     embers(g, fx, fy - 8, 14, 50, t, 1, c.wind);
     smoke(g, fx, fy - 18, t, { col: c.dark > 0.6 ? "#6a6a7a" : "#c8c8d0", wind: 0.4 + c.wind * 1.4, rise: 50, a: 0.35, n: 9, per: 5200, size: 1.3 });
   });
@@ -2755,17 +2785,26 @@ function bShip(c: C) {
   const sc0 = r.pick(["#f0e8d8", "#e8dcc0", "#d8c8a8"]), stripe = r.chance(0.5) ? r.pick(["#c83a3a", "#3a5ac8"]) : null;
   for (let k = 0; k < 4; k++) {
     const S = new Layer();
-    const bul = 4 + k * 2;
-    S.tex([[mx - 62, 13], [mx + 62, 13], [mx + 58 + bul, 70], [mx - 58 - bul, 70]], (px, py) => {
-      const v = (py - 13) / 57, u = (px - mx) / 62;
-      const sh = Math.sin(v * Math.PI) * bul;
-      let cc = u + v * 0.3 < -0.2 ? hs(sc0, 0.1) : u > 0.4 ? hs(sc0, -0.15) : sc0;
-      if (Math.abs(((px - mx) % 31 + 31) % 31) < 1) cc = hs(sc0, -0.22);
-      if (stripe && Math.abs(u) < 0.25) cc = u < 0 ? stripe : hs(stripe, -0.15);
-      if (py > 66 - sh * 0.3) cc = hs(cc, -0.2);
-      return cc;
-    });
-    for (let x = mx - 58 - bul; x < mx + 58 + bul; x++) { const u = (x - mx) / 62; const y = Math.round(70 + Math.cos(u * Math.PI / 2) * bul * 0.8); for (let yy = 70; yy < y; yy++) S.px(x, yy, hs(sc0, -0.2)); S.px(x, y, hs(sc0, -0.4)); }
+    const bul = 3 + k * 1.6, top = 13, bot = 66, half0 = 56;
+    for (let y = top; y <= bot + 10; y++) {
+      const v = (y - top) / (bot - top);
+      const half = half0 - v * 3 + Math.sin(Math.min(1, v) * Math.PI) * bul;
+      for (let x = Math.round(mx - half); x <= Math.round(mx + half); x++) {
+        const u = (x - mx) / half;
+        const belly = bot + (1 - u * u) * bul * 1.3;
+        if (y > belly) continue;
+        const curv = -u * 0.22 + (1 - u * u) * 0.06 - v * 0.05;
+        let cc = hs(sc0, curv);
+        if (stripe && Math.abs(u) < 0.22) cc = hs(stripe, curv);
+        const seam = Math.abs(((u + 1) * 5) % 1);
+        if (seam < 0.06 && Math.abs(u) < 0.95) cc = hs(cc, -0.14);
+        if (Math.abs(v - 0.22) < 0.012 && Math.round(x) % 4 === 0) cc = hs(cc, -0.35);
+        if (y > belly - 2) cc = hs(cc, -0.3);
+        if (Math.abs(u) > 0.97) cc = hs(sc0, -0.4);
+        S.px(x, y, cc);
+      }
+    }
+    for (const sd of [-1, 1]) S.line(mx + sd * (half0 - 2), bot + 2, mx + sd * 30, 121, "#3a2a20");
     sails.push(prep(c, S, 0));
   }
   anim(c, (g, t) => { const ph = (Math.sin(t * 0.0012 * (1 + c.wind)) + 1) / 2; g.drawImage(sails[Math.min(3, Math.floor(ph * 4))], 0, 0); });
@@ -2923,6 +2962,20 @@ function bDesert(c: C) {
   for (let i = 0; i < 5; i++) rock(L3, r.int(0, W), r.int(140, 176), r.int(6, 14), r.int(3, 6), "#b08a68", r);
   commit(c, L3, 0);
   anim(c, birdsFn(c, { y0: 30, y1: 60, n: 2, scale: 2, col: "#2a2020" }));
+  if (r.chance(0.6)) {
+    const cy = 118, n = r.int(3, 5), dir = r.chance(0.5) ? 1 : -1, body = gc(c, "#8a5a40", 0.3), cloth = [gc(c, "#c83a3a", 0.3), gc(c, "#3a5ac8", 0.3), gc(c, "#e8d8b0", 0.3)];
+    anim(c, (g, t) => {
+      const lead = ((t * 0.004) % (W + 160)) - 80;
+      for (let i = 0; i < n; i++) {
+        const x = Math.round(dir > 0 ? lead - i * 14 : W - lead + i * 14), st = Math.floor(t / 260 + i) % 2;
+        g.fillStyle = body;
+        g.fillRect(x - 4, cy - 6, 8, 3); g.fillRect(x - 2, cy - 8, 3, 2); g.fillRect(x + 3 * dir + (dir < 0 ? -1 : 0), cy - 9, 2, 4); g.fillRect(x + 4 * dir + (dir < 0 ? -1 : 0), cy - 10, 2, 2);
+        g.fillRect(x - 3 + st, cy - 3, 1, 3); g.fillRect(x + 2 - st, cy - 3, 1, 3);
+        if (i % 2 === 0) { g.fillStyle = cloth[i % 3]; g.fillRect(x - 1, cy - 12, 2, 4); g.fillRect(x - 1, cy - 13, 2, 1); }
+        else { g.fillStyle = cloth[(i + 1) % 3]; g.fillRect(x - 3, cy - 9, 5, 2); }
+      }
+    });
+  }
   c.front.push(motesFn(30, 0, W, 120, 178, c.s.seed + "sand", "#f0d8a0", 0.6));
   if (c.s.weather === "wind" || c.storm) c.front.push(fogFn(c, 110, 70, 0.8, 0.03, "#d8b080"));
   c.groundY = 156; c.slots = stdSlots(154, 3);
@@ -2991,22 +3044,22 @@ function cloudDriftFn(c: C, y: number, a: number, n = 4): Fn {
 // ============================================================ interiors
 /** Contour-shaded rock: bulges lit from above, shadowed beneath, strata and cracks. */
 function rockFace(col: string, seed: number, scale = 1) {
-  const lv = [hs(col, -0.42), hs(col, -0.26), hs(col, -0.1), col, hs(col, 0.14)];
-  const lit = hs(col, 0.32), sh = hs(col, -0.55);
-  const v = (x: number, y: number) => vnoise(x, y * 1.3, 16 * scale, seed) * 0.65 + vnoise(x, y * 1.2, 6 * scale, seed + 1) * 0.35;
+  const lv = [hs(col, -0.3), hs(col, -0.19), hs(col, -0.09), col, hs(col, 0.08)];
+  const lit = hs(col, 0.2), sh = hs(col, -0.42);
+  const v = (x: number, y: number) => vnoise(x, y * 1.6, 30 * scale, seed) * 0.7 + vnoise(x, y * 1.4, 11 * scale, seed + 1) * 0.3;
   return (x: number, y: number) => {
-    const a = v(x, y), up = v(x, y - 2), dn = v(x, y + 2);
-    const q = a * 4.2 + (bay(x, y) - 0.5) * 0.5;
+    const a = v(x, y), up = v(x, y - 2), dn = v(x, y + 3);
+    const q = a * 4.6 - 0.3 + (bay(x, y) - 0.5) * 0.45;
     let cc = lv[Math.max(0, Math.min(4, Math.floor(q)))];
-    if (a - up > 0.035) cc = lit;
-    else if (a - dn > 0.05) cc = sh;
+    if (a - up > 0.045) cc = lit;
+    else if (a - dn > 0.07) cc = sh;
     if (hn(x, y, seed) > 0.992) cc = sh;
     return cc;
   };
 }
 const IN_GRADE: Record<Time, string> = { dawn: "#e4d6d4", day: "#f2eae2", dusk: "#d8c4bc", night: "#a49cb8" };
 function interiorSetup(c: C, k = 1) {
-  c.grade = mix("#ffffff", IN_GRADE[c.s.time], k);
+  c.grade = mix("#ffffff", IN_GRADE[c.s.time] ?? IN_GRADE.day, k);
   if (c.over > 0.5) c.grade = mix(c.grade, "#a0a4b0", 0.2);
   c.haze = "#100c18";
   c.dark = Math.max(c.dark, 0.7); // lamps are lit indoors
