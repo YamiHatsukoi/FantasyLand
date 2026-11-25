@@ -498,7 +498,7 @@ function skyLayer(c: C, opts: { moon?: boolean; sun?: boolean } = {}) {
     const dim = 1 - c.over * 0.85;
     if (t === "dawn") { const x = r.int(50, 110); c.orbX = x; L.glow(x, hz - 4, 90, "#ffd090", 0.55 * dim); L.glow(x, hz - 4, 26, "#fff0c0", 0.8 * dim); if (dim > 0.5) L.ellipse(x, hz - 6, 8, 8, "#fff4d0"); }
     else if (t === "dusk") { const x = r.int(200, 270); c.orbX = x; L.glow(x, hz - 6, 110, "#ff8a48", 0.55 * dim); L.glow(x, hz - 8, 30, "#ffd080", 0.8 * dim); if (dim > 0.5) { L.ellipse(x, hz - 10, 11, 11, "#ffcc70"); L.ellipse(x, hz - 11, 9, 9, "#ffe4a0"); for (let k = 0; k < 3; k++) L.rect(x - 14, hz - 13 + k * 4, 28, 1, mix(c.sky[3], "#ff9a60", 0.4)); } }
-    else { L.glow(280, 10, 80, "#fff8d8", 0.45 * dim); if (dim > 0.6) { L.ellipse(282, 12, 7, 7, "#fffbe8"); } }
+    else { const sx = r.int(220, 296); c.orbX = sx; L.glow(sx, 14, 90, "#fff8d8", 0.5 * dim); L.glow(sx, 14, 22, "#ffffff", 0.7 * dim); if (dim > 0.6) { L.ellipse(sx, 14, 7, 7, "#fff6c8"); L.ellipse(sx - 1, 13, 5, 5, "#fffef4"); } }
   }
   const fin = commit(c, L, 0, { grade: false, snow: false });
   void fin;
@@ -1429,7 +1429,7 @@ function torch(c: C, L: Layer, x: number, y: number, s = 3.2) {
   const ph = hn(x, y) * 40;
   c.warm += 0.03;
   anim(c, (g, t) => {
-    const f = flick(t, ph);
+    const f = flick(t, ph) * (c.interior ? 1 : 0.3 + 0.7 * c.dark);
     addGlow(g, x, y - 4, 34, "#ff9a3a", 0.32 * f);
     addGlow(g, x, y - 3, 10, "#ffd080", 0.35 * f);
     flame(g, x, y - 1, s, t, ph);
@@ -2542,8 +2542,7 @@ function bMountain(c: C) {
   mountains(L0, c, 112, r.int(50, 70), "#8a94b8", { snow: 82, seed: "m0", peaks: r.int(3, 5) });
   commit(c, L0, 0.5);
   // sea of cloud between the ranges
-  const cloudBand = (y: number, a: number) => { const L = lay(c); const cr = seeded(c.s.seed + "mc" + y); for (let x = -20; x < W + 20; x += cr.int(14, 26)) L.p.blob(x, y, cr.int(14, 26), cr.int(4, 8), c.cloudCols[1], { outline: false, hi: 0.2, lo: -0.15 }); L.rect(0, y, W, 10, c.cloudCols[1]); commit(c, L, 0, { grade: false }); void a; };
-  if (r.chance(0.6)) cloudBand(116, 1);
+  if (r.chance(0.6)) anim(c, cloudDriftFn(c, 100, 0.85, 7));
   const L1 = lay(c);
   mountains(L1, c, 130, r.int(36, 52), "#6a7090", { snow: 96, seed: "m1" });
   for (let i = 0; i < 10; i++) plant(L1, pineSprite(r, r.int(10, 16), "#2a5a48"), r.int(0, W), r.int(124, 132));
@@ -2552,7 +2551,7 @@ function bMountain(c: C) {
   const p = r.next() * 9, top = (x: number) => 136 + Math.sin(x * 0.02 + p) * 5 + vnoise(x, 0, 7, 3) * 4;
   ground(c, L3, 132, "rock", { top, tufts: 24, flowers: 0 });
   for (let i = 0; i < 26; i++) { const x = r.int(0, W), y = r.int(140, 178); L3.rect(x, y, r.int(4, 12), 1, "#4a4a58"); }
-  if (!c.snow) for (let i = 0; i < 6; i++) { const x = r.int(0, W), y = r.int(140, 175); L3.ellipse(x, y, r.int(5, 12), 1, "#e8eef8"); }
+  if (!c.snow) for (let i = 0; i < 5; i++) { const x = r.int(0, W), y = r.int(142, 175), w = r.int(6, 14); for (let k = 0; k < 3; k++) L3.ellipse(x + r.int(-w / 2, w / 2), y + r.int(-1, 1), r.int(3, w), r.int(1, 2), k ? "#e8eef8" : "#c4cee4"); L3.span(x - w / 2, x, y - 1, "#ffffff"); }
   for (let i = 0; i < 5; i++) rock(L3, r.int(0, W), r.int(140, 176), r.int(12, 28), r.int(7, 14), "#7a7a88", r, r.chance(0.4) ? "#5a8a4a" : undefined);
   if (r.chance(0.6)) { const kx = r.int(30, 290), ky = Math.round(top(kx)) + 6; for (let k = 0; k < 5; k++) { const w = 9 - k * 2; L3.rect(kx - w / 2, ky - (k + 1) * 3, w, 3, k % 2 ? "#9a9aa4" : "#888894"); L3.px(kx - w / 2, ky - (k + 1) * 3, "#c8c8d0"); } }
   for (const side of [0, 1]) if (r.chance(0.6)) { const T = pineSprite(r, r.int(40, 60), "#2a5a48"); plant(L3, T, side ? r.int(285, 315) : r.int(5, 35), Math.round(top(side ? 300 : 20)) + 4); }
@@ -2780,7 +2779,7 @@ function bSea(c: C) {
   const r = c.r; c.horizon = 110;
   skyLayer(c);
   const Lf = lay(c);
-  for (let i = 0; i < r.int(1, 3); i++) { const ix = r.int(0, 280), w = r.int(20, 60); mountains(Lf, c, 112, 0, "#000", { peaks: 1 }); Lf.g.clearRect(0, 0, W, H); Lf.p.blob(ix + w / 2, 111, w / 2, r.int(4, 10), "#6a8098", { outline: false }); }
+  for (let i = 0; i < r.int(1, 3); i++) { const ix = r.int(0, 280), w = r.int(20, 60); Lf.p.blob(ix + w / 2, 111, w / 2, r.int(4, 10), "#6a8098", { outline: false }); }
   Lf.g.clearRect(0, 112, W, H);
   commit(c, Lf, 0.55);
   seaFn(c, 110, 160, c.storm ? "#24485a" : "#2a669a", 1);
@@ -2983,8 +2982,529 @@ function bSky(c: C) {
   if (c.s.time !== "night") anim(c, shaftsFn(c, 4, "#fff0c0", -0.25, 0.12));
   c.groundY = 156; c.slots = stdSlots(154, 3);
 }
-function cloudDriftFn(c: C, y: number, a: number): Fn {
+function cloudDriftFn(c: C, y: number, a: number, n = 4): Fn {
   const r = seeded(c.s.seed + "drift" + y);
-  const cl = Array.from({ length: 4 }, () => ({ img: cloudSprite(r, r.int(50, 90), r.int(10, 16), c.cloudCols), x: r.next() * W, v: rng(r, 0.006, 0.012) }));
-  return (g, t) => { g.globalAlpha = a; for (const k of cl) g.drawImage(k.img, Math.round(((k.x + t * k.v) % (W + 100)) - 100), y); g.globalAlpha = 1; };
+  const cl = Array.from({ length: n }, () => ({ img: cloudSprite(r, r.int(50, 90), r.int(10, 16), c.cloudCols), x: r.next() * W * 1.5, y: y + r.int(-6, 8), v: rng(r, 0.003, 0.009) }));
+  return (g, t) => { g.globalAlpha = a; for (const k of cl) g.drawImage(k.img, Math.round(((k.x + t * k.v) % (W + 100)) - 100), k.y); g.globalAlpha = 1; };
 }
+
+// ============================================================ interiors
+/** Contour-shaded rock: bulges lit from above, shadowed beneath, strata and cracks. */
+function rockFace(col: string, seed: number, scale = 1) {
+  const lv = [hs(col, -0.42), hs(col, -0.26), hs(col, -0.1), col, hs(col, 0.14)];
+  const lit = hs(col, 0.32), sh = hs(col, -0.55);
+  const v = (x: number, y: number) => vnoise(x, y * 1.3, 16 * scale, seed) * 0.65 + vnoise(x, y * 1.2, 6 * scale, seed + 1) * 0.35;
+  return (x: number, y: number) => {
+    const a = v(x, y), up = v(x, y - 2), dn = v(x, y + 2);
+    const q = a * 4.2 + (bay(x, y) - 0.5) * 0.5;
+    let cc = lv[Math.max(0, Math.min(4, Math.floor(q)))];
+    if (a - up > 0.035) cc = lit;
+    else if (a - dn > 0.05) cc = sh;
+    if (hn(x, y, seed) > 0.992) cc = sh;
+    return cc;
+  };
+}
+const IN_GRADE: Record<Time, string> = { dawn: "#e4d6d4", day: "#f2eae2", dusk: "#d8c4bc", night: "#a49cb8" };
+function interiorSetup(c: C, k = 1) {
+  c.grade = mix("#ffffff", IN_GRADE[c.s.time], k);
+  if (c.over > 0.5) c.grade = mix(c.grade, "#a0a4b0", 0.2);
+  c.haze = "#100c18";
+  c.dark = Math.max(c.dark, 0.7); // lamps are lit indoors
+  c.tint = "#ff9a48"; c.ta = 0.1;
+}
+/** Floor in one-point perspective: fn gets (u across, v depth) in floor units. */
+function perspFloor(L: Layer, y0: number, vx: number, vy: number, fn: (u: number, v: number, x: number, y: number) => string) {
+  L.texRect(0, y0, W, H - y0, (x, y) => { const dz = y - vy; return fn((x - vx) / dz, 400 / dz, x, y); });
+}
+/** A window in an interior wall showing the time of day outside (and the weather). */
+function roomWindow(c: C, L: Layer, x: number, y: number, w: number, h: number, o: { arch?: boolean; frame?: string; stained?: boolean; bars?: boolean } = {}) {
+  const fr = o.frame ?? "#5a3e28";
+  const inside = (px: number, py: number) => !o.arch || py >= y + w / 2 || (px - x - w / 2 + 0.5) ** 2 + (py - y - w / 2) ** 2 <= (w / 2) ** 2;
+  L.rect(x - 2, y - 2 + (o.arch ? 0 : 0), w + 4, h + 4, hs(fr, -0.3));
+  for (let py = y - 2; py < y + h + 2; py++) for (let px = x - 2; px < x + w + 2; px++) if (o.arch && py < y + w / 2 && (px - x - w / 2 + 0.5) ** 2 + (py - y - w / 2) ** 2 > (w / 2 + 2) ** 2) L.g.clearRect(px, py, 1, 1);
+  const sky = c.sky;
+  for (let py = y; py < y + h; py++) for (let px = x; px < x + w; px++) {
+    if (!inside(px, py)) continue;
+    const f = (py - y) / h;
+    let cc = toHex(...lerpStops(sky, 0.15 + f * 0.7));
+    if (o.stained) {
+      const seg = Math.floor((px - x) / 4) + Math.floor((py - y) / 5) * 3;
+      cc = ["#c83a4a", "#3a6ad8", "#e8c040", "#4aa060", "#8a4ac8", "#e8803a"][((seg % 6) + 6) % 6];
+      if ((px - x) % 4 === 0 || (py - y) % 5 === 0) cc = "#2a2228";
+    } else if (c.s.time === "night" && hn(px, py, 5) > 0.93) cc = "#e8eeff";
+    L.px(px, py, cc);
+  }
+  if (!o.stained) {
+    L.rect(x + Math.floor(w / 2), y, 1, h, fr);
+    for (let py = y + Math.round(h / 3); py < y + h; py += Math.round(h / 3)) L.rect(x, py, w, 1, fr);
+    if (o.bars) for (let px = x + 2; px < x + w; px += 3) L.rect(px, y, 1, h, IRON);
+  }
+  L.rect(x - 3, y + h + 1, w + 6, 2, hs(fr, 0.15)); L.rect(x - 3, y + h + 1, w + 6, 1, hs(fr, 0.4));
+  if (c.wet) { const col = gc(c, "#a8c0e0"); anim(c, (g, t) => { g.fillStyle = col; for (let i = 0; i < 6; i++) { const px = x + 1 + Math.floor(hn(i, 3) * (w - 2)), py = y + ((t * 0.08 + hn(i, 4) * h) % h); if (inside(px, Math.round(py))) { g.globalAlpha = 0.7; g.fillRect(px, Math.round(py), 1, 3); } } g.globalAlpha = 1; }); }
+}
+/** Light falling through a window onto the floor. */
+function windowLight(c: C, x: number, y: number, w: number, h: number, floorY: number, dx: number, col?: string): Fn {
+  const [cv, g] = cnv();
+  const cl = col ?? (c.s.time === "night" ? "#8aa0e0" : c.s.time === "dusk" ? "#ffa860" : c.s.time === "dawn" ? "#ffc8a0" : "#fff4d0");
+  const gr = g.createLinearGradient(0, y, 0, H);
+  gr.addColorStop(0, rgba(cl, 0.5)); gr.addColorStop(1, rgba(cl, 0.08));
+  g.fillStyle = gr;
+  const fy = floorY + (H - floorY) * 0.6;
+  g.beginPath(); g.moveTo(x, y); g.lineTo(x + w, y); g.lineTo(x + w + dx + 18, fy); g.lineTo(x + dx - 10, fy); g.closePath(); g.fill();
+  g.fillStyle = rgba(cl, 0.18); g.beginPath(); g.ellipse(x + w / 2 + dx + 4, fy - 2, w + 10, 6, 0, 0, Math.PI * 2); g.fill();
+  const a = (c.over > 0.6 ? 0.4 : 1) * (c.s.time === "night" ? 0.45 : 0.75) * (h > 0 ? 1 : 1);
+  return (gg, t) => { gg.globalCompositeOperation = "lighter"; gg.globalAlpha = a * (0.8 + 0.2 * Math.sin(t * 0.0005)); gg.drawImage(cv, 0, 0); gg.globalCompositeOperation = "source-over"; gg.globalAlpha = 1; };
+}
+function candle(c: C, L: Layer, x: number, y: number, h = 5) {
+  L.rect(x, y - h, 2, h, "#f4ecd8"); L.px(x, y - h, "#ffffff"); L.px(x + 1, y - h + 1, "#d8ccb0");
+  const ph = hn(x, y) * 40;
+  c.warm += 0.008;
+  anim(c, (g, t) => { const f = flick(t, ph); addGlow(g, x + 1, y - h - 2, 9, "#ffb050", 0.4 * f); g.fillStyle = "#ffb040"; g.fillRect(x, y - h - 2, 2, 2); g.fillStyle = "#fff4c0"; g.fillRect(x + (Math.sin(t * 0.02 + ph) > 0.5 ? 1 : 0), y - h - 3, 1, 2); });
+}
+function chainsFn(c: C, pts: { x: number; y: number; len: number }[]): Fn {
+  const col = gc(c, "#5a5660"), hi = gc(c, "#8a8690");
+  return (g, t) => {
+    for (const p of pts) {
+      const sw = Math.sin(t * 0.0012 + p.x) * 1.2;
+      for (let i = 0; i < p.len; i++) { const f = i / p.len, x = Math.round(p.x + sw * f * f); g.fillStyle = i % 2 ? col : hi; g.fillRect(x, p.y + i, i % 2 ? 1 : 2, 1); }
+      const ex = Math.round(p.x + sw);
+      g.fillStyle = col; g.fillRect(ex - 2, p.y + p.len, 5, 1); g.fillRect(ex - 2, p.y + p.len, 1, 3); g.fillRect(ex + 2, p.y + p.len, 1, 3); g.fillRect(ex - 2, p.y + p.len + 3, 5, 1);
+    }
+  };
+}
+function dripsFn(c: C, pts: { x: number; y: number; to: number }[]): Fn {
+  const col = gc(c, "#a8d0f0");
+  return (g, t) => {
+    g.fillStyle = col;
+    pts.forEach((p, i) => {
+      const per = 1800 + hn(i, 1) * 2400, a = ((t + hn(i, 2) * per) % per) / per;
+      if (a < 0.4) { g.globalAlpha = a / 0.4; g.fillRect(p.x, p.y, 1, 1 + (a > 0.3 ? 1 : 0)); }
+      else if (a < 0.62) { const k = (a - 0.4) / 0.22; g.globalAlpha = 1; g.fillRect(p.x, Math.round(p.y + (p.to - p.y) * k * k), 1, 2); }
+      else if (a < 0.8) { const k = (a - 0.62) / 0.18; g.globalAlpha = 1 - k; const rr = Math.round(1 + k * 4); g.fillRect(p.x - rr, p.to, 1, 1); g.fillRect(p.x + rr, p.to, 1, 1); g.fillRect(p.x - 1, p.to - 1 - Math.round(k * 2), 1, 1); g.fillRect(p.x + 1, p.to - 1 - Math.round(k * 2), 1, 1); }
+    });
+    g.globalAlpha = 1;
+  };
+}
+function ceilingBeams(L: Layer, y: number, col: string, n = 6) {
+  L.rect(0, 0, W, y, hs(col, -0.45));
+  for (let i = 0; i <= n; i++) { const x = Math.round((i / n) * W - 4); L.rect(x, 0, 8, y, col); L.rect(x, 0, 1, y, hs(col, 0.25)); L.rect(x + 7, 0, 1, y, hs(col, -0.3)); }
+  L.rect(0, y, W, 6, col); L.rect(0, y, W, 1, hs(col, 0.25)); L.rect(0, y + 5, W, 1, hs(col, -0.4));
+  for (let x = 0; x < W; x += 5) if (hn(x, y) > 0.6) L.px(x, y + 2 + Math.floor(hn(x, 2) * 3), hs(col, -0.2));
+}
+
+// ------------------------------------------------------------ royal hall
+function bHall(c: C) {
+  const r = c.r; interiorSetup(c, 0.8);
+  const stone = r.pick(["#b8aca0", "#a8a4b0", "#c4b8a4"]), floorY = 116, vx = 160, vy = 30;
+  const L = lay(c);
+  wallTex(L.p, 0, 0, W, floorY, stone, "stone", r.int(0, 99));
+  L.g.fillStyle = "rgba(20,10,30,0.35)"; L.g.fillRect(0, 0, W, 14); L.g.fillStyle = "rgba(20,10,30,0.18)"; L.g.fillRect(0, 14, W, 10);
+  // vaulted ribs along the top
+  for (let x = 0; x < W; x += 64) for (let a = 0; a < Math.PI; a += 0.06) L.rect(Math.round(x + 32 - Math.cos(a) * 32), Math.round(Math.sin(a) * 10), 2, 2, hs(stone, -0.25));
+  // tall windows with light
+  const nw = r.chance(0.5) ? 2 : 4, wins: number[] = [];
+  for (let i = 0; i < nw; i++) { const wx = nw === 2 ? (i ? 238 : 66) : [34, 96, 210, 272][i]; wins.push(wx); roomWindow(c, L, wx - 7, 22, 14, 44, { arch: true, frame: hs(stone, -0.3), stained: r.chance(0.3) }); }
+  // banners between
+  const bc = r.pick(["#a82a2a", "#2a3a98", "#2a6a3a", "#6a2a7a"]);
+  for (const bx of nw === 2 ? [100, 204] : [66, 240]) banner(L, bx - 6, 20, 12, 50, bc, "#f2c542", r.int(0, 2));
+  // floor: polished checkered marble with a carpet from the dais to the viewer
+  const m1 = r.pick(["#d8d0c4", "#c8c8d0"]), m2 = r.pick(["#5a4a48", "#3a3a4a", "#6a4a3a"]);
+  const carpet = r.pick(["#a82a2a", "#8a2a4a", "#2a4a8a"]);
+  perspFloor(L, floorY, vx, vy, (u, v, x, y) => {
+    const a = Math.floor(u * 3), b = Math.floor(v * 0.9);
+    let cc = (a + b) % 2 ? m1 : m2;
+    if (Math.abs(u * 3 - Math.round(u * 3)) < 0.04 || Math.abs(v * 0.9 - Math.round(v * 0.9)) < 0.05) cc = hs(cc, -0.15);
+    if (Math.abs(u) < 0.55) cc = Math.abs(u) > 0.47 ? "#e8c050" : Math.abs(u) > 0.42 ? hs(carpet, -0.2) : hn(x, y, 2) > 0.9 ? hs(carpet, 0.1) : carpet;
+    if (hn(x, y, 3) > 0.985) cc = hs(cc, 0.3);
+    return cc;
+  });
+  L.g.fillStyle = "rgba(255,250,240,0.08)"; L.g.fillRect(0, floorY, W, 10);
+  L.rect(0, floorY - 3, W, 3, hs(stone, -0.3)); L.rect(0, floorY - 3, W, 1, hs(stone, 0.1));
+  // dais & throne
+  for (let k = 0; k < 3; k++) { const w = 70 - k * 14, y = floorY - k * 4; L.rect(vx - w / 2, y - 4, w, 4, hs(stone, 0.05 - k * 0.04)); L.rect(vx - w / 2, y - 4, w, 1, hs(stone, 0.3)); L.rect(vx - w / 2 + 6, y - 4, w - 12, 4, hs(carpet, -0.05 * k)); L.rect(vx - w / 2 + 6, y - 4, w - 12, 1, hs(carpet, 0.2)); }
+  const ty = floorY - 12, gold = "#e0b040";
+  L.rect(vx - 10, ty - 40, 20, 40, gold); L.rect(vx - 8, ty - 38, 16, 30, carpet); L.rect(vx - 8, ty - 38, 3, 30, hs(carpet, 0.2));
+  L.ellipse(vx, ty - 42, 8, 5, gold); L.px(vx, ty - 48, "#ff5050"); L.rect(vx - 1, ty - 47, 3, 2, gold);
+  L.rect(vx - 14, ty - 14, 4, 14, gold); L.rect(vx + 10, ty - 14, 4, 14, gold); L.rect(vx - 14, ty - 16, 6, 2, hs(gold, 0.3)); L.rect(vx + 8, ty - 16, 6, 2, hs(gold, 0.3));
+  L.rect(vx - 10, ty - 8, 20, 4, hs(carpet, 0.15)); L.rect(vx - 10, ty - 4, 20, 4, hs(gold, -0.2));
+  L.rect(vx - 10, ty - 40, 1, 40, hs(gold, 0.35)); L.rect(vx + 9, ty - 40, 1, 40, hs(gold, -0.3));
+  // great pillars
+  for (const px of [6, 104, 206, 302]) {
+    const big = px < 20 || px > 290, w = big ? 16 : 10, top = big ? 0 : 12, base = big ? H - 8 : floorY;
+    column(L, px - w / 2, top, base, w, hs(stone, 0.06), { s: px });
+    if (!big) torch(c, L, px, 50);
+  }
+  commit(c, L, 0);
+  for (const wx of wins) anim(c, windowLight(c, wx - 7, 22, 14, 44, floorY, (wx - 160) * 0.35));
+  // chandelier
+  const chx = 160, chy = 26;
+  const Lc = lay(c);
+  Lc.rect(chx, 0, 1, chy, IRON); Lc.ellipse(chx, chy + 2, 20, 2, "#c8a040"); Lc.span(chx - 17, chx + 17, chy + 2, "#7a5a20");
+  for (let k = -2; k <= 2; k++) candle(c, Lc, chx + k * 8, chy + 1, 4);
+  commit(c, Lc, 0);
+  anim(c, motesFn(26, 20, 300, 30, 130, c.s.seed, "#fff4d0", 0.6));
+  c.groundY = 156; c.slots = stdSlots(154, 3, [40, 84, 124, 196, 236, 280]);
+}
+
+// ------------------------------------------------------------ inn
+function bInn(c: C) {
+  const r = c.r; interiorSetup(c, 0.75);
+  const wood = r.pick(["#8a5a38", "#7a5034", "#9a6a44"]), floorY = 120, vx = 160, vy = 40;
+  const L = lay(c);
+  wallTex(L.p, 0, 0, W, floorY, hs(wood, 0.05), "plank", r.int(0, 99));
+  // plaster upper wall with timber frame
+  wallTex(L.p, 0, 14, W, 46, "#e0d0b0", "timber", r.int(0, 99));
+  L.rect(0, 58, W, 3, hs(wood, -0.2)); L.rect(0, 58, W, 1, hs(wood, 0.2));
+  ceilingBeams(L, 10, hs(wood, -0.15));
+  perspFloor(L, floorY, vx, vy, (u, v, x, y) => {
+    const k = Math.floor(u * 7), within = u * 7 - k;
+    let cc = hs(wood, (hn(k, 3) - 0.5) * 0.18 - 0.05);
+    if (within < 0.06) cc = hs(wood, -0.45);
+    const seg = Math.floor(v * 0.6 + hn(k, 1) * 4);
+    if (Math.abs(v * 0.6 + hn(k, 1) * 4 - seg) < 0.04) cc = hs(wood, -0.35);
+    if (hn(x, y, 2) > 0.97) cc = hs(cc, -0.15);
+    return cc;
+  });
+  L.rect(0, floorY - 2, W, 2, hs(wood, -0.4));
+  const hearthLeft = r.chance(0.5);
+  const hx = hearthLeft ? 14 : W - 84;
+  const bx0 = hearthLeft ? W - 112 : 0;
+  // hearth: stone chimney breast
+  wallTex(L.p, hx, 10, 70, floorY - 10, "#9a948c", "stone", 3);
+  L.rect(hx - 3, 64, 76, 4, "#6a4428"); L.rect(hx - 3, 64, 76, 1, "#9a6a44");
+  L.rect(hx + 12, 76, 46, floorY - 76, "#1a1214");
+  for (let a = Math.PI; a <= Math.PI * 2; a += 0.15) L.rect(Math.round(hx + 35 + Math.cos(a) * 24), Math.round(80 + Math.sin(a) * 6), 3, 3, "#b0a89c");
+  L.rect(hx + 8, floorY - 4, 54, 4, "#b0a89c"); L.rect(hx + 8, floorY - 4, 54, 1, "#d0c8bc");
+  for (let k = 0; k < 3; k++) L.rect(hx + 22 + k * 7, floorY - 8 - (k % 2) * 2, 12, 3, "#5a3a22");
+  L.rect(hx + 34, 72, 1, 16, IRON); L.ellipse(hx + 35, 92, 7, 5, "#2a2a30"); L.rect(hx + 28, 88, 15, 2, "#4a4a52");
+  for (let k = 0; k < 4; k++) { const mx = hx + 4 + k * 17; if (r.chance(0.6)) { L.rect(mx, 58, 5, 6, r.pick(["#c8a070", "#8a8a9a", "#e0d8c8"])); L.rect(mx + 5, 59, 1, 3, "#6a5040"); } }
+  if (r.chance(0.7)) { L.rect(hx + 26, 26, 18, 14, "#6a4428"); for (const [dx, dy] of [[-6, -6], [-9, -10], [-4, -12], [6, -6], [9, -10], [4, -12]]) L.line(hx + 35, 28, hx + 35 + dx, 28 + dy, "#e8dcc0"); L.rect(hx + 32, 28, 6, 8, "#8a6a4a"); }
+  // bar counter, shelves, kegs
+  L.rect(bx0 + 4, 22, 104, 2, "#5a3a22"); L.rect(bx0 + 4, 40, 104, 2, "#5a3a22");
+  for (let k = 0; k < 18; k++) { const x = bx0 + 8 + k * 5 + r.int(0, 1), col = r.pick(["#3a7a4a", "#7a2a3a", "#c8a040", "#4a5a9a", "#e0d8c8", "#8a5a2a"]); const h = r.int(5, 9); L.rect(x, 22 - h, 3, h, col); L.rect(x + 1, 22 - h - 2, 1, 2, col); L.px(x, 22 - h + 1, hs(col, 0.4)); }
+  for (let k = 0; k < 14; k++) { const x = bx0 + 8 + k * 7; L.rect(x, 34, 5, 6, r.pick(["#c8a070", "#d8d0c0", "#8a6a4a"])); L.rect(x + 5, 35, 1, 3, "#6a5040"); }
+  for (let k = 0; k < 3; k++) { const kx = bx0 + 14 + k * 30; L.ellipse(kx + 8, 54, 9, 8, "#8a5a34"); L.ellipse(kx + 8, 54, 4, 4, "#a87a4a"); L.rect(kx + 7, 60, 2, 4, "#c8a040"); L.rect(kx, 51, 17, 1, "#4a4448"); L.rect(kx, 57, 17, 1, "#4a4448"); }
+  wallTex(L.p, bx0 + 2, 96, 108, 22, wood, "plank", 7);
+  L.rect(bx0, 92, 112, 4, hs(wood, 0.25)); L.rect(bx0, 92, 112, 1, hs(wood, 0.5)); L.rect(bx0, 95, 112, 1, hs(wood, -0.4));
+  for (let k = 0; k < 5; k++) { const mx = bx0 + 10 + k * 22 + r.int(0, 6); if (r.chance(0.6)) { L.rect(mx, 86, 5, 6, "#c8a070"); L.rect(mx, 86, 5, 1, "#f8f0e0"); L.rect(mx + 5, 87, 1, 3, "#8a6a4a"); } }
+  for (let k = 0; k < 3; k++) { const sx = bx0 + 16 + k * 36; L.ellipse(sx, 104, 6, 2, "#6a4428"); L.rect(sx - 4, 106, 1, 14, "#5a3a22"); L.rect(sx + 3, 106, 1, 14, "#5a3a22"); }
+  // window in the middle wall
+  const wx = r.int(130, 170);
+  roomWindow(c, L, wx, 24, 22, 28, { frame: "#5a3e28" });
+  // notice board
+  const nbx = hearthLeft ? wx + 36 : wx - 40;
+  L.rect(nbx, 28, 24, 18, "#8a6440"); L.rect(nbx + 1, 29, 22, 16, "#c09a6a");
+  for (let k = 0; k < 4; k++) { L.rect(nbx + 2 + (k % 2) * 11, 30 + Math.floor(k / 2) * 8, 9, 7, "#f0e8d4"); L.px(nbx + 6 + (k % 2) * 11, 30 + Math.floor(k / 2) * 8, "#c83a3a"); for (let l = 0; l < 3; l++) L.rect(nbx + 3 + (k % 2) * 11, 32 + l * 2 + Math.floor(k / 2) * 8, 6, 1, "#a8a090"); }
+  // tables with candles and mugs, barrels
+  const tables = [r.int(96, 120), r.int(196, 220)];
+  for (const tx of tables) {
+    L.ellipse(tx, 112, 16, 3, "#7a4a2c"); L.ellipse(tx, 111, 15, 2, "#9a6a44"); L.rect(tx - 2, 114, 4, 10, "#5a3a22"); L.rect(tx - 6, 123, 12, 2, "#4a2c18");
+    for (const sx of [tx - 20, tx + 18]) { L.ellipse(sx, 118, 4, 1, "#7a4a2c"); L.rect(sx - 3, 119, 1, 7, "#5a3a22"); L.rect(sx + 2, 119, 1, 7, "#5a3a22"); }
+    L.rect(tx + 4, 106, 4, 5, "#c8a070"); L.rect(tx + 4, 106, 4, 1, "#fff8e8"); L.rect(tx - 9, 108, 6, 2, "#e8e0d0");
+    candle(c, L, tx - 2, 110, 4);
+  }
+  barrelAt(L, hearthLeft ? 296 : 8, 128); barrelAt(L, hearthLeft ? 304 : 16, 128); barrelAt(L, hearthLeft ? 300 : 12, 118, "#8a5a34");
+  // rug before the hearth
+  L.ellipse(hx + 35, floorY + 6, 30, 4, "#8a3a3a"); L.ellipse(hx + 35, floorY + 6, 26, 3, "#a85a3a"); L.ellipse(hx + 35, floorY + 6, 20, 2, "#c8a050");
+  commit(c, L, 0);
+  // fire, pot steam, cat
+  c.warm += 0.12;
+  const fx = hx + 35, fy = floorY - 6;
+  anim(c, (g, t) => {
+    const f = flick(t, 2);
+    addGlow(g, fx, fy - 8, 110, "#ff8a30", 0.3 * f);
+    addGlow(g, fx, fy - 6, 34, "#ffc060", 0.5 * f);
+    flame(g, fx - 8, fy, 6, t, 0.3); flame(g, fx + 7, fy, 5.5, t, 2.1); flame(g, fx, fy + 1, 8, t, 4.4); flame(g, fx - 3, fy, 5, t, 6.2);
+    embers(g, fx, fy - 8, 8, 18, t, 2);
+    smoke(g, fx, 86, t, { col: "#f0f0f0", a: 0.3, rise: 12, n: 4, per: 2600, wind: 0 });
+  });
+  if (r.chance(0.7)) { const cx = hx + 35 + r.int(-14, 14), cy = floorY + 8, fur = gc(c, r.pick(["#e8902a", "#3a3438", "#c8c0b8"])); anim(c, (g, t) => { g.fillStyle = fur; g.fillRect(cx - 5, cy - 3, 9, 3); g.fillRect(cx - 4, cy - 4, 7, 1); g.fillRect(cx + 3, cy - 5, 3, 3); g.fillRect(cx + 3, cy - 6, 1, 1); g.fillRect(cx + 5, cy - 6, 1, 1); const tl = Math.sin(t * 0.0015) > 0.6 ? -1 : 0; g.fillRect(cx - 8, cy - 1 + tl, 3, 1); g.fillRect(cx - 9, cy - 2 + tl * 2, 1, 1); }); }
+  const lamps = [r.int(60, 90), r.int(230, 260)];
+  anim(c, (g, t) => {
+    for (const lx of lamps) {
+      const sw = Math.sin(t * 0.0011 + lx) * 1.5, ex = Math.round(lx + sw);
+      g.fillStyle = gc(c, IRON); pline(g, lx, 16, ex, 30);
+      g.fillRect(ex - 2, 30, 5, 1); g.fillStyle = "#ffd070"; g.fillRect(ex - 2, 31, 5, 4); g.fillStyle = "#fff4c0"; g.fillRect(ex - 1, 32, 3, 2); g.fillStyle = gc(c, IRON); g.fillRect(ex - 2, 35, 5, 1);
+      addGlow(g, ex, 33, 26, "#ffb050", 0.35 * flick(t, lx));
+    }
+  });
+  anim(c, windowLight(c, wx, 24, 22, 28, floorY, 10));
+  anim(c, motesFn(14, 60, 260, 40, 120, c.s.seed, "#ffe8b0", 0.5));
+  c.groundY = 156; c.slots = stdSlots(152, 4);
+}
+
+// ------------------------------------------------------------ cave
+function bCave(c: C) {
+  const r = c.r; interiorSetup(c, 0.4);
+  c.grade = mix(c.grade, "#8890a8", 0.45);
+  const rockC = r.pick(["#6a6070", "#6a6460", "#5a6068", "#70605a"]), floorY = 124;
+  const L = lay(c);
+  const opening = r.chance(0.5);
+  const ox = r.int(110, 210), oy = r.int(56, 76);
+  // back wall: contour-shaded rock, darker toward the edges, around a mouth / dark passage
+  const rf = rockFace(rockC, r.int(0, 999));
+  L.texRect(0, 0, W, H, (x, y) => {
+    const cc = rf(x, y);
+    const e = Math.max(Math.abs(x - 160) / 160, Math.abs(y - 70) / 90);
+    return e > 0.75 ? mix(cc, "#0a0810", (e - 0.75) * 1.6) : cc;
+  });
+  const mr = (a: number) => 1 + (vnoise(a * 9, 0, 3, 41) - 0.5) * 0.5;
+  const inMouth = (x: number, y: number, k = 1) => { const dx = (x - ox) / 30, dy = (y - oy) / 36; const a = Math.atan2(dy, dx); return dx * dx + (dy < 0 ? dy * dy : 0) < (mr(a) * k) ** 2; };
+  for (let y = oy - 46; y < floorY + 4; y++) for (let x = ox - 46; x < ox + 46; x++) {
+    if (inMouth(x, y, 1.18) && !inMouth(x, y)) L.px(x, y, hs(rockC, (y < oy ? 0.25 : -0.3) + (x < ox ? 0.1 : -0.15)));
+    if (!inMouth(x, y)) continue;
+    if (opening) {
+      const f = clamp((y - (oy - 36)) / 70);
+      let cc = toHex(...lerpStops(c.sky, 0.45 + f * 0.5));
+      const hill = oy + 6 + Math.sin(x * 0.12) * 3 + vnoise(x, 0, 6, 8) * 6;
+      if (y > hill) cc = c.s.time === "night" ? "#1c2a30" : mix("#5a8a50", c.sky[3], 0.35);
+      if (y > hill + 8) cc = c.s.time === "night" ? "#18241c" : "#4a7a3a";
+      L.px(x, y, cc);
+    } else {
+      const d = Math.hypot((x - ox) / 30, (y - oy) / 36);
+      L.px(x, y, mix(hs(rockC, -0.45), "#050308", clamp(1.3 - d)));
+    }
+  }
+  // floor
+  const ff = rockFace(hs(rockC, -0.05), r.int(0, 999), 0.8);
+  L.texRect(0, floorY, W, H - floorY, (x, y) => ff(x, Math.round(y * 1.8)));
+  for (let x = 0; x < W; x++) { const y = floorY + Math.round(vnoise(x, 0, 12, 5) * 4 - 2); L.px(x, y, hs(rockC, 0.2)); L.px(x, y - 1, hs(rockC, -0.45)); }
+  // stalactites & stalagmites
+  const tips: { x: number; y: number; to: number }[] = [];
+  for (let x = r.int(-4, 6); x < W; x += r.int(7, 16)) {
+    const len = r.int(6, 34) * (Math.abs(x - ox) < 40 ? 0.5 : 1), w = Math.max(2, Math.round(len / 4));
+    L.tex([[x - w, 0], [x + w, 0], [x + 0.5, len]], (px) => (px < x - w * 0.3 ? hs(rockC, 0.15) : px > x + w * 0.3 ? hs(rockC, -0.3) : rockC));
+    L.px(x, Math.round(len) - 1, hs(rockC, 0.4));
+    if (r.chance(0.35)) tips.push({ x, y: Math.round(len), to: floorY + r.int(8, 40) });
+  }
+  for (let i = 0; i < r.int(4, 8); i++) {
+    const x = r.int(0, W), base = r.int(floorY + 2, floorY + 14), len = r.int(8, 26), w = Math.max(2, Math.round(len / 3.5));
+    if (Math.abs(x - 160) < 30) continue;
+    L.tex([[x - w, base], [x + 0.5, base - len], [x + w, base]], (px) => (px < x - w * 0.2 ? hs(rockC, 0.18) : px > x + w * 0.3 ? hs(rockC, -0.3) : rockC));
+  }
+  // glowing fungi and crystals
+  const fungi: [number, number, string][] = [];
+  const fcol = r.pick(["#6af0d0", "#90f070", "#b080ff"]);
+  for (let i = 0; i < r.int(5, 9); i++) {
+    const x = r.int(4, W - 4), y = r.chance(0.5) ? r.int(floorY - 30, floorY + 4) : r.int(floorY + 10, H - 8);
+    for (let k = 0; k < r.int(2, 5); k++) { const mx = x + r.int(-5, 5), my = y + r.int(-2, 2); L.rect(mx, my - 2, 1, 2, "#c8d8c8"); L.rect(mx - 1, my - 3, 3, 1, fcol); L.px(mx, my - 4, hs(fcol, 0.4)); }
+    fungi.push([x, y - 3, fcol]);
+  }
+  const crystal = r.pick(["#b080ff", "#70c8ff", "#ff80b0"]);
+  const crys: [number, number][] = [];
+  for (let i = 0; i < r.int(2, 4); i++) {
+    const x = r.int(10, W - 10), y = r.int(floorY + 6, H - 10);
+    if (Math.abs(x - 160) < 50) continue;
+    for (let k = 0; k < 4; k++) { const h = r.int(5, 12), dx = (k - 1.5) * 3; L.tex([[x + dx - 1.5, y], [x + dx + k - 2, y - h], [x + dx + 1.5, y]], (px) => (px < x + dx ? hs(crystal, 0.3) : hs(crystal, -0.2))); }
+    crys.push([x, y - 6]);
+  }
+  // a still pool
+  const poolX = r.int(60, 260);
+  commit(c, L, 0);
+  if (r.chance(0.6)) {
+    const pw = r.int(26, 40), py = r.int(floorY + 8, floorY + 14);
+    const P = lay(c);
+    P.ellipse(poolX, py, pw + 2, 6, hs(rockC, -0.4)); P.ellipse(poolX, py, pw, 5, "#16222e"); P.ellipse(poolX - 4, py - 1, pw * 0.7, 3, "#22384a");
+    P.span(poolX - pw * 0.5, poolX + pw * 0.1, py - 3, "#4a7090"); P.span(poolX + 4, poolX + pw * 0.6, py + 1, "#2e4a60");
+    commit(c, P, 0);
+    anim(c, (g, t) => { g.fillStyle = gc(c, "#8ab8d8"); const a = (t % 2400) / 2400, rr = Math.round(a * 10); g.globalAlpha = 1 - a; g.fillRect(poolX - rr, py, 1, 1); g.fillRect(poolX + rr, py, 1, 1); g.fillRect(poolX - Math.round(rr * 0.6), py - 1, Math.round(rr * 1.2) + 1, 1); g.globalAlpha = 1; });
+    tips.push({ x: poolX, y: 18, to: py });
+  }
+  anim(c, dripsFn(c, tips));
+  anim(c, (g, t) => {
+    for (const [x, y, col] of fungi) addGlow(g, x, y, 16, col, 0.25 + 0.12 * Math.sin(t * 0.0015 + x));
+    for (const [x, y] of crys) { addGlow(g, x, y, 14, crystal, 0.22 + 0.1 * Math.sin(t * 0.002 + y)); if (Math.sin(t * 0.003 + x) > 0.97) { g.fillStyle = "#ffffff"; g.fillRect(x, y - 3, 1, 3); g.fillRect(x - 1, y - 2, 3, 1); } }
+  });
+  if (opening) anim(c, windowLight(c, ox - 20, oy - 20, 40, 40, floorY, 0));
+  anim(c, birdsFn(c, { y0: 20, y1: 50, col: "#1a1418", n: r.int(2, 4), per: 14000 }));
+  anim(c, motesFn(12, 60, 260, 40, 130, c.s.seed, fcol, 0.5));
+  c.front.push(fogFn(c, 132, 48, 0.4, 0.004, "#3a3a50"));
+  c.groundY = 156; c.slots = stdSlots(154, 3);
+}
+
+// ------------------------------------------------------------ tunnel
+function bTunnel(c: C) {
+  const r = c.r; interiorSetup(c, 0.4);
+  c.grade = mix(c.grade, "#9090a8", 0.4);
+  const vx = 160 + r.int(-10, 10), vy = 92;
+  const L = lay(c);
+  const mine = r.chance(0.6);
+  const rockC = mine ? "#6a5a50" : "#7a7480";
+  // rock everywhere, darker toward the vanishing point
+  const rf = rockFace(rockC, r.int(0, 999), 0.7);
+  L.texRect(0, 0, W, H, (x, y) => {
+    const d = Math.min(1, Math.hypot(x - vx, (y - vy) * 1.6) / 170);
+    const sc = 0.3 + d * 0.7;
+    return mix("#08060a", rf(Math.round(vx + (x - vx) / sc), Math.round(vy + (y - vy) / sc)), Math.pow(d, 0.8));
+  });
+  const z = [1, 1.4, 2, 2.9, 4.2, 6.2];
+  // floor
+  L.texRect(0, vy, W, H - vy, (x, y) => {
+    const dz = y - vy; if (dz < 3) return null;
+    const u = (x - vx) / dz;
+    if (Math.abs(u) > 2.2) return null;
+    const d = Math.min(1, dz / 80);
+    let cc = hs(mine ? "#7a6450" : "#6a6874", (vnoise(x, y * 2, 4, 6) - 0.5) * 0.3);
+    if (mine) { // rails and sleepers
+      const v = 400 / dz;
+      if (Math.abs(Math.abs(u) - 0.55) < 0.05) cc = "#a0a0b0";
+      else if ((v % 6) < 1.5 && Math.abs(u) < 0.85) cc = "#5a3e28";
+    } else if (Math.abs(u) < 0.35) cc = mix("#20405a", c.sky[2], 0.15);
+    return mix("#08060a", cc, Math.pow(d, 0.7));
+  });
+  // frames / arches from far to near
+  for (let i = z.length - 1; i >= 0; i--) {
+    const s = 1 / z[i], hw = 170 * s, top = vy - 120 * s, bot = vy + 90 * s, bw = Math.max(1, Math.round(9 * s));
+    const dim = Math.min(1, 1.25 * s + 0.15);
+    const tint = (col: string) => mix("#08060a", col, dim);
+    if (mine) {
+      const wd = "#8a6440";
+      L.rect(vx - hw, top, bw, bot - top, tint(wd)); L.rect(vx + hw - bw, top, bw, bot - top, tint(hs(wd, -0.25)));
+      L.rect(vx - hw - bw, top - bw, hw * 2 + bw * 2, bw + 1, tint(hs(wd, 0.1)));
+      L.rect(vx - hw, top, 1, bot - top, tint(hs(wd, 0.3)));
+      if (i < 4) for (let k = 0; k < 3; k++) L.line(vx - hw + bw, top + bw + k * 3 * s, vx - hw + bw + 10 * s, top + bw, tint(wd));
+    } else {
+      for (let a = Math.PI; a <= Math.PI * 2; a += 0.04) { const ax = vx + Math.cos(a) * hw, ay = top + hw * 0.6 + Math.sin(a) * hw * 0.6; L.rect(Math.round(ax) - bw / 2, Math.round(ay) - bw / 2, bw, bw, tint(hn(Math.round(a * 20), i) > 0.5 ? "#9a94a0" : "#8a8490")); }
+      L.rect(vx - hw - bw / 2, top + hw * 0.6, bw, bot - top - hw * 0.6, tint("#8a8490")); L.rect(vx + hw - bw / 2, top + hw * 0.6, bw, bot - top - hw * 0.6, tint("#7a7480"));
+    }
+  }
+  // the near side walls
+  if (mine) { cart(L, r.chance(0.5) ? 18 : 250, 150, r); }
+  else { for (let y = 0; y < H; y += 6) for (let x = 0; x < 26; x += 8) { L.rect(x + (y / 6 % 2) * 4, y, 7, 5, hs("#8a8490", (hn(x, y) - 0.5) * 0.2 - 0.2)); L.rect(W - 26 + x + (y / 6 % 2) * 4, y, 7, 5, hs("#8a8490", (hn(x, y, 2) - 0.5) * 0.2 - 0.3)); } }
+  commit(c, L, 0);
+  // lanterns on the nearer frames
+  const lamps = [0, 1, 3].map((i) => { const s = 1 / z[i]; return { x: Math.round(vx + (i % 2 ? 1 : -1) * 170 * s * 0.8), y: Math.round(vy - 120 * s + 10 * s), s }; });
+  c.warm += 0.08;
+  anim(c, (g, t) => {
+    for (const lp of lamps) {
+      const f = flick(t, lp.x);
+      addGlow(g, lp.x, lp.y + 3, 50 * lp.s + 10, "#ffa040", 0.35 * f);
+      g.fillStyle = gc(c, IRON); g.fillRect(lp.x, lp.y - 3, 1, 3);
+      g.fillStyle = "#ffd070"; g.fillRect(lp.x - 1, lp.y, Math.max(2, Math.round(4 * lp.s)), Math.max(2, Math.round(5 * lp.s))); g.fillStyle = "#fff4c0"; g.fillRect(lp.x, lp.y + 1, 1, Math.max(1, Math.round(2 * lp.s)));
+    }
+  });
+  if (!mine) anim(c, (g, t) => { g.fillStyle = gc(c, "#6a90b0"); for (let y = vy + 6; y < H; y += 3) { const dz = y - vy, w = 0.35 * dz; const x = vx - w + ((t * 0.01 * (dz / 20)) % (w * 2)); g.globalAlpha = 0.5; g.fillRect(Math.round(x), y, Math.max(1, Math.round(dz / 20)), 1); } g.globalAlpha = 1; });
+  anim(c, dripsFn(c, Array.from({ length: 5 }, (_, i) => ({ x: r.int(40, 280), y: r.int(10, 30), to: 140 + i * 6 }))));
+  anim(c, motesFn(14, 40, 280, 50, 150, c.s.seed, "#ffe0a0", 0.4));
+  c.front.push(fogFn(c, 120, 60, 0.4, 0.006, "#2a2830"));
+  c.groundY = 158; c.slots = stdSlots(156, 2, [36, 80, 124, 196, 240, 284]);
+}
+
+// ------------------------------------------------------------ dungeon
+function bDungeon(c: C) {
+  const r = c.r; interiorSetup(c, 0.45);
+  c.grade = mix(c.grade, "#8a88a0", 0.45);
+  const stone = r.pick(["#6a6a78", "#7a7068", "#5e6470"]), floorY = 118, vx = 160, vy = 40;
+  const L = lay(c);
+  wallTex(L.p, 0, 0, W, floorY, stone, "stone", r.int(0, 99));
+  for (let i = 0; i < 400; i++) { const x = r.int(0, W), y = r.int(0, floorY); if (r.chance(0.5)) L.px(x, y, r.chance(0.5) ? "#4a6a3a" : "#3a3a40"); }
+  for (let x = 0; x < W; x++) if (hn(x, 3) > 0.92) { const len = r.int(5, 30); L.g.fillStyle = "rgba(20,30,20,0.25)"; L.g.fillRect(x, r.int(0, 40), 1, len); }
+  perspFloor(L, floorY, vx, vy, (u, v, x, y) => {
+    const a = Math.floor(u * 2.4 + (Math.floor(v * 0.7) % 2) * 0.5), b = Math.floor(v * 0.7);
+    let cc = hs(stone, (hn(a, b, 4) - 0.5) * 0.25 - 0.1);
+    if (Math.abs(u * 2.4 + (b % 2) * 0.5 - Math.round(u * 2.4 + (b % 2) * 0.5)) < 0.05 || Math.abs(v * 0.7 - Math.round(v * 0.7)) < 0.06) cc = hs(stone, -0.45);
+    if (hn(x, y, 6) > 0.97) cc = "#4a5a3a";
+    return cc;
+  });
+  L.rect(0, floorY - 2, W, 2, hs(stone, -0.5));
+  // a cell: iron bars across part of the back wall, darkness behind
+  const cx0 = r.chance(0.5) ? r.int(20, 50) : r.int(170, 200), cw = 100;
+  L.rect(cx0, 30, cw, floorY - 30, "#0c0a10");
+  for (let i = 0; i < 40; i++) L.px(cx0 + r.int(4, cw - 4), floorY - r.int(1, 6), r.pick(["#6a5a30", "#8a7a40", "#5a4a28"]));
+  if (r.chance(0.6)) { const sx = cx0 + r.int(16, cw - 30); L.ellipse(sx, floorY - 12, 3, 3, "#5a5650"); L.rect(sx - 1, floorY - 9, 2, 6, "#4a4640"); L.line(sx - 6, floorY - 4, sx + 6, floorY - 2, "#4a4640"); L.px(sx - 1, floorY - 13, "#0c0a10"); L.px(sx + 1, floorY - 13, "#0c0a10"); }
+  L.rect(cx0 - 2, 27, cw + 4, 3, "#3a3640"); L.rect(cx0 - 2, 27, cw + 4, 1, "#6a6670");
+  for (let x = cx0 + 2; x < cx0 + cw; x += 6) { L.rect(x, 30, 2, floorY - 30, "#3a3640"); L.px(x, 30, "#7a7680"); L.rect(x, 30, 1, floorY - 30, "#5a5660"); }
+  for (const y of [56, 92]) { L.rect(cx0, y, cw, 2, "#3a3640"); L.rect(cx0, y, cw, 1, "#6a6670"); }
+  L.rect(cx0 + cw - 14, 70, 4, 6, "#8a7a40");
+  // barred window high on the wall
+  const wx = cx0 > 150 ? r.int(50, 90) : r.int(230, 270);
+  roomWindow(c, L, wx, 16, 16, 12, { bars: true, frame: "#3a3640" });
+  // bones & straw, a puddle
+  for (let i = 0; i < 3; i++) { const bx = r.int(10, 310), by = r.int(124, 170); L.rect(bx, by, 6, 1, "#e0d8c8"); L.px(bx - 1, by - 1, "#e0d8c8"); L.px(bx - 1, by + 1, "#e0d8c8"); L.px(bx + 6, by - 1, "#e0d8c8"); L.px(bx + 6, by + 1, "#e0d8c8"); }
+  for (let i = 0; i < 60; i++) L.px(r.int(0, W), r.int(120, 140), r.pick(["#8a7a40", "#6a5a30"]));
+  const pud = r.int(60, 260); L.ellipse(pud, 150, 18, 2, "#1a2028"); L.span(pud - 10, pud + 4, 149, "#3a4a5a");
+  commit(c, L, 0);
+  const Lt = lay(c); torch(c, Lt, cx0 > 150 ? 130 : 190, 50); torch(c, Lt, cx0 > 150 ? 20 : 300, 50); commit(c, Lt, 0);
+  anim(c, chainsFn(c, [{ x: cx0 > 150 ? 100 : 230, y: 30, len: 26 }, { x: cx0 > 150 ? 110 : 240, y: 30, len: 30 }]));
+  anim(c, windowLight(c, wx, 16, 16, 12, floorY, (wx - 160) * 0.4));
+  anim(c, dripsFn(c, [{ x: r.int(40, 280), y: 2, to: 150 }, { x: pud, y: 4, to: 150 }]));
+  const rat = gc(c, "#4a4048");
+  anim(c, (g, t) => { const per = 11000, a = (t % per) / per; if (a > 0.3) return; const k = Math.floor(t / per), dir = hn(k, 1) > 0.5 ? 1 : -1, x = Math.round(dir > 0 ? -10 + a / 0.3 * 340 : 330 - a / 0.3 * 340), y = 124 + Math.round(hn(k, 2) * 8); g.fillStyle = rat; g.fillRect(x, y - 2, 5, 2); g.fillRect(x + (dir > 0 ? 5 : -1), y - 2, 1, 1); g.fillRect(x - dir * 3 + (dir > 0 ? 0 : 5), y - 1, 3, 1); if (Math.floor(t / 60) % 2) { g.fillRect(x + 1, y, 1, 1); g.fillRect(x + 3, y, 1, 1); } });
+  c.front.push(fogFn(c, 130, 50, 0.4, 0.004, "#2a2a38"));
+  c.groundY = 156; c.slots = stdSlots(154, 3);
+}
+
+// ------------------------------------------------------------ temple
+function bTemple(c: C) {
+  const r = c.r; interiorSetup(c, 0.7);
+  const stone = r.pick(["#d8ccb4", "#c8c4c8", "#e0d4c0"]), floorY = 118, vx = 160, vy = 36;
+  const L = lay(c);
+  wallTex(L.p, 0, 0, W, floorY, stone, "stone", r.int(0, 99));
+  L.g.fillStyle = "rgba(30,20,40,0.3)"; L.g.fillRect(0, 0, W, 12);
+  // apse niche with a statue
+  const nx = vx, nw = 50;
+  for (let y = 10; y < floorY - 12; y++) for (let x = nx - nw / 2; x < nx + nw / 2; x++) { const dx = (x - nx) / (nw / 2), dy = (y - 36) / 26; if (y > 36 || dx * dx + dy * dy < 1) L.px(x, y, mix(hs(stone, -0.4), hs(stone, -0.2), Math.abs(dx))); }
+  const sc = r.pick(["#e8e4dc", "#c8b070", "#9ab0a8"]);
+  // the statue: robed figure, arms raised or holding a sword/orb
+  L.rect(nx - 9, 96, 18, 10, hs(stone, 0.1)); L.rect(nx - 9, 96, 18, 1, hs(stone, 0.3));
+  L.tex([[nx - 8, 96], [nx - 5, 58], [nx + 5, 58], [nx + 8, 96]], (px) => (px < nx - 2 ? hs(sc, 0.15) : px > nx + 3 ? hs(sc, -0.25) : sc));
+  for (let y = 62; y < 96; y += 5) L.line(nx - 3 + (y % 2), y, nx - 1, y + 4, hs(sc, -0.2));
+  L.ellipse(nx, 53, 4, 5, sc); L.px(nx - 2, 52, hs(sc, 0.3)); L.rect(nx - 4, 48, 8, 2, hs(sc, -0.1));
+  const pose = r.int(0, 2);
+  if (pose === 0) { L.line(nx - 5, 62, nx - 12, 44, sc); L.line(nx + 5, 62, nx + 12, 44, sc); }
+  else if (pose === 1) { L.rect(nx - 1, 36, 2, 40, "#d8d8e8"); L.rect(nx - 4, 66, 8, 2, "#c8a040"); L.line(nx - 5, 64, nx - 1, 68, sc); L.line(nx + 5, 64, nx + 1, 68, sc); }
+  else { L.line(nx - 5, 64, nx, 70, sc); L.line(nx + 5, 64, nx, 70, sc); L.ellipse(nx, 70, 3, 3, "#a8d8ff"); }
+  // halo/rose window above
+  const rw = 16, ry = 26;
+  for (let y = ry - rw; y <= ry + rw; y++) for (let x = nx - rw; x <= nx + rw; x++) {
+    const dx = x - nx, dy = y - ry, d = Math.hypot(dx, dy);
+    if (d > rw) continue;
+    const ang = Math.atan2(dy, dx), seg = Math.floor(((ang + Math.PI) / (Math.PI * 2)) * 12), ring = d < 5 ? 0 : d < 11 ? 1 : 2;
+    let cc = ["#e8c040", "#c83a4a", "#3a6ad8", "#4aa060", "#8a4ac8", "#e8803a"][(seg + ring * 2) % 6];
+    if (d > rw - 1.5 || Math.abs(d - 5) < 0.6 || Math.abs(d - 11) < 0.6 || (ring > 0 && Math.abs(((ang + Math.PI) / (Math.PI * 2)) * 12 - Math.round(((ang + Math.PI) / (Math.PI * 2)) * 12)) < 0.08)) cc = "#2a2228";
+    L.px(x, y, cc);
+  }
+  // tall stained lancets either side
+  const lancets = [56, 264];
+  for (const lx of lancets) roomWindow(c, L, lx - 7, 20, 14, 48, { arch: true, stained: true, frame: hs(stone, -0.3) });
+  // floor: tiles with a mosaic runner
+  const t1 = hs(stone, -0.05), t2 = hs(stone, -0.2), run = r.pick(["#8a3a3a", "#3a5a8a", "#6a4a8a"]);
+  perspFloor(L, floorY, vx, vy, (u, v, x, y) => {
+    const a = Math.floor(u * 4), b = Math.floor(v * 1.1);
+    let cc = (a + b) % 2 ? t1 : t2;
+    if (Math.abs(u * 4 - Math.round(u * 4)) < 0.05 || Math.abs(v * 1.1 - Math.round(v * 1.1)) < 0.06) cc = hs(stone, -0.35);
+    if (Math.abs(u) < 0.4) { cc = Math.abs(u) > 0.34 ? "#c8a040" : (Math.floor(u * 10) + b) % 2 ? run : hs(run, 0.2); }
+    if (hn(x, y, 4) > 0.985) cc = hs(cc, 0.25);
+    return cc;
+  });
+  // altar on steps
+  for (let k = 0; k < 3; k++) { const w = 90 - k * 18, y = floorY - k * 4; L.rect(vx - w / 2, y - 4, w, 4, hs(stone, 0.1 - k * 0.05)); L.rect(vx - w / 2, y - 4, w, 1, hs(stone, 0.35)); }
+  const ay = floorY - 12;
+  L.rect(vx - 22, ay - 14, 44, 14, hs(stone, 0.05)); L.rect(vx - 24, ay - 16, 48, 3, hs(stone, 0.25)); L.rect(vx - 24, ay - 16, 48, 1, hs(stone, 0.45));
+  L.rect(vx - 14, ay - 13, 28, 13, run); L.rect(vx - 14, ay - 13, 28, 1, "#e8c050"); L.rect(vx - 2, ay - 10, 4, 8, "#e8c050"); L.rect(vx - 4, ay - 8, 8, 2, "#e8c050");
+  L.rect(vx - 6, ay - 20, 12, 4, "#c8a040"); L.ellipse(vx, ay - 21, 5, 1, "#e8d080");
+  // pillars
+  for (const px of [12, 96, 224, 308]) column(L, px - 6, 4, floorY + (px < 20 || px > 300 ? 50 : 0), 12, hs(stone, 0.04), { s: px });
+  commit(c, L, 0);
+  // candles on the altar, braziers, incense
+  const Lc = lay(c);
+  for (let k = -3; k <= 3; k++) if (k !== 0) candle(c, Lc, vx + k * 6 - 1, ay - 16, 4 + (Math.abs(k) % 2) * 2);
+  for (const bx of [70, 250]) { Lc.rect(bx - 1, floorY + 4, 3, 16, "#5a4a3a"); Lc.rect(bx - 5, floorY + 18, 11, 2, "#5a4a3a"); Lc.ellipse(bx, floorY + 3, 7, 2, "#8a6a3a"); Lc.rect(bx - 7, floorY + 1, 15, 2, "#a8803a"); }
+  commit(c, Lc, 0);
+  c.warm += 0.08;
+  anim(c, (g, t) => {
+    for (const bx of [70, 250]) { const f = flick(t, bx); addGlow(g, bx, floorY - 4, 46, "#ff9a3a", 0.35 * f); flame(g, bx - 2, floorY + 1, 5, t, bx); flame(g, bx + 2, floorY + 1, 4.5, t, bx + 2); embers(g, bx, floorY - 6, 6, 30, t, bx); }
+    smoke(g, vx, ay - 22, t, { col: "#e8e0f0", a: 0.35, rise: 60, n: 9, per: 6000, wind: 0.1, size: 1.2 });
+  });
+  const shCols = ["#ff7080", "#70a0ff", "#ffd060", "#a080ff"];
+  lancets.forEach((lx, i) => anim(c, windowLight(c, lx - 7, 20, 14, 48, floorY, (lx - 160) * 0.3, shCols[(i * 2 + r.int(0, 1)) % 4])));
+  anim(c, windowLight(c, nx - 10, 14, 20, 20, floorY, 0, "#ffe8a0"));
+  anim(c, motesFn(30, 30, 290, 20, 140, c.s.seed, "#fff0c0", 0.7));
+  c.groundY = 156; c.slots = stdSlots(154, 3, [36, 80, 120, 200, 240, 284]);
+}
+
+const BUILD: Record<Bg, Builder> = {
+  forest: bForest, hill: bHill, road: bRoad, river: bRiver, lake: bLake, field: bField, village: bVillage, town: bTown, city: bCity,
+  castle: bCastle, hall: bHall, ruins: bRuins, cave: bCave, tunnel: bTunnel, swamp: bSwamp, mountain: bMountain, bridge: bBridge,
+  camp: bCamp, inn: bInn, ship: bShip, sea: bSea, coast: bCoast, desert: bDesert, temple: bTemple, dungeon: bDungeon, sky: bSky,
+};

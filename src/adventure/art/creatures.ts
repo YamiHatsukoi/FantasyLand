@@ -500,7 +500,7 @@ function humPose(b: HB, a: A, style: Style): HJ {
   switch (style) {
     case "thrust": h1 = [arm * 0.55, arm * 0.55]; w1 = -1.25; h0 = [-arm * 0.1, arm * 0.8]; w0 = 1.2; break;
     case "swing": h1 = [arm * 0.45, arm * 0.7]; w1 = -0.85; h0 = [-arm * 0.2, arm * 0.8]; w0 = 1.3; break;
-    case "chop": h1 = [arm * 0.55, arm * 0.45]; w1 = -2.1; h0 = [arm * 0.25, arm * 0.7]; w0 = -2.1; break;
+    case "chop": h1 = [arm * 0.6, arm * 0.62]; w1 = -0.8; h0 = [arm * 0.25, arm * 0.7]; w0 = -0.8; break;
     case "claw": h1 = [arm * 0.6, arm * 0.45]; w1 = 0.3; h0 = [arm * 0.35, arm * 0.55]; w0 = 0.5; break;
     case "staff": h1 = [arm * 0.5, arm * 0.45]; w1 = -1.62; h0 = [-arm * 0.1, arm * 0.8]; w0 = 1.3; break;
     case "cast": h1 = [arm * 0.4, arm * 0.7]; w1 = 1.1; h0 = [-arm * 0.15, arm * 0.8]; w0 = 1.3; break;
@@ -559,8 +559,8 @@ function humPose(b: HB, a: A, style: Style): HJ {
   } else if (a.dead) {
     // a crumpled pose; the drawing is laid down by deadLay()
     lean = 0.05; hy = -L * 0.88; head = 0.35;
-    f1 = [L * 0.45, -L * 0.25]; f0 = [L * 0.2, -L * 0.05];
-    h1 = [-arm * 0.6, -arm * 0.75]; h0 = [arm * 0.3, arm * 0.85]; w1 = -1.6; w0 = 1.4;
+    f1 = [L * 0.16, -L * 0.1]; f0 = [-L * 0.05, 0];
+    h1 = [-arm * 0.3, -arm * 0.9]; h0 = [arm * 0.5, arm * 0.75]; w1 = -1.6; w0 = 1.4;
   }
   if (style === "chop" && a.st < 0 && a.hu < 0 && !a.dead) { /* both hands on the haft */ }
   const R = (v: P) => rot(v, lean);
@@ -1322,7 +1322,7 @@ function beastman(): Def {
  * Leathery wing from the shoulder: arm, forearm, three or four finger spars and a scalloped
  * membrane back to the flank. u = 1 raised, 0.5 swept back, 0 lowered.
  */
-function batWing(s: Spr, m: Mat, sh: P, u: number, span: number, far: boolean, root?: P) {
+function batWing(s: Spr, m: Mat, sh: P, u: number, span: number, far: boolean, root?: P, boneMat?: Mat) {
   const a1 = lerp(-4.0, -2.15, u), a2 = a1 + lerp(0.2, 0.95, u);
   const E = add(sh, dir(a1, span * 0.3)), Wr = add(E, dir(a2, span * 0.28));
   const tips: P[] = [0, 1, 2, 3].map((k) => add(Wr, dir(a2 - lerp(0.15, 0.45, u) - k * lerp(0.42, 0.58, u), span * (0.5 - k * 0.06))));
@@ -1335,7 +1335,7 @@ function batWing(s: Spr, m: Mat, sh: P, u: number, span: number, far: boolean, r
   poly.push(mid(mid(tips[3], back), Wr, 0.2), back);
   const mem = far ? dim(m, 0.12) : m;
   s.fill(mem, (b) => b.poly(poly), { tex: (x, y, t) => (t > 2 ? 2 : t), hi: 0.08, mid: 0.7 });
-  const bone = { t: m.t.map((c) => hs(c, 0.12)), rough: 0, rim: m.rim } as Mat;
+  const bone = boneMat ? (far ? dim(boneMat, 0.25) : boneMat) : ({ t: m.t.map((c) => hs(c, 0.12)), rough: 0, rim: m.rim } as Mat);
   s.fill(bone, (b) => {
     b.capP(sh, E, span * 0.05 + 0.8, span * 0.035 + 0.7);
     b.capP(E, Wr, span * 0.035 + 0.7, 0.8);
@@ -1769,8 +1769,8 @@ function dragon(): Def {
     b,
     behind: (s, j, a) => {
       if (a.dead) { batWing(s, WING, add(j.sh, [-6, -6]), 0.42, 34, false, add(j.hp, [2, -4])); return; }
-      const u = a.pose === "idle" ? 0.78 + a.s * 0.14 : a.st === 0 ? 1 : a.st >= 1 ? 0.45 : a.hu >= 0 ? 0.6 : 0.55 + a.s * 0.4;
-      batWing(s, dim(WING, 0.28), add(j.sh, [-2, -9]), u + 0.06, 32, true, add(j.hp, [4, -6]));
+      const u = a.pose === "idle" ? 0.62 + a.s * 0.16 : a.st === 0 ? 0.92 : a.st >= 1 ? 0.4 : a.hu >= 0 ? 0.6 : 0.5 + a.s * 0.35;
+      batWing(s, dim(WING, 0.28), add(j.sh, [-1, -9]), u + 0.06, 38, true, add(j.hp, [4, -6]));
     },
     leg: (s, j, i) => qLeg(s, SC, j, i, i % 2 ? [4.4, 3, 2.2] : [3.6, 2.6, 2], "bear", "#f0e8d0"),
     tail: (s, j, a) => {
@@ -1786,8 +1786,8 @@ function dragon(): Def {
         for (let n = 0; n < 6; n++) { const x = 8 - n * 4.4, y = -b.shH - 7 + Math.abs(n - 1) * 0.3; s.fill(HORN, (bb) => bb.poly([[x - 1.6, y + 1.8], [x - 2, y - 2.2], [x + 1, y + 1.8]])); }
       });
       if (!a.dead) {
-        const u = a.pose === "idle" ? 0.78 + a.s * 0.14 : a.st === 0 ? 1 : a.st >= 1 ? 0.45 : a.hu >= 0 ? 0.6 : 0.55 + a.s * 0.4;
-        batWing(s, WING, add(j.sh, [-5, -7]), u, 36, false, add(j.hp, [3, -5]));
+        const u = a.pose === "idle" ? 0.62 + a.s * 0.16 : a.st === 0 ? 0.92 : a.st >= 1 ? 0.4 : a.hu >= 0 ? 0.6 : 0.5 + a.s * 0.35;
+        batWing(s, WING, add(j.sh, [-4, -7]), u, 42, false, add(j.hp, [3, -5]));
       }
     },
     head: (s, j, a) => {
@@ -1867,9 +1867,9 @@ function kraan(rider: boolean): Def {
   const HIDE = mat("#2c2832", { rim: "#8a6aa0" }), MEM = mat("#3e2c3a", { rim: "#a06a8a" }), BEAK = mat("#6e665e"), BELLY = mat("#4a3e46");
   const rid = rider ? giakSpec({ skin: "#76707e", armour: "#26222e" }) : null;
   const f: FSpec = {
-    hover: 22, lie: 4.5,
+    hover: 23, lie: 10,
     draw(s, j, a) {
-      const K = 1.4;
+      const K = 1.25;
       s.save(); s.scale(K, K);
       const u = j.u * 0.82, dead = a.dead;
       const sh: P = [4, -5], root: P = [-9, -1];
@@ -1925,7 +1925,7 @@ function kraan(rider: boolean): Def {
       return [iv[0] * mouth[0] + iv[2] * mouth[1] + iv[4], iv[1] * mouth[0] + iv[3] * mouth[1] + iv[5]];
     },
   };
-  return { w: 96, h: 72, flying: true, ox: 0, draw: (s, a) => drawFly(s, a, f) };
+  return { w: 96, h: 72, flying: true, ox: -3, draw: (s, a) => drawFly(s, a, f) };
 }
 
 // ============================================================ bats and birds
@@ -2082,7 +2082,7 @@ function snake(o: { body: string; belly: string; blot: string; size: number; eye
 }
 
 function wingedSerpent(): Def {
-  const SC = mat("#2a6a6a", { rim: "#80e0c0" }), BL = mat("#d8d0a0"), WG = mat("#c06a3a", { rim: "#ffd080" });
+  const SC = mat("#2a6a6a", { rim: "#80e0c0" }), BL = mat("#d8d0a0"), WG = mat("#c0683a", { rim: "#ffd080" });
   const f: FSpec = {
     hover: 26, lie: 4,
     draw(s, j, a) {
@@ -2093,7 +2093,7 @@ function wingedSerpent(): Def {
         const y = dead ? (i % 2 ? 1.6 : 0) : Math.sin(i * 1.1 - ph) * (2 + i * 0.7) + i * 0.8;
         cp.push([x, y]);
       }
-      featherWing(s, WG, [4, -2], clamp(j.u + 0.08, 0, 1), 28, true);
+      batWing(s, dim(WG, 0.25), [6, -2], clamp(j.u * 0.8 + 0.08, 0, 1), 32, true, [-12, 2], SC);
       const pts = spline(cp, 0.8).reverse();
       serpentBody(s, pts, (t) => lerp(0.6, 3.6, Math.min(1, t * 1.6)) - (t > 0.9 ? (t - 0.9) * 6 : 0), SC, BL, "#1a4a4a", 7);
       // fins along the back
@@ -2109,7 +2109,7 @@ function wingedSerpent(): Def {
         if (j.ex === "dead") s.line(3, -2.2, 4.2, -1.8, "#140e10");
         else { s.dot(3.6, -2, "#ffe040"); s.glow(3.6, -2, "#ffc020", 1.8); }
       });
-      featherWing(s, WG, [3, -1], j.u, 30, false);
+      batWing(s, WG, [4, -1], j.u * 0.8, 35, false, [-15, 3], SC);
       return [hd[0] + 8, hd[1] + 0.5];
     },
   };

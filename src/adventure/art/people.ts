@@ -198,6 +198,15 @@ class Grid {
       this.px(x, y, s > hiBias + 0.15 ? t[2] : s < -0.25 ? t[0] : t[1]);
     }
   }
+  /** Contour around a limb, painted only over what is already there (separates overlapping parts). */
+  contour(ax: number, ay: number, bx: number, by: number, r: number, col: string) {
+    const vx = bx - ax, vy = by - ay, len2 = vx * vx + vy * vy || 1e-6;
+    for (let y = Math.floor(Math.min(ay, by) - r - 1); y <= Math.ceil(Math.max(ay, by) + r + 1); y++) for (let x = Math.floor(Math.min(ax, bx) - r - 1); x <= Math.ceil(Math.max(ax, bx) + r + 1); x++) {
+      const k = Math.max(0, Math.min(1, ((x - ax) * vx + (y - ay) * vy) / len2));
+      const d = Math.hypot(x - ax - vx * k, y - ay - vy * k);
+      if (d <= r + 0.15 && this.get(x, y)) this.px(x, y, col);
+    }
+  }
   glow(x: number, y: number, c: string, a: number) {
     x = Math.round(x); y = Math.round(y);
     if (x < 0 || y < 0 || x >= this.w || y >= this.h || a <= 0.01) return;
@@ -221,6 +230,12 @@ class Grid {
   rotCW() {
     const n = new Grid(this.h, this.w);
     for (let y = 0; y < this.h; y++) for (let x = 0; x < this.w; x++) n.px(this.h - 1 - y, x, this.c[y * this.w + x]);
+    return n;
+  }
+  /** Rotate 90° counter-clockwise into a new grid of h x w. */
+  rotCCW() {
+    const n = new Grid(this.h, this.w);
+    for (let y = 0; y < this.h; y++) for (let x = 0; x < this.w; x++) n.px(y, this.w - 1 - x, this.c[y * this.w + x]);
     return n;
   }
   /** Copy painted cells of another grid at an offset. */
@@ -536,7 +551,7 @@ interface HairDef {
 }
 const HAIR: Record<HairStyle, HairDef> = {
   short: { fringe: [8, 6, 5, 4, 5, 4, 4, 4, 5, 5, 6, 8], side: 7, back: 12, sideFringe: 5 },
-  messy: { fringe: [11, 9, 6, 5, 7, 5, 4, 6, 5, 6, 9, 11], side: 10, back: 15, sideFringe: 6, tufts: [2, 5, 9] },
+  messy: { fringe: [11, 9, 6, 5, 7, 5, 4, 6, 5, 6, 9, 11], side: 10, back: 15, sideFringe: 6, tufts: [3, 8] },
   long: { fringe: [15, 11, 7, 5, 4, 3, 3, 4, 5, 7, 11, 15], side: 19, back: 25, sideFringe: 5 },
   ponytail: { fringe: [9, 7, 5, 4, 4, 3, 3, 4, 4, 5, 7, 9], side: 8, back: 12, sideFringe: 4, tail: "pony" },
   braid: { fringe: [11, 8, 5, 4, 3, 3, 3, 3, 4, 5, 8, 11], side: 10, back: 13, sideFringe: 4, tail: "braid" },
@@ -551,7 +566,7 @@ const HAIR: Record<HairStyle, HairDef> = {
 interface Head { x0: number; T: number; face: Face; view: "front" | "back" | "side" }
 
 const SCLERA = "#f3eee6";
-const lipOf = (L: Look) => mx(sh(L.skin, -0.42), L.fem ? "#c04a55" : "#9a4a48", L.fem ? 0.55 : 0.35);
+const lipOf = (L: Look) => (L.fem ? mx(skinTone(L.skin).d, "#c04a58", 0.5) : mx(skinTone(L.skin).d, "#8a4048", 0.3));
 const lineOf = (L: Look) => mx(sh(L.skin, -0.7), "#1c1018", 0.45);
 const browOf = (L: Look) => mx(sh(L.hair, -0.35), lineOf(L), 0.3);
 const blushOf = (L: Look) => mx(L.skin, "#e8705a", 0.22);
@@ -827,27 +842,33 @@ function hairSide(g: Grid, L: Look, h: Head, behind: boolean) {
   const sk = skinTone(L.skin);
   if (H.bald && L.hairStyle === "bald") { g.px(x0 + 5, T, sk.l2); g.px(x0 + 6, T, sk.l2); g.px(x0 + 4, T + 1, sk.l); return; }
   // columns over the skull, back of the head to the forehead
+  const TOPS: Record<number, number> = { [-1]: 3, 0: 1, 1: 0, 2: 0, 3: -1, 4: -1, 5: -1, 6: -1, 7: -1, 8: -1, 9: 0, 10: 1, 11: 2 };
+  const nape = Math.max(9, Math.min(H.back, 14));
   for (let i = -1; i <= 11; i++) {
     const x = x0 + i;
-    const prof = PROFILE[0];
-    let top = i >= prof[0] && i <= prof[1] ? T - 1 : i >= 1 && i <= 9 ? T : T + 2;
+    let top = T + TOPS[i];
     let bottom: number;
     if (L.hairStyle === "balding") {
-      if (i > 6) continue;
-      top = T + 4; bottom = T + 11;
-    } else if (i <= 4) bottom = T + Math.max(10, Math.min(H.back, 14)) - (i === -1 ? 1 : 0);
-    else if (i <= 6) bottom = T + Math.min(H.side, 8) - (H.side > 8 ? 0 : 1);
+      if (i > 5) continue;
+      top = T + 4; bottom = T + (i <= 3 ? 11 : 7);
+    } else if (i <= 3) bottom = T + nape - (i === -1 ? 2 : 0) - (i === 3 ? 1 : 0) + (i === 1 && nape > 11 ? 1 : 0);
+    else if (i <= 5) bottom = H.side > 10 ? T + H.side : T + 7;
+    else if (i === 6) bottom = T + Math.min(H.sideFringe + 1, 7);
     else bottom = T + H.sideFringe - (i >= 10 ? 1 : 0) - (i === 11 ? 1 : 0);
-    if (i >= 7 && H.sideFringe < 0) bottom = T + 1;
+    if (i >= 6 && H.sideFringe < 0) bottom = T + 1;
     if (i === 11 && H.sideFringe < 5) continue;
     for (let y = top; y <= bottom; y++) {
-      const u = 1 - (i + 1) / 13; // back of the head is the dark side
-      const strand = (i % 3 === 0 && y > top + 2) || (H.curly && (x + y) % 3 === 0);
-      let c = hairShade(t, 0.15 + u * 0.7, y, top, bottom, strand);
-      if (i <= 0) c = y > top + 1 ? t.d : t.b;
+      const depth = y - top;
+      let c = t.b;
+      if (depth <= 1 && i >= 1 && i <= 7) c = depth === 0 && i >= 3 && i <= 5 ? t.l2 : t.l;
+      else if (depth === 2 && i >= 2 && i <= 4) c = t.l;
+      else if (i <= 0) c = depth < 2 ? t.b : t.d;
+      else if ((i % 3 === 1 && depth > 2) || (H.curly && (x + y) % 3 === 0)) c = t.d;
+      else if (i >= 9 && depth > 1) c = t.d;
+      if (y === bottom && bottom - top > 2) c = y > T + 9 ? t.d2 : t.d;
       g.px(x, y, c);
     }
-    if (i >= 7 && bottom >= T + 3 && g.get(x, bottom + 1)) g.px(x, bottom + 1, sk.d);
+    if (i >= 6 && bottom >= T + 3 && g.get(x, bottom + 1)) g.px(x, bottom + 1, sk.d);
   }
   // a lock in front of the ear for long styles
   if (H.side > 10) for (let y = T + 6; y <= T + H.side; y++) { g.px(x0 + 5, y, y === T + H.side ? t.d2 : t.b); g.px(x0 + 6, y, t.d); }
@@ -1077,7 +1098,7 @@ function drawHead(g: Grid, L: Look, h: Head) {
 
 // ------------------------------------------------------------------ body
 type View = "front" | "back" | "side";
-interface Body { g: Grid; L: Look; D: Dims; R: Rig; view: View; T: number; sy: number; wy: number; hy: number }
+interface Body { g: Grid; L: Look; D: Dims; R: Rig; view: View; T: number; sy: number; wy: number; hy: number; cloakHem?: number }
 
 const ROPE = "#b39a64";
 const isLong = (o: Outfit) => o === "robe" || o === "gown";
@@ -1478,6 +1499,9 @@ function arm(g: Grid, L: Look, D: Dims, S: V, target: V, hint: V, far: boolean, 
   const A = armLook(L, far);
   const { mid, end } = ik(S, target, D.arm[0], D.arm[1], hint);
   const r = D.ar;
+  const cc = sh(A.upper.d2, -0.25);
+  g.contour(S[0], S[1] + 1.2, mid[0], mid[1], r + 0.9, cc);
+  g.contour(mid[0], mid[1], end[0], end[1], r + 0.8, cc);
   g.limb(S[0], S[1], mid[0], mid[1], r, [A.upper.d, A.upper.b, A.upper.l]);
   const dx = end[0] - mid[0], dy = end[1] - mid[1], dl = Math.hypot(dx, dy) || 1;
   const wrist: V = [end[0] - (dx / dl) * 0.8, end[1] - (dy / dl) * 0.8];
@@ -1576,7 +1600,7 @@ function cloakSideBehind(b: Body) {
   if (!L.cloak) return;
   const c = tone(L.cloak);
   const trail = R.cloak;
-  const hem = D.fy - (L.build === "child" ? 2 : 3);
+  const hem = b.cloakHem ?? D.fy - (L.build === "child" ? 2 : 3);
   const ln = Math.round(R.lean * 0.5);
   for (let y = sy - 1; y <= hem; y++) {
     const k = (y - sy) / (hem - sy);
@@ -1918,7 +1942,7 @@ function paint(L: Look, facing: Facing, pose: Pose, frame: number): Grid {
     const fx = view === "side" ? 18 + Math.round(R.lean) : 15.5;
     if ((R.glow ?? 0) > 0) g.halo(fx, T + 6, 2 + (R.glow ?? 0), L.magic, 0.18 * (R.glow ?? 0));
   }
-  if (pose === "hurt" && frame === 0) for (let i = 0; i < g.c.length; i++) { const v = g.c[i]; if (v) g.c[i] = mx(v, "#ff4a3a", 0.22); }
+  if (pose === "hurt" && frame === 0) for (let i = 0; i < g.c.length; i++) { const v = g.c[i]; if (v) g.c[i] = mx(v, "#ff5a48", 0.14); }
   return facing === "left" ? g.flip() : g;
 }
 
@@ -1954,23 +1978,23 @@ function paintDead(L: Look): Grid {
   const D = dims(L);
   const s = new Grid(32, 48);
   const R = rigSide("dead", 0, L.weapon);
-  R.hdy = 3; R.lean = 2;
-  R.fR = [5, 9]; R.fL = [3, 8];
+  R.hdy = 3; R.lean = 0;
+  R.fR = [-1, 13]; R.fL = [1, 12];
   const T = D.T + R.hdy;
-  const b: Body = { g: s, L, D, R, view: "side", T, sy: D.sy + 1, wy: D.wy, hy: D.hy };
+  const b: Body = { g: s, L, D, R, view: "side", T, sy: D.sy + 1, wy: D.wy, hy: D.hy, cloakHem: D.hy + 1 };
   const ln = Math.round(R.lean);
   const S: V = [15 + ln, b.sy + 2];
   cloakSideBehind(b);
   hairSide(s, L, { x0: 10 + ln + 1, T, face: "dead", view: "side" }, true);
-  arm(s, L, D, [16 + ln, b.sy + 2], add(S, [4, 7]), [-0.4, 1], true);
+  arm(s, L, D, [16 + ln, b.sy + 2], add(S, [2, 8]), [0.4, 1], true);
   legsSide(b, true); legsSide(b, false);
   torsoSide(b);
   mantleSide(b, S);
   const sk = skinTone(L.skin);
   for (let y = T + 14; y <= b.sy; y++) { s.px(14 + ln, y, sk.d); s.px(15 + ln, y, sk.b); s.px(16 + ln, y, sk.d); }
   drawHead(s, L, { x0: 10 + ln + 1, T, face: "dead", view: "side" });
-  arm(s, L, D, S, add(S, [6, 6]), [-0.4, 1], false);
-  const r = s.rotCW();
+  arm(s, L, D, S, add(S, [-1, 9]), [0.4, 1], false);
+  const r = s.rotCCW();
   let x0 = 99, x1 = -1, y1 = -1;
   for (let y = 0; y < r.h; y++) for (let x = 0; x < r.w; x++) if (r.get(x, y)) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
   const g = new Grid(32, 48);
@@ -1981,7 +2005,9 @@ function paintDead(L: Look): Grid {
     else drawWeapon(g, L, L.weapon, [Math.round(16 - len / 2) + 2, 44], -4, { flipEdge: true });
   }
   if (L.off === "shield") drawShield(g, L, [25, 42], "front");
-  g.blit(r, Math.round((32 - (x1 - x0 + 1)) / 2) - x0, 46 - y1);
+  // centre it; if it is too long, keep the head (left side) and lose the feet
+  const bw = x1 - x0 + 1;
+  g.blit(r, bw <= 30 ? Math.round((32 - bw) / 2) - x0 : 1 - x0, 46 - y1);
   g.outline();
   return g;
 }

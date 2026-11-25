@@ -143,7 +143,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
         await sleep(170);
         slash(foeA.x - 6, gy - 26, r.foeLoss >= 6);
         if (r.foeLoss > 0) {
-          foeA.flash = stage.now + 120; foeA.shake = stage.now + 260;
+          foeA.shake = stage.now + 260;
           stage.play(foeA, "hurt", 300);
           stage.burst(foeA.x, gy - 26, "#ffefc0", 10 + r.foeLoss, 1.8, { glow: true });
           stage.float(`−${r.foeLoss}`, foeA.x, gy - 50, r.foeLoss >= 6 ? "#ffd24a" : "#fff", r.foeLoss >= 6);
