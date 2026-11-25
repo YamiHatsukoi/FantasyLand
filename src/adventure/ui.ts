@@ -166,7 +166,8 @@ export class StageFit {
 
   /** Horizontal centre of the cast (art pixels). */
   private focus() {
-    const xs = this.stage.actors.filter((a) => !a.hidden && a.x > -10 && a.x < SW + 10).map((a) => a.x);
+    if (this.stage.focusX !== undefined) return this.stage.viewX(this.stage.focusX);
+    const xs = this.stage.actors.filter((a) => !a.hidden && (a.alpha ?? 1) > 0.2 && a.x > -10 && a.x < SW + 10).map((a) => this.stage.viewX(a.x));
     if (!xs.length) return SW / 2;
     return (Math.min(...xs) + Math.max(...xs)) / 2;
   }

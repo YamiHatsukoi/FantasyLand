@@ -1911,63 +1911,48 @@ function attachSpots(g: Gen, spots: ExploreOpts["spots"], actorIds: string[], en
   const sideOpen = new Set<Side>(spots.filter((s) => s.via.exit).map((s) => s.via.exit!));
   if (entry) sideOpen.add(entry);
 
-  // ---- exits
-  for (const s of spots) {
-    const side = s.via.exit;
-    if (!side) continue;
-    let end = g.ends[side];
-    if (!end || usedSides.has(side)) {
-      // a second way out on the same side: a branch off the hub
-      const p = g.edgePoint(side, 9);
-      const shift = usedSides.has(side) ? (side === "north" || side === "south" ? { x: p.x < g.hub.x ? -6 : 6, y: 0 } : { x: 0, y: p.y < g.hub.y ? -5 : 5 }) : { x: 0, y: 0 };
-      end = { x: clamp(p.x + shift.x, 2, g.w - 3), y: clamp(p.y + shift.y, 2, g.h - 3) };
-      if (side === "north") end.y = 0; if (side === "south") end.y = g.h - 1; if (side === "west") end.x = 0; if (side === "east") end.x = g.w - 1;
-      const floor = g.kind === "under" ? (bg === "dungeon" ? G.FLAG : G.CAVE) : g.kind === "interior" ? g.gnd[g.i(g.hub.x, g.hub.y)] : g.kind === "settle" ? (bg === "village" ? G.DIRT : G.COBBLE) : G.DIRT;
-      g.road(g.hub, end, floor, 1, 0.2, (cur) => (cur === G.WALL && g.kind !== "under" ? (g.kind === "settle" ? G.GATE : floor) : WATERY.has(cur) ? G.BRIDGE : floor));
+  if (g.plan) locSpots(g, spots, out, zoneOf);
+  else {
+    // ---- exits
+    for (const s of spots) {
+      const side = s.via.exit;
+      if (!side) continue;
+      let end = g.ends[side];
+      if (!end || usedSides.has(side)) {
+        // a second way out on the same side: a branch off the hub
+        const p = g.edgePoint(side, 9);
+        const shift = usedSides.has(side) ? (side === "north" || side === "south" ? { x: p.x < g.hub.x ? -6 : 6, y: 0 } : { x: 0, y: p.y < g.hub.y ? -5 : 5 }) : { x: 0, y: 0 };
+        end = { x: clamp(p.x + shift.x, 2, g.w - 3), y: clamp(p.y + shift.y, 2, g.h - 3) };
+        if (side === "north") end.y = 0; if (side === "south") end.y = g.h - 1; if (side === "west") end.x = 0; if (side === "east") end.x = g.w - 1;
+        const floor = g.kind === "under" ? (bg === "dungeon" ? G.FLAG : G.CAVE) : g.kind === "interior" ? g.gnd[g.i(g.hub.x, g.hub.y)] : g.kind === "settle" ? (bg === "village" ? G.DIRT : G.COBBLE) : G.DIRT;
+        g.road(g.hub, end, floor, 1, 0.2, (cur) => (cur === G.WALL && g.kind !== "under" ? (g.kind === "settle" ? G.GATE : floor) : WATERY.has(cur) ? G.BRIDGE : floor));
+      }
+      usedSides.add(side);
+      if (g.kind === "interior") g.set(end.x, end.y, g.gnd[g.i(g.hub.x, g.hub.y)]);
+      if (g.kind === "ship") shipGangway(g, side, end);
+      out.push(edgeSpot(g, s, side, end, zoneOf));
+      signpost(g, side, end);
     }
-    usedSides.add(side);
-    const v = SIDE_V[side];
-    if (g.kind === "interior") g.set(end.x, end.y, g.gnd[g.i(g.hub.x, g.hub.y)]);
-    if (g.kind === "ship") shipGangway(g, side, end);
-    const stand = { x: end.x - v.x, y: end.y - v.y };
-    const zonePts = [end, stand];
-    for (const [dx, dy] of DIR4) { const q = { x: end.x + dx, y: end.y + dy }; if (g.open(q.x, q.y) && (dx === v.x || dy === v.y ? false : true)) zonePts.push(q, { x: q.x - v.x, y: q.y - v.y }); }
-    const sp: PSpot = {
-      key: s.key, label: s.label, via: s.via, locked: s.locked, kind: "exit", stand, zone: zoneOf(zonePts.filter((p) => g.open(p.x, p.y))),
-      ax: end.x * TW + TW / 2 + v.x * -8, ay: end.y * TW + (side === "south" ? 0 : side === "north" ? TW : 4), side,
-      hit: { x0: Math.min(end.x, stand.x) * TW - TW, y0: Math.min(end.y, stand.y) * TW - TW, x1: (Math.max(end.x, stand.x) + 2) * TW, y1: (Math.max(end.y, stand.y) + 2) * TW },
-      face: v,
-    };
-    g.markKeep(end.x - 1, end.y - 1, 3, 3);
-    g.markKeep(stand.x - 1, stand.y - 1, 3, 3);
-    out.push(sp);
-    // a signpost pointing out of the area
-    if (g.kind === "wild" || g.kind === "settle") {
-      const at = { x: end.x - v.x * 3 + (v.x ? 0 : 1), y: end.y - v.y * 3 + (v.y ? 0 : -1) };
-      const alt = [{ x: at.x, y: at.y }, { x: at.x - (v.x ? 0 : 2), y: at.y }, { x: at.x, y: at.y + (v.y ? 0 : 2) }, { x: at.x + (v.x ? 0 : 1), y: at.y }];
-      const spot = alt.find((p) => g.inb(p.x, p.y) && g.free(p.x, p.y, 1, 1) && g.get(p.x, p.y) !== G.BRIDGE && !(g.kind === "settle" && (bg === "city" || bg === "castle") && g.get(p.x, p.y) === G.WALL));
-      if (spot) g.sprite(prop("signpost", side[0]), spot.x, spot.y, 1, 1, { dy: 2 });
+    if (g.kind === "ship" && entry && !usedSides.has(entry) && g.ends[entry]) shipGangway(g, entry, g.ends[entry]!);
+    // ---- closed sides: a fence, rubble or a shut gate
+    for (const side of SIDES) {
+      if (sideOpen.has(side)) continue;
+      const end = g.ends[side];
+      if (!end) continue;
+      g.closed.push(side);
+      closeSide(g, side, end);
     }
-  }
-  if (g.kind === "ship" && entry && !usedSides.has(entry) && g.ends[entry]) shipGangway(g, entry, g.ends[entry]!);
-  // ---- closed sides: a fence, rubble or a shut gate
-  for (const side of SIDES) {
-    if (sideOpen.has(side)) continue;
-    const end = g.ends[side];
-    if (!end) continue;
-    g.closed.push(side);
-    closeSide(g, side, end);
-  }
 
-  // ---- doors
-  const doorSpots = spots.filter((s) => s.via.door && !s.via.exit);
-  for (const s of doorSpots) {
-    const slot = g.doorSlots.find((d) => !d.used && (d.style !== "keep" || doorStyle(s.label, g.kind, bg) === "keep" || g.doorSlots.filter((x) => !x.used).length === 1))
-      ?? g.doorSlots.find((d) => !d.used);
-    if (!slot) { spots.push({ ...s, via: { object: s.label } }); continue; }
-    slot.used = true;
-    const style = slot.style ?? doorStyle(s.label, g.kind, bg);
-    out.push(placeDoor(g, slot, style, s, zoneOf));
+    // ---- doors
+    const doorSpots = spots.filter((s) => s.via.door && !s.via.exit);
+    for (const s of doorSpots) {
+      const slot = g.doorSlots.find((d) => !d.used && (d.style !== "keep" || doorStyle(s.label, g.kind, bg) === "keep" || g.doorSlots.filter((x) => !x.used).length === 1))
+        ?? g.doorSlots.find((d) => !d.used);
+      if (!slot) { spots.push({ ...s, via: { object: s.label } }); continue; }
+      slot.used = true;
+      const style = slot.style ?? doorStyle(s.label, g.kind, bg);
+      out.push(placeDoor(g, slot, style, s, zoneOf));
+    }
   }
 
   // ---- people
@@ -1975,7 +1960,7 @@ function attachSpots(g: Gen, spots: ExploreOpts["spots"], actorIds: string[], en
   const others = actorIds.filter((id) => id !== "lonewolf" && id !== "hero");
   let slotI = 0;
   const takeSlot = (pref?: (p: Pt) => number): Pt | null => {
-    const free = g.npcSlots.filter((p) => g.walk(p.x, p.y) && !g.keep[g.i(p.x, p.y)] || (g.walk(p.x, p.y) && g.kind !== "wild"));
+    const free = g.npcSlots.filter((p) => g.walk(p.x, p.y) && (!!g.plan || !g.keep[g.i(p.x, p.y)] || g.kind !== "wild"));
     if (pref) free.sort((a, b) => pref(a) - pref(b));
     const p = (pref ? free[0] : free[slotI++ % Math.max(1, free.length)]) ?? g.nearFree(g.hub, (x, y) => g.walk(x, y) && !g.block[g.i(x, y)]);
     if (!p) return null;
@@ -2046,6 +2031,33 @@ function attachSpots(g: Gen, spots: ExploreOpts["spots"], actorIds: string[], en
   return { spots: out, npcs };
 }
 
+/** The spot of a way out at the edge of the map (`end` on the edge, the hero stands one tile in). */
+function edgeSpot(g: Gen, s: { key: number; label: string; via: Via; locked?: string }, side: Side, end: Pt, zoneOf: (p: Pt[]) => Set<number>): PSpot {
+  const v = SIDE_V[side];
+  const stand = { x: end.x - v.x, y: end.y - v.y };
+  const zonePts = [end, stand];
+  for (const [dx, dy] of DIR4) { const q = { x: end.x + dx, y: end.y + dy }; if (g.open(q.x, q.y) && (dx === v.x || dy === v.y ? false : true)) zonePts.push(q, { x: q.x - v.x, y: q.y - v.y }); }
+  g.markKeep(end.x - 1, end.y - 1, 3, 3);
+  g.markKeep(stand.x - 1, stand.y - 1, 3, 3);
+  return {
+    key: s.key, label: s.label, via: s.via, locked: s.locked, kind: "exit", stand, zone: zoneOf(zonePts.filter((p) => g.open(p.x, p.y))),
+    ax: end.x * TW + TW / 2 + v.x * -8, ay: end.y * TW + (side === "south" ? 0 : side === "north" ? TW : 4), side, end,
+    hit: { x0: Math.min(end.x, stand.x) * TW - TW, y0: Math.min(end.y, stand.y) * TW - TW, x1: (Math.max(end.x, stand.x) + 2) * TW, y1: (Math.max(end.y, stand.y) + 2) * TW },
+    face: v,
+  };
+}
+
+/** A signpost by a way out, pointing out of the area (outdoors). */
+function signpost(g: Gen, side: Side, end: Pt) {
+  if (g.kind !== "wild" && g.kind !== "settle") return null;
+  const v = SIDE_V[side], bg = g.scene.bg;
+  const at = { x: end.x - v.x * 3 + (v.x ? 0 : 1), y: end.y - v.y * 3 + (v.y ? 0 : -1) };
+  const alt = [{ x: at.x, y: at.y }, { x: at.x - (v.x ? 0 : 2), y: at.y }, { x: at.x, y: at.y + (v.y ? 0 : 2) }, { x: at.x + (v.x ? 0 : 1), y: at.y }];
+  const spot = alt.find((p) => g.inb(p.x, p.y) && g.free(p.x, p.y, 1, 1) && g.get(p.x, p.y) !== G.BRIDGE && !(g.kind === "settle" && (bg === "city" || bg === "castle") && g.get(p.x, p.y) === G.WALL));
+  if (spot) g.sprite(prop("signpost", side[0]), spot.x, spot.y, 1, 1, { dy: 2 });
+  return spot ?? null;
+}
+
 function shipGangway(g: Gen, side: Side, end: Pt) {
   const v = SIDE_V[side];
   // walk from the edge toward the hull until the deck
@@ -2106,7 +2118,7 @@ function closeSide(g: Gen, side: Side, end: Pt) {
   }
 }
 
-function placeDoor(g: Gen, slot: Gen["doorSlots"][0], style: BStyle, s: ExploreOpts["spots"][0], zoneOf: (p: Pt[]) => Set<number>): PSpot {
+function placeDoor(g: Gen, slot: Gen["doorSlots"][0], style: BStyle, s: ExploreOpts["spots"][0], zoneOf: (p: Pt[]) => Set<number>, closed = false): PSpot {
   const base = { key: s.key, label: s.label, via: s.via, locked: s.locked, kind: "door" as const };
   if (slot.wall) {
     // a door in a wall face (interiors, dungeons, ship hatches)
@@ -2140,12 +2152,11 @@ function placeDoor(g: Gen, slot: Gen["doorSlots"][0], style: BStyle, s: ExploreO
     return { ...base, stand, zone: zoneOf([stand]), ax: x * TW + TW / 2, ay: (y - 1) * TW - 6, hit: { x0: x * TW - 6, y0: (y - 1) * TW, x1: x * TW + TW + 6, y1: (y + 2) * TW }, face: { x: 0, y: -1 } };
   }
   // a building on a footprint, door at the bottom middle
-  const size: Record<BStyle, [number, number]> = { house: [3, 2], cottage: [3, 2], inn: [5, 3], shop: [3, 2], smith: [3, 2], temple: [5, 3], tower: [3, 3], keep: [7, 4], hut: [3, 2], tent: [3, 2], cave: [3, 2], ruin: [3, 2], barn: [5, 2], manor: [5, 3], gatehouse: [3, 2], stable: [5, 2] };
-  let [tw, th] = size[style];
+  let [tw, th] = BSIZE[style];
   tw = Math.min(tw, slot.tw); th = Math.min(th, slot.th);
   if (tw % 2 === 0) tw--;
   const x0 = slot.x + ((slot.tw - tw) >> 1), y0 = slot.y + slot.th - th;
-  const img = buildingSprite({ style, tw, th, lit: g.lit, seed: (g.seed + slot.x * 31 + slot.y * 7) >>> 0, snow: g.scene.weather === "snow" });
+  const img = buildingSprite({ style, tw, th, lit: g.lit, seed: (g.seed + slot.x * 31 + slot.y * 7) >>> 0, snow: g.scene.weather === "snow", ...(closed ? { closed: true } : {}) });
   for (let y = y0; y < y0 + th; y++) for (let x = x0; x < x0 + tw; x++) { g.set(x, y, G.GRASS); g.keep[g.i(x, y)] = 1; }
   g.put({ x: (x0 + tw / 2) * TW, y: (y0 + th) * TW, img, s: 2, fade: true }, x0, y0, tw, th);
   houseExtras(g, style, x0, y0, tw, th, img);
@@ -2160,6 +2171,9 @@ function placeDoor(g: Gen, slot: Gen["doorSlots"][0], style: BStyle, s: ExploreO
     face: { x: 0, y: -1 },
   };
 }
+
+/** Footprint (tiles) of each building style. */
+const BSIZE: Record<BStyle, [number, number]> = { house: [3, 2], cottage: [3, 2], inn: [5, 3], shop: [3, 2], smith: [3, 2], temple: [5, 3], tower: [3, 3], keep: [7, 4], hut: [3, 2], tent: [3, 2], cave: [3, 2], ruin: [3, 2], barn: [5, 2], manor: [5, 3], gatehouse: [3, 2], stable: [5, 2] };
 
 /** Light, smoke and glow that come with a building. */
 function houseExtras(g: Gen, style: BStyle, x0: number, y0: number, tw: number, th: number, img: HTMLCanvasElement) {
@@ -2186,7 +2200,10 @@ function houseExtras(g: Gen, style: BStyle, x0: number, y0: number, tw: number, 
 function placeObject(g: Gen, kind: ObjectKind, s: ExploreOpts["spots"][0], zoneOf: (p: Pt[]) => Set<number>, r: Rng): PSpot | null {
   const bg = g.scene.bg;
   let at: Pt | null = null;
-  if (kind === "boat") {
+  // location mode: the place's own landmark of that kind (its well, its boat, its campfire...) is the thing
+  const mark = g.plan ? g.marks.find((m) => !m.taken && (m.kind === kind || (kind === "sign" && m.kind === "stone"))) : undefined;
+  if (mark) { mark.taken = true; at = { x: mark.x, y: mark.y }; }
+  if (!mark && kind === "boat") {
     // on the water, next to a walkable shore near the middle
     let best: Pt | null = null, bd = Infinity;
     for (let y = 1; y < g.h - 1; y++) for (let x = 1; x < g.w - 2; x++) {
@@ -2212,10 +2229,10 @@ function placeObject(g: Gen, kind: ObjectKind, s: ExploreOpts["spots"][0], zoneO
   if (!at) return null;
   const { x, y } = at;
   const cx = x * TW + TW / 2, foot = (y + 1) * TW;
-  let topY = foot - 40;
+  let topY = mark ? mark.top : foot - 40;
   let walkable = false;
   const put = (img: HTMLCanvasElement, o: Partial<Obj> = {}) => { const ob = g.put({ x: cx, y: foot - 3, img, s: 2, ...o }, x, y, 1, 1, walkable); topY = foot - img.height * (o.s ?? 2) - 3; return ob; };
-  switch (kind) {
+  if (!mark) switch (kind) {
     case "well": put(prop("well")); break;
     case "chest": put(propCanvas("chest"), { live: sparkleLive }); break;
     case "corpse": {
