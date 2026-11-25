@@ -8,6 +8,7 @@ import { playMusic } from "../audio/music";
 import { sfx } from "../audio/sfx";
 import { h, nn, sleep } from "../ui/dom";
 import { iconEl, uiIcon } from "./art/icons";
+import { bump, gameBtn, StageFit } from "./ui";
 import { portrait, withWeapon } from "./art/people";
 import { battleExit, canEvade, epMax, heroCs, itemName, playRound, profile, startBattle, type Battle, type RoundResult } from "./engine";
 import { Stage, type Actor, W as SW } from "./stage";
@@ -18,9 +19,22 @@ const FOE_X = 224;
 
 function bar(cls: string) {
   const fill = h("i");
+  const ghost = h("u");
   const label = h("b");
-  const el = h("div", { class: `adv-bar ${cls}` }, h("div", { class: "adv-bar-track" }, fill), label);
-  return { el, set: (v: number, max: number) => { fill.style.width = `${Math.max(0, Math.min(100, (100 * v) / max))}%`; label.textContent = `${Math.max(0, v)}/${max}`; } };
+  const el = h("div", { class: `adv-bar ${cls}` }, h("div", { class: "adv-bar-track" }, ghost, fill), label);
+  let prev = -1;
+  return {
+    el,
+    set: (v: number, max: number) => {
+      const p = `${Math.max(0, Math.min(100, (100 * v) / max))}%`;
+      fill.style.width = p;
+      // the lost part lingers a moment, then drains (fighting-game style)
+      setTimeout(() => { ghost.style.width = p; }, 380);
+      if (prev >= 0 && v < prev) bump(el, "hit");
+      prev = v;
+      label.textContent = `${Math.max(0, v)}/${max}`;
+    },
+  };
 }
 
 export interface FightResult {
@@ -42,30 +56,34 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
     const stage = new Stage({ bg: sec.scene.bg, time: sec.scene.time, weather: sec.scene.weather, mood: "combat", seed: `${book.id}-${s.section}` }, "adv-stage battle");
     const gy = stage.scene.groundY;
     const hero: Actor = { id: "lonewolf", look: heroLook, x: HERO_X, y: gy, facing: "right", pose: "idle", phase: 0 };
-    const foeActors: Actor[] = b.foes.map((f, i) => ({ id: f.def.name, x: i === 0 ? FOE_X : SW + 40, y: gy, facing: "left", pose: "idle", phase: 200 * i }));
+    const foeActors: Actor[] = b.foes.map((f, i) => ({ id: f.def.actor ?? f.def.name, x: i === 0 ? FOE_X : SW + 40, y: gy, facing: "left", pose: "idle", phase: 200 * i }));
     stage.actors = [hero, ...foeActors];
 
-    // HUD
+    // HUD over the arena, controls in a framed panel (below on phones, beside on wide screens)
     const heroBar = bar("hero");
     const foeBar = bar("foe");
     const foeName = h("div", { class: "adv-fname" });
     const foeCs = h("div", { class: "adv-fcs" });
-    const ratioEl = h("div", { class: "adv-ratio" });
+    const ratioEl = h("div", { class: "adv-ratio fr-panel" });
     const csList = h("div", { class: "adv-cs-list" });
     const wheel = h("div", { class: "adv-wheel" }, ...Array.from({ length: 10 }, (_, i) => h("span", { "data-n": String(i) }, String(i))));
     const log = h("div", { class: "adv-flog" });
     const actions = h("div", { class: "adv-factions" });
     const banner = h("div", { class: "adv-fbanner" });
+    const arena = h("div", { class: "adv-fight-scene" });
+    const heroFace = iconEl(portrait(heroLook), 2, "adv-face");
     const el = h("div", { class: "adv-fight" },
-      h("div", { class: "adv-fight-stage" }, stage.canvas,
+      h("div", { class: "adv-fight-stage" }, arena, h("div", { class: "adv-scene-shade" }),
         h("div", { class: "adv-fhud" },
-          h("div", { class: "adv-fside hero" }, portrait(heroLook), h("div", null, h("div", { class: "adv-fname" }, s.name), heroBar.el)),
-          h("div", { class: "adv-fside foe" }, h("div", null, foeName, foeBar.el, foeCs))),
+          h("div", { class: "adv-fside hero fr-chip" }, h("span", { class: "adv-fface" }, heroFace), h("div", null, h("div", { class: "adv-fname" }, s.name), heroBar.el)),
+          ratioEl,
+          h("div", { class: "adv-fside foe fr-foe" }, h("div", null, foeName, foeBar.el, foeCs))),
         banner),
-      h("div", { class: "adv-fpanel" },
-        h("div", { class: "adv-frow" }, ratioEl, wheel),
-        csList, log, actions));
+      h("div", { class: "adv-fpanel fr-panel" },
+        h("div", { class: "adv-fpanel-t" }, h("span", null, "Bốc số mỗi hiệp"), csList),
+        wheel, log, actions));
     host.append(el);
+    const fit = new StageFit(arena, stage, { minVis: 0.62, anchorY: 0.82 });
 
     const say = (t: string, cls = "") => {
       log.prepend(h("div", { class: cls }, t));
@@ -81,27 +99,28 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       foeCs.replaceChildren(iconEl(uiIcon("cs"), 1), ` ${foe.def.cs}`);
       const cs = heroCs(book, s, c, foe.def, b.mind, b.round);
       const ratio = cs.total - foe.def.cs;
-      ratioEl.replaceChildren(h("span", null, "Chênh lệch"), h("b", { class: ratio >= 0 ? "good" : "bad" }, `${ratio > 0 ? "+" : ""}${ratio}`));
-      csList.replaceChildren(h("span", null, iconEl(uiIcon("cs"), 1), ` Kỹ Năng Chiến Đấu ${cs.total}`),
+      ratioEl.replaceChildren(h("span", null, "Tỉ lệ"), h("b", { class: ratio >= 0 ? "good" : "bad" }, `${ratio > 0 ? "+" : ""}${ratio}`));
+      csList.replaceChildren(h("span", null, iconEl(uiIcon("cs"), 1), ` KNCĐ ${cs.total}`),
         ...cs.parts.slice(1).map((p) => h("span", { class: p.v >= 0 ? "good" : "bad" }, `${p.label} ${p.v > 0 ? "+" : ""}${p.v}`)));
-      const btn = (label: string, icon: Parameters<typeof uiIcon>[0], f: () => void, cls = "", disabled = false) =>
-        h("button", { class: `btn ${cls}`, type: "button", disabled: busy || disabled, onclick: f }, iconEl(uiIcon(icon), 2), label);
       const minds = prof.mind.map((m, i) => ({ m, i })).filter(({ m }) => s.disciplines.includes(m[0]));
+      const evadeOk = c.evade ? canEvade(book, s, b) : false;
       actions.replaceChildren(...nn(
-        btn("Đánh", "cs", () => void round(false), "primary big"),
-        ...minds.length ? [btn(b.mind >= 0 ? `${book.names.disc[prof.mind[b.mind][0]]} +${prof.mind[b.mind][1]}${prof.mind[b.mind][2] ? ` (−${prof.mind[b.mind][2]})` : ""}` : "Không dùng tâm lực", "mind", () => {
-          // cycle: each mind option, then none
-          const order = [...minds.map((x) => x.i), -1];
-          b.mind = order[(order.indexOf(b.mind) + 1) % order.length];
-          render();
-        }, b.mind >= 0 ? "on" : "")] : [],
-        c.evade ? btn(canEvade(book, s, b) ? "Chạy trốn" : `Chạy trốn (sau ${c.evade.after - b.round} hiệp)`, "flee", () => void round(true), "", !canEvade(book, s, b)) : null,
+        minds.length || c.evade ? h("div", { class: "adv-fsub" }, ...nn(
+          minds.length ? gameBtn(b.mind >= 0 ? `${book.names.disc[prof.mind[b.mind][0]]} +${prof.mind[b.mind][1]}${prof.mind[b.mind][2] ? ` (−${prof.mind[b.mind][2]})` : ""}` : "Không dùng tâm lực", () => {
+            // cycle: each mind option, then none
+            const order = [...minds.map((x) => x.i), -1];
+            b.mind = order[(order.indexOf(b.mind) + 1) % order.length];
+            render();
+          }, { kind: b.mind >= 0 ? "mind" : "btn", icon: "mind", cls: `adv-mind ${b.mind >= 0 ? "on" : ""}`, disabled: busy }) : null,
+          c.evade ? gameBtn(evadeOk ? "Chạy trốn" : `Chạy trốn (sau ${c.evade.after - b.round} hiệp)`, () => void round(true), { icon: "flee", disabled: busy || !evadeOk }) : null)) : null,
+        gameBtn("Tấn công", () => void round(false), { kind: "red", icon: "cs", cls: "adv-attack block big", disabled: busy }),
       ));
     }
 
     async function spin(n: number) {
       const cells = [...wheel.children] as HTMLElement[];
       wheel.classList.add("spinning");
+      el.classList.add("rolling");
       const turns = 14 + n;
       for (let i = 0; i <= turns; i++) {
         cells.forEach((x) => x.classList.toggle("lit", Number(x.dataset.n) === i % 10));
@@ -109,7 +128,9 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
         await sleep(30 + i * 4);
       }
       wheel.classList.remove("spinning");
+      el.classList.remove("rolling");
       cells.forEach((x) => x.classList.toggle("lit", Number(x.dataset.n) === n));
+      bump(cells[n], "won");
     }
 
     async function round(evade: boolean) {
@@ -169,6 +190,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
         stage.burst(hero.x, gy - 26, "#ff5a5a", 8 + heroLossCombat, 1.5);
         stage.float(`−${heroLossCombat}`, hero.x, gy - 50, "#ff6b6b", heroLossCombat >= 6);
         stage.shake(160);
+        bump(el, "hurt");
         say(`Bạn mất ${heroLossCombat} Sức Bền.`, "bad");
       } else if (!r.foeKilled) { stage.float("Đỡ được", hero.x, gy - 50, "#cfe"); sfx("shield"); }
       if (r.mindCost) { stage.float(`−${r.mindCost} tâm lực`, hero.x, gy - 62, "#c9a2ff"); }
@@ -241,12 +263,17 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       const title = win ? "CHIẾN THẮNG" : b.over === "evaded" ? "ĐÃ THOÁT" : b.over === "timeout" ? (c.compare ? "HẾT HIỆP" : "HẾT GIỜ") : b.over === "beaten" ? "THUA TRẬN" : b.over === "hurt" ? "TRÚNG ĐÒN!" : "BẠI TRẬN";
       if (win) { hero.pose = "idle"; stage.play(hero, "cast", 900); stage.burst(hero.x, gy - 40, "#ffd27a", 30, 2.2, { glow: true }); }
       sfx(b.over === "lose" ? "defeat" : "victory");
-      const done = (to: string | null) => { stage.destroy(); el.remove(); playMusic("title"); resolve({ battle: b, exit: to }); };
+      const done = (to: string | null) => { fit.destroy(); stage.destroy(); el.classList.add("out"); setTimeout(() => el.remove(), 250); playMusic("title"); resolve({ battle: b, exit: to }); };
       const alts = b.over === "evaded" ? c.evade?.alt ?? [] : [];
       const buttons = alts.length
-        ? [h("button", { class: "btn primary", type: "button", onclick: () => done(exit) }, "Chạy theo lối đã định"), ...alts.map((a) => h("button", { class: "btn", type: "button", onclick: () => done(a.to) }, a.text))]
-        : [h("button", { class: "btn primary big", type: "button", onclick: () => done(exit) }, "Tiếp tục")];
-      banner.replaceChildren(h("div", { class: `adv-fbanner-box ${b.over}` }, h("div", { class: "t" }, title), ...buttons));
+        ? [gameBtn("Chạy theo lối đã định", () => done(exit), { kind: "gold", cls: "block" }), ...alts.map((a) => gameBtn(a.text, () => done(a.to), { cls: "block" }))]
+        : [gameBtn("Tiếp tục", () => done(exit), { kind: "gold", cls: "block big" })];
+      const good = win || b.over === "evaded";
+      banner.replaceChildren(h("div", { class: `adv-fbanner-box fr-panel ${b.over} ${good ? "good" : "badend"}` },
+        iconEl(uiIcon(win ? "trophy" : b.over === "evaded" ? "flee" : "skull"), 3),
+        h("div", { class: "t" }, title),
+        h("div", { class: "sub" }, `${b.round} hiệp · Sức Bền ${Math.max(0, s.ep)}/${epMax(book, s)}`),
+        h("div", { class: "btns" }, ...buttons)));
       banner.classList.add("show");
     }
 

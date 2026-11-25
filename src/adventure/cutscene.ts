@@ -8,6 +8,7 @@ import { sfx } from "../audio/sfx";
 import { h, sleep } from "../ui/dom";
 import { isPersonActor, portrait, type Look } from "./art/people";
 import { Stage, W as SW } from "./stage";
+import { StageFit } from "./ui";
 import type { Book, Section } from "./types";
 
 interface Beat {
@@ -49,11 +50,14 @@ export function playCutscene(host: HTMLElement, book: Book, sid: string, heroLoo
   const targets = actors.map((a) => ({ x: a.x, y: a.y }));
   actors.forEach((a, i) => { a.x = i === 0 ? -20 : SW + 20 + i * 18; });
 
-  const caption = h("div", { class: "adv-cine-caption" });
-  const dlg = h("div", { class: "adv-cine-dlg" });
-  const skip = h("button", { class: "btn small adv-cine-skip", type: "button" }, "Bỏ qua ▸▸");
-  const el = h("div", { class: "adv-cine" }, h("div", { class: "adv-cine-bar top" }), stage.canvas, h("div", { class: "adv-cine-bar bottom" }), caption, dlg, skip);
+  const caption = h("div", { class: "adv-cine-caption fr-glass" });
+  const dlg = h("div", { class: "adv-cine-dlg fr-panel" });
+  const skip = h("button", { class: "adv-gbtn fr-btn adv-cine-skip", type: "button" }, h("span", null, "Bỏ qua"), h("i", { class: "adv-ff" }));
+  const box = h("div", { class: "adv-cine-scene" });
+  const el = h("div", { class: "adv-cine" }, box, h("div", { class: "adv-cine-bar top" }), h("div", { class: "adv-cine-bar bottom" }), caption, dlg, skip);
   host.append(el);
+  const fit = new StageFit(box, stage, { minVis: 0.6, anchorY: 0.66 });
+  const nameOf = (id: string) => (book.actors?.[id]?.split(/\s+[-–]\s+/)[0] ?? id.split("-").map((w) => w[0].toUpperCase() + w.slice(1)).join(" "));
 
   let skipped = false;
   let advance: (() => void) | null = null;
@@ -64,7 +68,7 @@ export function playCutscene(host: HTMLElement, book: Book, sid: string, heroLoo
       if (skipped) return;
       skipped = true;
       el.classList.add("out");
-      setTimeout(() => { stage.destroy(); el.remove(); resolve(); }, 350);
+      setTimeout(() => { fit.destroy(); stage.destroy(); el.remove(); resolve(); }, 350);
     };
     skip.onclick = (e) => { e.stopPropagation(); end(); };
     const waitTap = (ms: number) => new Promise<void>((res) => {
@@ -73,6 +77,7 @@ export function playCutscene(host: HTMLElement, book: Book, sid: string, heroLoo
     });
     const typeOut = async (box: HTMLElement, text: string) => {
       box.textContent = "";
+      el.classList.add("typing");
       let fast = false;
       advance = () => { fast = true; };
       for (let i = 0; i < text.length && !skipped; i++) {
@@ -80,6 +85,7 @@ export function playCutscene(host: HTMLElement, book: Book, sid: string, heroLoo
         if (!fast && i % 2 === 0) await sleep(16);
       }
       advance = null;
+      el.classList.remove("typing");
     };
     void (async () => {
       sfx("transition");
@@ -90,14 +96,16 @@ export function playCutscene(host: HTMLElement, book: Book, sid: string, heroLoo
         if (bt.kind === "tell") {
           dlg.classList.remove("show");
           caption.classList.add("show");
-          await typeOut(caption, bt.text);
+          const ct = h("div", { class: "t" });
+          caption.replaceChildren(ct, h("i", { class: "adv-next" }));
+          await typeOut(ct, bt.text);
         } else {
           caption.classList.remove("show");
           const speaker = bt.who ? actors.find((a) => a.id === bt.who) : undefined;
           const face = bt.who && isPersonActor(bt.who) ? portrait(bt.who) : portrait(heroLook);
           face.className = "pix";
           const txt = h("div", { class: "t" });
-          dlg.replaceChildren(face, txt);
+          dlg.replaceChildren(h("span", { class: "adv-cine-face fr-slot" }, face), h("div", { class: "adv-cine-say" }, h("b", { class: "adv-cine-who" }, bt.who ? nameOf(bt.who) : nameOf("lonewolf")), txt), h("i", { class: "adv-next" }));
           dlg.classList.add("show");
           if (speaker) { speaker.bubble = { text: "…", until: stage.now + 60000 }; stage.play(speaker, "cast", 500); }
           sfx("blip", "380");
