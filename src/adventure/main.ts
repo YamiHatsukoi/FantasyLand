@@ -389,7 +389,10 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
               if (chosen.has(d)) chosen.delete(d); else if (chosen.size < book.discCount) chosen.add(d); else { toast(`Chỉ chọn được ${book.discCount} kỹ năng.`); return; }
               sfx("click"); wiz.redraw();
               // the extra choice a discipline brings (weapon roll / mastery) appears below: bring it into view
-              if (chosen.has(d) && (d === "weaponskill" || d === wsDisc)) requestAnimationFrame(() => el.querySelector(".adv-ws")?.scrollIntoView({ behavior: reduced() ? "auto" : "smooth", block: "nearest" }));
+              if (chosen.has(d) && (d === "weaponskill" || d === wsDisc)) requestAnimationFrame(() => {
+                const card = el.querySelector<HTMLElement>(".adv-ws"), sc = card?.closest<HTMLElement>(".adv-menu-scroll");
+                if (card && sc) sc.scrollTo({ top: Math.max(0, card.offsetTop + card.offsetHeight - sc.clientHeight + 16), behavior: reduced() ? "auto" : "smooth" });
+              });
             }))),
             chosen.has("weaponskill") ? h("div", { class: "adv-card fr-panel adv-ws" }, h("div", { class: "adv-panel-t" }, ui("weapons", 2), `${book.names.disc.weaponskill}: vũ khí sở trường`),
               r.ws < 0
@@ -434,6 +437,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
     /** Side of the place the hero walks in from (the opposite of the exit taken). */
     let entrySide: Side | undefined;
     let exploring = false;
+    let shownSection = "";
     const noExplore = new Set<string>();
     const save = (now = false) => saves!.save(slot, s, now);
     const heroLook = (): Look => withWeapon("lonewolf", s.weapons[0]);
@@ -550,6 +554,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       save();
       const pa = placeOf(from), pb = placeOf(to);
       if (book.map && pa !== pb && book.map.nodes[pb]) await travel(pa, pb);
+      if (!alive || !view.isConnected) return;
       const sec = book.sections[to];
       if (sec.scene.cutscene && s.visited.filter((x) => x === to).length <= 1 && !s.flags[`cut:${to}`]) {
         s.flags[`cut:${to}`] = true;
@@ -654,16 +659,20 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       const sec = book.sections[s.section];
       mountScene();
       view.classList.remove("shown", "ended", "won", "dead");
-      if (view.dataset.sheet === "min") view.dataset.sheet = "half";
+      // a new section opens the story at its usual size
+      if (view.dataset.sheet === "min" || shownSection !== s.section) view.dataset.sheet = "half";
+      shownSection = s.section;
       const pn = placeName(placeOf(s.section));
       place.replaceChildren(h("span", null, pn));
       bump(place, "in");
       secBadge.textContent = `Đoạn ${s.section}`;
       placeSmall.textContent = pn;
       const paras = sec.text.map((t, i) => h("p", { class: "adv-para", style: `--i:${i}` }, t));
-      text.replaceChildren(...nn(...paras, sec.note ? h("div", { class: "adv-note fr-parch" }, ui("info", 2), h("span", null, sec.note)) : null, offersBox()));
+      text.replaceChildren(...nn(...paras, sec.note ? h("div", { class: "adv-note fr-parch" }, ui("info", 2), h("span", null, sec.note)) : null));
       body.scrollTop = 0;
-      dock.replaceChildren();
+      // loot sits in the action dock, in reach of the thumb, above what to do next
+      const loot = offersBox();
+      dock.replaceChildren(...nn(loot));
       dock.style.setProperty("--d", `${Math.min(1.2, paras.length * 0.16 + 0.1)}s`);
       const ph = phase(book, s);
       if (ph === "end") return endPanel();
@@ -701,7 +710,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
           h("span", { class: "adv-choice-k" }, st === "locked" ? ui("lock", 1) : String(k)),
           h("span", { class: "adv-choice-t" }, c.text, st === "locked" ? h("small", null, condText(book, c.if)) : null)));
       }
-      if (exploring && !k) dock.append(h("p", { class: "adv-dock-note" }, ui("info", 1), "Đi tới một lối ra hoặc một người trong cảnh để chọn hướng."));
+      if (exploring) dock.prepend(h("p", { class: "adv-dock-note" }, ui("map", 1), k ? "Đi tới các lối ra trong cảnh, hoặc:" : "Đi tới một lối ra hoặc một người trong cảnh để chọn hướng."));
     }
 
     /** A choice: pay its price / apply its effects, then go (or stay, for repeatable purchases). */
@@ -804,9 +813,9 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
         w.body.replaceChildren(...nn(
           h("div", { class: "adv-chart-hero" }, h("span", { class: "adv-medal fr-panel" }, heroFace(s.weapons[0], 2)),
             h("div", { class: "adv-tiles" },
-              tile("cs", "Kỹ Năng Chiến Đấu", String(s.cs)),
+              tile("cs", "Chiến Đấu", String(s.cs)),
               tile("ep", "Sức Bền", `${s.ep}/${max}`, h("i", { class: "adv-tile-bar", style: `--p:${Math.max(0, Math.min(100, (100 * s.ep) / max))}%` })),
-              tile("gold", "Vương Miện Vàng", `${s.gold}/50`),
+              tile("gold", "Vàng", `${s.gold}/50`),
               s.arrows ? tile("arrows", "Mũi tên", String(s.arrows)) : tile("meal", "Phần Ăn", String(s.meals)))),
           h("div", { class: "adv-inv" },
             h("div", { class: "adv-inv-sec w" }, h("div", { class: "adv-inv-t" }, ui("weapons", 1), "Vũ khí", h("span", null, `${s.weapons.length}/2`)), h("div", { class: "adv-grid two" }, ...weapons)),

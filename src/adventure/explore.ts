@@ -16,13 +16,14 @@ import { sfx } from "../audio/sfx";
 import { Rng, hashString } from "../core/rng";
 import { buildingCanvas, cropCanvas } from "../render/buildings";
 import { floorTile } from "../render/floors";
-import { barrel, cell, chimney, crate, doorAt, foundation, groundShadow, hangingSign, lantern, pennant, roofSlab, wallTex, windowAt, type RoofKind, type WallKind } from "../render/houses";
+import { barrel, cell, chimney, crate, doorAt, foundation, groundShadow, hangingSign, lantern, roofSlab, wallTex, windowAt, type RoofKind, type WallKind } from "../render/houses";
 import { makeCanvas, outline, type Paint } from "../render/palette";
 import { propCanvas } from "../render/props";
 import { OBSTACLES, T, tileSet } from "../render/tiles";
 import { BIOMES, type Biome } from "../world/biomes";
 import { findPath } from "../world/mapgen";
 import { creatureFrame, creatureSize } from "./art/creatures";
+import { FLAMES, archWin, battlements, castleDoor, drawShip, dungeonFace, furniture, hangBanner, towerArt } from "./art/interiors";
 import { iconEl, uiIcon } from "./art/icons";
 import { lookFor, personFrame, type Facing, type Look, type Pose } from "./art/people";
 import { Px, hs, mix, rgba } from "./art/px";
@@ -146,7 +147,7 @@ const softShadow = (p: Paint, cx: number, cy: number, rx: number, ry = 2) => {
 };
 
 // ------------------------------------------------------------ buildings
-export type BStyle = "house" | "cottage" | "inn" | "shop" | "smith" | "temple" | "tower" | "keep" | "hut" | "tent" | "cave" | "ruin" | "barn" | "manor" | "gatehouse";
+export type BStyle = "house" | "cottage" | "inn" | "shop" | "smith" | "temple" | "tower" | "keep" | "hut" | "tent" | "cave" | "ruin" | "barn" | "manor" | "gatehouse" | "stable";
 
 interface BSpec {
   style: BStyle;
@@ -177,7 +178,7 @@ const HOUSE_LOOKS: { wall: string; roof: string; wk: WallKind; rk: RoofKind; tri
  */
 const buildingArt = memo((key: string) => {
   const o = JSON.parse(key) as BSpec;
-  const W = o.tw * 16, head = o.style === "tower" ? 34 : o.style === "keep" ? 26 : 14, H = o.th * 16 + head;
+  const W = o.tw * 16, head = o.style === "tower" ? 46 : o.style === "keep" ? 50 : o.style === "gatehouse" ? 30 : 14, H = o.th * 16 + head;
   const [c, p] = art(W, H);
   const r = new Rng(o.seed);
   const look = HOUSE_LOOKS[o.seed % HOUSE_LOOKS.length];
@@ -263,31 +264,82 @@ const buildingArt = memo((key: string) => {
       std("#8a6a44", "#b8a060", "log", "thatch", { chimney: false });
       break;
     }
-    case "tower": case "keep": case "gatehouse": {
-      // stone block with battlements
-      const foundTop = H - 4, top = o.style === "tower" ? 6 : 8;
+    case "keep": {
+      // a hall under a slate roof between two round towers, a great door, banners on the walls
+      const st = "#aaa496", foundTop = H - 4, cxm = W / 2;
       groundShadow(p, W, H);
-      const stone = o.style === "keep" ? "#a09a90" : "#9a968c";
-      const faceTop = H - o.th * 16 + 4;
-      // roof (walk-way seen from above)
-      p.rect(1, top, W - 2, faceTop - top, hs(stone, -0.18));
-      for (let y = top + 2; y < faceTop - 2; y += 4) for (let x = 3 + (y % 8 ? 2 : 0); x < W - 4; x += 6) p.rect(x, y, 4, 2, hs(stone, -0.08));
-      p.rect(1, top, W - 2, 1, outline(stone));
-      for (let x = 1; x < W - 1; x += 5) { p.rect(x, top - 4, 3, 4, stone); p.rect(x, top - 4, 3, 1, hs(stone, 0.25)); p.rect(x + 2, top - 3, 1, 3, hs(stone, -0.3)); }
-      wallTex(p, 1, faceTop, W - 2, foundTop - faceTop, stone, "stone", o.seed);
-      p.rect(1, faceTop, W - 2, 2, hs(stone, 0.18));
-      for (let x = 1; x < W - 1; x += 5) { p.rect(x, faceTop - 3, 3, 3, hs(stone, 0.05)); p.rect(x, faceTop - 3, 3, 1, hs(stone, 0.3)); }
+      const tW = Math.max(18, Math.round(W * 0.21));
+      const faceTop = H - Math.round(o.th * 16 * 0.66);
+      roofSlab(p, tW - 6, W - tW + 5, Math.max(16, faceTop - 26), faceTop - 3, "#4a5a7a", "slate", o.seed);
+      p.rect(Math.round(cxm) - 1, Math.max(16, faceTop - 26) - 12, 1, 10, "#4a3a2a"); p.rect(Math.round(cxm), Math.max(16, faceTop - 26) - 12, 8, 3, "#d83a3a"); p.rect(Math.round(cxm), Math.max(16, faceTop - 26) - 9, 6, 2, "#a82a2a");
+      wallTex(p, tW - 2, faceTop, W - 2 * tW + 4, foundTop - faceTop, st, "stone", o.seed);
+      p.g.fillStyle = "rgba(20,10,40,.18)"; p.g.fillRect(tW - 2, faceTop + 2, W - 2 * tW + 4, 3);
+      battlements(p, tW - 2, faceTop - 1, W - 2 * tW + 4, st);
+      // buttresses
+      for (const bx of [Math.round(cxm - 17), Math.round(cxm + 14)]) { p.rect(bx, faceTop + 6, 3, foundTop - faceTop - 6, hs(st, 0.08)); p.rect(bx, faceTop + 6, 1, foundTop - faceTop - 6, hs(st, 0.3)); p.rect(bx + 2, faceTop + 6, 1, foundTop - faceTop - 6, hs(st, -0.32)); poly(p, [[bx, faceTop + 6], [bx + 3, faceTop + 3], [bx + 3, faceTop + 6]], hs(st, 0.2)); }
+      // arched windows and hanging banners
+      const winY = faceTop + 8;
+      for (const wx of [Math.round(cxm - 26), Math.round(cxm + 22)]) if (wx > tW && wx < W - tW - 4) archWin(p, wx, winY, lit);
+      for (const bx of [Math.round(cxm - 12), Math.round(cxm + 8)]) hangBanner(p, bx, faceTop + 4, o.seed % 2 ? "#a82a3a" : "#2a4a9a");
+      // the towers
+      for (const tx of [3, W - tW - 3]) towerArt(p, tx, Math.max(30, faceTop - 22), tW, foundTop, { stone: hs(st, -0.04), roof: "#3e4c6e", lit, seed: o.seed + tx, flag: tx < 10 ? "#d83a3a" : "#e8c040" });
+      castleDoor(p, cxm, foundTop, 16, 24, st, !!o.closed);
+      // a crest over the door
+      poly(p, [[cxm - 4, foundTop - 33], [cxm + 4, foundTop - 33], [cxm + 4, foundTop - 28], [cxm, foundTop - 25], [cxm - 4, foundTop - 28]], "#2a4a9a"); p.rect(cxm - 1, foundTop - 33, 2, 7, "#e8c040");
       foundation(p, 0, foundTop, W, "#8a8a90");
-      const dw = o.style === "gatehouse" ? 16 : 10, dh = o.style === "gatehouse" ? 20 : 17;
-      const dx = Math.round(W / 2 - dw / 2), dy = foundTop - dh;
-      p.rect(dx - 2, dy - 2, dw + 4, dh + 2, hs(stone, -0.3));
-      for (let i = 0; i < dw / 2 + 1; i++) p.rect(dx - 2 + i, dy - 2 - Math.round(Math.sqrt(Math.max(0, (dw / 2 + 2) ** 2 - (dw / 2 + 2 - i) ** 2)) * 0.5), dw + 4 - i * 2, 1, hs(stone, -0.3));
-      if (o.closed || o.style !== "gatehouse") doorAt(p, dx, dy, { w: dw, h: dh, col: "#7a4a2a", arch: true, double: dw >= 10 });
-      else { p.rect(dx, dy, dw, dh, "#1a1410"); for (let x = dx + 1; x < dx + dw; x += 3) p.rect(x, dy, 1, 6, "#4a4448"); }
-      for (const wx of W >= 64 ? [6, W - 12] : [4, W - 10]) for (let fy = faceTop + 6; fy < dy - 4; fy += 14) { p.rect(wx, fy, 3, 7, "#1e1a1e"); if (lit) p.rect(wx + 1, fy + 1, 1, 5, "#ffc860"); }
-      if (o.style !== "gatehouse") for (const fx of [4, W - 8]) { p.rect(fx, top - 14, 1, 10, "#4a3a2a"); p.rect(fx + 1, top - 14, 5, 4, o.seed % 2 ? "#c83a3a" : "#3a5ab0"); p.rect(fx + 1, top - 14, 5, 1, "#f2c230"); }
-      if (o.style === "keep") pennant(p, Math.round(W / 2), top - 4, "#d83a3a");
-      if (lit) { lantern(p, dx - 6, dy + 2); lantern(p, dx + dw + 3, dy + 2); }
+      if (lit) { lantern(p, Math.round(cxm - 13), foundTop - 20); lantern(p, Math.round(cxm + 11), foundTop - 20); }
+      break;
+    }
+    case "tower": {
+      const st = "#a49e90", foundTop = H - 4, tw2 = Math.min(W - 10, 32), tx = Math.round(W / 2 - tw2 / 2);
+      groundShadow(p, W, H);
+      // a lean-to of stone at the foot
+      wallTex(p, 2, foundTop - 14, W - 4, 14, hs(st, -0.06), "stone", o.seed + 3);
+      p.rect(2, foundTop - 16, W - 4, 3, "#6a4a3a"); p.rect(2, foundTop - 16, W - 4, 1, "#8a6a4a");
+      towerArt(p, tx, Math.max(40, H - o.th * 16 - 6), tw2, foundTop, { stone: st, roof: "#7a3a2a", lit, seed: o.seed, flag: "#c83a3a" });
+      castleDoor(p, W / 2, foundTop, 10, 17, st, true);
+      foundation(p, 0, foundTop, W, "#8a8a90");
+      if (lit) lantern(p, Math.round(W / 2 + 7), foundTop - 14);
+      break;
+    }
+    case "gatehouse": {
+      const st = "#a8a294", foundTop = H - 4, tw2 = 14;
+      groundShadow(p, W, H);
+      wallTex(p, 8, 22, W - 16, foundTop - 22, st, "stone", o.seed);
+      battlements(p, 8, 22, W - 16, st);
+      for (const tx of [1, W - tw2 - 1]) towerArt(p, tx, 14, tw2, foundTop, { stone: hs(st, -0.04), lit, seed: o.seed + tx, slits: true });
+      castleDoor(p, W / 2, foundTop, 14, 22, st, !!o.closed);
+      foundation(p, 0, foundTop, W, "#8a8a90");
+      if (lit) { lantern(p, Math.round(W / 2 - 11), foundTop - 18); lantern(p, Math.round(W / 2 + 9), foundTop - 18); }
+      break;
+    }
+    case "stable": {
+      // an open-fronted timber stable: stalls with horses looking out, hay in the loft
+      const foundTop = H - 4, wall = "#8a5a32", roof = "#6a4a2a";
+      groundShadow(p, W, H);
+      const wallTop = foundTop - 24, roofTop = Math.max(2, H - o.th * 16 - 6);
+      wallTex(p, 1, wallTop, W - 2, 24, wall, "plank", o.seed);
+      roofSlab(p, 0, W - 1, roofTop, wallTop + 1, roof, "shingle", o.seed);
+      p.g.fillStyle = "rgba(24,12,40,0.32)"; p.g.fillRect(1, wallTop + 3, W - 2, 2);
+      const n = Math.max(2, Math.floor((W - 4) / 15));
+      const sw = (W - 4) / n;
+      for (let k = 0; k < n; k++) {
+        const x = Math.round(2 + k * sw), w = Math.round(sw) - 3;
+        p.rect(x + 1, wallTop + 6, w, foundTop - wallTop - 6, "#2a1a10");
+        for (let yy = wallTop + 6; yy < foundTop; yy++) p.rect(x + 1, yy, w, 1, mix("#1a100a", "#3a2a1a", (yy - wallTop - 6) / 18));
+        // the horse's head over the half door
+        const coat = ["#8a5a32", "#4a3a2a", "#c8a878", "#2a2420"][(o.seed + k) % 4];
+        if ((o.seed + k) % 3 !== 2) { const hx = x + Math.round(w / 2) - 2; p.rect(hx, wallTop + 9, 5, 7, coat); p.rect(hx + 1, wallTop + 14, 3, 3, hs(coat, 0.2)); p.px(hx, wallTop + 8, coat); p.px(hx + 4, wallTop + 8, coat); p.px(hx + 1, wallTop + 11, "#1a1010"); p.px(hx + 3, wallTop + 11, "#1a1010"); p.rect(hx + 2, wallTop + 7, 1, 4, hs(coat, -0.4)); }
+        // half door
+        p.rect(x + 1, foundTop - 9, w, 9, "#a8703c"); p.rect(x + 1, foundTop - 9, w, 1, "#d09a5a");
+        p.line(x + 1, foundTop - 8, x + w, foundTop - 1, "#7a4a26"); p.rect(x + 1, foundTop - 5, w, 1, "#7a4a26");
+        p.rect(x - 1, wallTop + 4, 2, foundTop - wallTop - 4, "#5a3a20");
+      }
+      p.rect(W - 3, wallTop + 4, 2, foundTop - wallTop - 4, "#5a3a20");
+      // hay at the loft door and a lantern
+      p.rect(Math.round(W / 2) - 5, roofTop + 4, 10, 7, "#3a2a1a"); p.rect(Math.round(W / 2) - 4, roofTop + 7, 8, 4, "#e8c860"); p.rect(Math.round(W / 2) - 4, roofTop + 7, 8, 1, "#f8e090");
+      foundation(p, 0, foundTop, W, "#8a8a80");
+      if (lit) lantern(p, 4, wallTop + 6);
       break;
     }
     case "tent": {
@@ -959,6 +1011,17 @@ const critterArt = memo((k: string): HTMLCanvasElement => {
   s.outline((n) => `rgb(${Math.round(n[0] * 0.25)},${Math.round(n[1] * 0.2)},${Math.round(n[2] * 0.25) + 10})`);
   return s.c;
 });
+/** A person frame cut off at the hips, for someone sitting (the chair or table hides the rest). */
+const seatCache = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
+function seated(c: HTMLCanvasElement) {
+  let o = seatCache.get(c);
+  if (o) return o;
+  o = document.createElement("canvas");
+  o.width = c.width; o.height = 37;
+  o.getContext("2d")!.drawImage(c, 0, 0);
+  seatCache.set(c, o);
+  return o;
+}
 const flipCache = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
 function flipped(c: HTMLCanvasElement) {
   let f = flipCache.get(c);
@@ -981,6 +1044,7 @@ const critter = (kind: Critter, pose: string, f: number, v: number, left: boolea
 const G = {
   VOID: 0, GRASS: 1, FLOWER: 2, DIRT: 3, COBBLE: 4, FLAG: 5, PLANK: 6, CARPET: 7, WATER: 8, DEEP: 9, BRIDGE: 10,
   SAND: 11, WALL: 12, CAVE: 13, MARBLE: 14, MUD: 15, SOIL: 16, ROCK: 17, DECK: 18, RAIL: 19, GATE: 20, PATHSAND: 21,
+  PARQ: 22, CHECK: 23,
 } as const;
 const UNWALK = new Set<number>([G.VOID, G.WATER, G.DEEP, G.WALL, G.ROCK, G.RAIL]);
 const WATERY = new Set<number>([G.WATER, G.DEEP, G.BRIDGE]);
@@ -1005,6 +1069,8 @@ interface Obj {
   fade?: boolean;
   dy?: number;
   flip?: boolean;
+  /** Overhead (chandeliers, hanging lanterns): drawn after everyone. */
+  over?: boolean;
 }
 
 interface Light { x: number; y: number; r: number; col: string; flick?: number; on: "always" | "dark"; glow?: number }
@@ -1062,6 +1128,8 @@ interface Actor {
   step?: number;
   gone?: number;
   sit?: boolean;
+  /** How far a sitter's cropped body sits below the feet line. */
+  sitDy?: number;
 }
 
 interface Area {
@@ -1091,7 +1159,10 @@ interface Area {
   hub: Pt;
 }
 
-type WallStyle = "stone" | "rock" | "wood" | "marble" | "brick" | "city" | "hedge";
+type WallStyle = "stone" | "rock" | "wood" | "marble" | "brick" | "city" | "hedge" | "palace";
+/** What kind of room an interior is (inns, shops and houses share the "inn" background). */
+type IVar = "tavern" | "shop" | "house" | "throne" | "guild" | "temple";
+interface Seat { x: number; y: number; facing: Facing; dy: number }
 
 // ============================================================ generation
 const BIOME_FOR: Partial<Record<Scene["bg"], string>> = {
@@ -1184,6 +1255,13 @@ class Gen {
   npcSlots: Pt[] = [];
   objSlots: Pt[] = [];
   closed: Side[] = [];
+  /** Interiors: the room's kind, the sides with ways out, the host's place and chairs to sit on. */
+  ivar: IVar = "tavern";
+  exits = new Set<Side>();
+  host: { at: Pt; stand: Pt; face: Facing; sitDy?: number; re: RegExp; used?: boolean } | null = null;
+  seats: Seat[] = [];
+  hasStairs = false;
+  rooms: { x: number; y: number; w: number; h: number }[] = [];
   constructor(w: number, h: number, public seed: number, public scene: Scene, public kind: Kind, public biome: Biome, public lit: boolean) {
     this.w = w; this.h = h;
     this.gnd = new Uint8Array(w * h).fill(G.GRASS);
@@ -1344,6 +1422,9 @@ class Gen {
 const SIDES: Side[] = ["north", "east", "south", "west"];
 const PINE: [string, string, string, string] = ["#1a3a32", "#2a5a46", "#4a8a5a", "#4a3a2a"];
 const SNOWPINE: [string, string, string, string] = ["#1a3a3a", "#2a5a4a", "#e8f4f8", "#4a3a2a"];
+/** Broadleaf palettes (dark oak, bright beech, yellow-green), so a wood is not one tree repeated. */
+const OAK: [string, string, string, string][] = [["#1c4424", "#2c6230", "#4e9440", "#4a321e"], ["#2a5a22", "#4a8a30", "#86c050", "#5a4028"], ["#3a5a1e", "#5e8a2a", "#a8c84a", "#5a4632"]];
+const FIR: [string, string, string, string] = ["#123028", "#1e4a3a", "#3a7a52", "#3a2a1e"];
 
 /** Finds free footprints near a point (for buildings), best first. */
 function findLots(g: Gen, around: Pt, sizes: [number, number][], n: number, ok: (x: number, y: number, w: number, h: number) => boolean, margin = 1) {
@@ -1467,7 +1548,8 @@ function settleBase(g: Gen) {
   // ---- walls with gates at the road ends
   if (walled) {
     for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) if (y <= 2 || y >= g.h - 1 || x <= 0 || x >= g.w - 1) g.set(x, y, G.WALL);
-    if (bg === "castle") g.rect(1, 3, g.w - 2, g.h - 4, G.FLAG);
+    // the castle green: a paved apron before the keep, the rest grass crossed by paved ways
+    if (bg === "castle") g.rect(hub.x - 6, 7, 13, 2, G.FLAG);
   }
   // ---- plaza
   const [pw, ph] = bg === "village" ? [7, 5] : bg === "town" ? [9, 6] : bg === "city" ? [11, 7] : [9, 6];
@@ -1491,8 +1573,8 @@ function settleBase(g: Gen) {
     for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) if (g.get(x, y) === G.GATE) g.keep[g.i(x, y)] = 1;
   }
   // ---- building lots: doors face south onto a road or the plaza
-  const nLots = bg === "village" ? 8 : bg === "town" ? 11 : bg === "city" ? 14 : 4;
-  const sizes: [number, number][] = bg === "castle" ? [[5, 3], [3, 3]] : bg === "village" ? [[3, 2], [3, 3], [5, 2]] : [[3, 3], [5, 3], [3, 2], [5, 2]];
+  const nLots = bg === "village" ? 8 : bg === "town" ? 11 : bg === "city" ? 14 : 7;
+  const sizes: [number, number][] = bg === "castle" ? [[5, 2], [3, 3], [5, 3]] : bg === "village" ? [[3, 2], [3, 3], [5, 2]] : [[3, 3], [5, 3], [3, 2], [5, 2]];
   const isRoad = (gg: number) => gg === road || gg === G.COBBLE || gg === G.DIRT || (gg === G.FLAG && bg !== "castle");
   const nearRoad = (fx: number, fy: number): Pt | null => {
     let best: Pt | null = null, bd = 7;
@@ -1547,22 +1629,62 @@ function settleBase(g: Gen) {
   g.npcSlots = ring.filter((p) => Math.abs(p.x - hub.x) + Math.abs(p.y - hub.y) > 1);
 }
 
-/** Inns, halls and temples: one big room. */
+/** Inns, shops, houses, halls and temples: one furnished room. */
 function interiorBase(g: Gen) {
-  const bg = g.scene.bg;
+  const v = g.ivar;
   g.gnd.fill(G.WALL);
-  const floor = bg === "inn" ? G.PLANK : bg === "hall" ? G.FLAG : G.MARBLE;
+  const floor = ({ tavern: G.PLANK, shop: G.PLANK, house: G.PARQ, throne: G.FLAG, guild: G.PARQ, temple: G.MARBLE } as const)[v];
   g.rect(1, 3, g.w - 2, g.h - 4, floor);
   const cx = g.w >> 1, cy = 3 + ((g.h - 4) >> 1);
   g.hub = { x: cx, y: cy };
   g.ends = { north: { x: cx, y: 2 }, south: { x: cx, y: g.h - 1 }, west: { x: 0, y: cy + 1 }, east: { x: g.w - 1, y: cy + 1 } };
-  // doors in the back wall, then the side walls
-  const xs = bg === "inn" ? [cx - 7, cx + 4] : [cx - 6, cx + 6, cx - 9, cx + 9];
+  // doors in the back wall (placed clear of the room's fittings), then the side walls
+  const xs = ({ tavern: [4, 13], shop: [4], house: [11], throne: [3, 24, 6, 21], guild: [3, 20], temple: [3, 20] } as const)[v];
   for (const x of xs) if (x > 1 && x < g.w - 2) g.doorSlots.push({ x, y: 2, tw: 1, th: 1, wall: "n" });
   g.doorSlots.push({ x: 0, y: cy - 2, tw: 1, th: 1, wall: "w" }, { x: g.w - 1, y: cy - 2, tw: 1, th: 1, wall: "e" });
   for (const p of [g.ends.south!, g.ends.north!]) g.markKeep(p.x - 1, p.y - 1, 3, 3);
+  for (const d of g.doorSlots) g.markKeep(d.wall === "w" ? 1 : d.wall === "e" ? g.w - 2 : d.x, d.wall === "n" ? 3 : d.y);
   g.markKeep(1, cy, g.w - 2, 2);
-  g.markKeep(cx - 1, 3, 3, g.h - 4);
+  // the aisle up the middle (halls and temples keep the dais at its head)
+  const head = v === "throne" || v === "temple" ? 5 : 3;
+  g.markKeep(cx - 1, head, 3, g.h - 1 - head);
+  if (g.exits.has("north")) g.markKeep(cx - 1, 3, 3, 2);
+  const north = g.exits.has("north");
+  // fixed fittings that people stand behind (before the spots are given out)
+  const fix = (img: HTMLCanvasElement, x: number, y: number, fw = 1, fh = 1, o: Partial<Obj> & { walkable?: boolean } = {}) => g.sprite(img, x, y, fw, fh, o);
+  const counterRow = (kind: string, x0: number, x1: number, y: number) => { for (let x = x0; x <= x1; x++) fix(fur(kind, x === x0 ? 1 : x === x1 ? 2 : 0, g.seed + x * 7), x, y, 1, 1, { dy: 2 }); };
+  if (v === "tavern") {
+    counterRow("bar", 15, g.w - 2, 5);
+    g.host = { at: { x: 17, y: 4 }, stand: { x: 17, y: 6 }, face: "down", re: /keep|host|owner|bar|tender|chủ|chu|quán|landlord|innkeeper|tavern|maid/i };
+  } else if (v === "shop") {
+    counterRow("shopcounter", 10, g.w - 2, 5);
+    g.host = { at: { x: 12, y: 4 }, stand: { x: 12, y: 6 }, face: "down", re: /keep|owner|merchant|trader|seller|smith|chủ|chu|thương|buôn|bán|thợ|shop|vendor|alchemist/i };
+  } else if (v === "guild") {
+    for (const x of [15, 17]) fix(fur("desk"), x, 5, 2, 1, { dy: 3 });
+    g.host = { at: { x: 17, y: 4 }, stand: { x: 17, y: 6 }, face: "down", re: /master|clerk|keeper|captain|chief|leader|chủ|trưởng|thủ lĩnh|guild|hội/i };
+  } else if (v === "throne") {
+    const tx = north ? cx - 4 : cx;
+    fix(fur("dais", 9), cx - 4, 3, 9, 2, { flat: true, walkable: true, dy: -6 });
+    fix(fur("throne"), tx, 3, 1, 1, { dy: 9 });
+    g.block[g.i(tx, 3)] = 0;
+    g.host = { at: { x: tx, y: 3 }, stand: { x: tx, y: 5 }, face: "down", sitDy: -27, re: /king|queen|lord|lady|duke|prince|princess|emperor|baron|regent|vua|hoàng|chúa|quân|công|lãnh|vương|tước|quan|ruler/i };
+  } else if (v === "temple") {
+    const ax = north ? cx - 5 : cx;
+    fix(fur("dais", 9, "#e8e2d4"), cx - 4, 3, 9, 2, { flat: true, walkable: true, dy: -6 });
+    const alt = fix(fur("altar"), ax - 1, 4, 3, 1, { dy: 4, live: flamesLive("altar") });
+    g.lights.push({ x: alt.x, y: alt.y - 50, r: 120, col: "#ffe0a0", flick: 0.4, on: "always", glow: 0.45 });
+    g.emit.push({ x: alt.x + 16, y: alt.y - 56, kind: "incense", acc: 0 });
+    g.host = { at: { x: ax, y: 3 }, stand: { x: ax, y: 5 }, face: "down", re: /priest|monk|abbot|nun|cleric|sage|hermit|sư|thầy|tu|đạo|tế|giáo|trụ trì|shaman|oracle/i };
+  }
+  if (g.host) g.markKeep(g.host.stand.x, g.host.stand.y);
+  // where people stand around (people with something to say wait in the open)
+  const ring: Pt[] = [];
+  for (const [dx, dy] of [[-3, 1], [3, 1], [-3, -2], [3, -2], [-5, 1], [5, 1], [-2, 3], [2, 3], [-6, -1], [6, -1]] as const) {
+    const p = { x: cx + dx, y: cy + dy };
+    if (g.inb(p.x, p.y) && g.walk(p.x, p.y)) ring.push(p);
+  }
+  g.npcSlots = ring;
+  g.objSlots = [{ x: cx - 3, y: cy - 1 }, { x: cx + 3, y: cy + 2 }, { x: cx - 3, y: cy + 2 }, { x: cx + 3, y: cy - 1 }];
 }
 
 /** Dungeons, tunnels and caves. */
@@ -1574,14 +1696,16 @@ function underBase(g: Gen) {
   const hub = g.hub;
   const rooms: { x: number; y: number; w: number; h: number }[] = [];
   if (bg === "dungeon") {
+    // separate rooms with thick walls between, joined by narrow corridors of rough stone
     rooms.push({ x: hub.x - 4, y: hub.y - 3, w: 9, h: 6 });
-    for (let tries = 0; tries < 200 && rooms.length < 8; tries++) {
-      const w = r.int(5, 8), h = r.int(4, 5), x = r.int(2, g.w - w - 3), y = r.int(4, g.h - h - 3);
-      if (rooms.some((q) => x < q.x + q.w + 3 && x + w + 3 > q.x && y < q.y + q.h + 4 && y + h + 4 > q.y)) continue;
+    for (let tries = 0; tries < 400 && rooms.length < 8; tries++) {
+      const w = r.int(5, 8), h = r.int(3, 5), x = r.int(2, g.w - w - 3), y = r.int(5, g.h - h - 2);
+      if (rooms.some((q) => x < q.x + q.w + 4 && x + w + 4 > q.x && y < q.y + q.h + 5 && y + h + 5 > q.y)) continue;
       rooms.push({ x, y, w, h });
     }
     for (const q of rooms) g.rect(q.x, q.y, q.w, q.h, floor);
-    // corridors: each room to its nearest already joined room
+    const inRoom = (x: number, y: number) => rooms.some((q) => x >= q.x && x < q.x + q.w && y >= q.y && y < q.y + q.h);
+    const dig = (x: number, y: number) => { if (!inRoom(x, y) && g.get(x, y) === G.WALL) g.set(x, y, G.CAVE); };
     const joined = [rooms[0]];
     const centre = (q: typeof rooms[0]) => ({ x: q.x + (q.w >> 1), y: q.y + (q.h >> 1) });
     for (const q of rooms.slice(1).sort((a, b) => Math.hypot(centre(a).x - hub.x, centre(a).y - hub.y) - Math.hypot(centre(b).x - hub.x, centre(b).y - hub.y))) {
@@ -1589,12 +1713,10 @@ function underBase(g: Gen) {
       const b = joined.map(centre).sort((p, s) => Math.hypot(p.x - a.x, p.y - a.y) - Math.hypot(s.x - a.x, s.y - a.y))[0];
       const horizFirst = r.chance(0.5);
       const mid = horizFirst ? { x: b.x, y: a.y } : { x: a.x, y: b.y };
-      for (const [p, s] of [[a, mid], [mid, b]] as const) {
-        for (let x = Math.min(p.x, s.x); x <= Math.max(p.x, s.x); x++) for (let y = Math.min(p.y, s.y); y <= Math.max(p.y, s.y) + 1; y++) g.set(x, y, floor);
-        for (let y = Math.min(p.y, s.y); y <= Math.max(p.y, s.y); y++) g.set(Math.max(p.x, s.x) + 1, y, floor);
-      }
+      for (const [p, t] of [[a, mid], [mid, b]] as const) for (let x = Math.min(p.x, t.x); x <= Math.max(p.x, t.x); x++) for (let y = Math.min(p.y, t.y); y <= Math.max(p.y, t.y); y++) dig(x, y);
       joined.push(q);
     }
+    g.rooms = rooms;
   } else if (bg === "cave") {
     const W = g.w, H = g.h;
     let m = new Uint8Array(W * H);
@@ -1618,7 +1740,8 @@ function underBase(g: Gen) {
   for (const s of SIDES) {
     const end = g.edgePoint(s, 3);
     g.ends[s] = end;
-    g.road(hub, end, floor, bg === "dungeon" ? 2 : bg === "tunnel" ? 3 : 2, bg === "cave" ? 0.5 : bg === "tunnel" ? 0.4 : 0, (cur) => (cur === G.WALL || cur === G.VOID ? floor : cur));
+    if (bg === "dungeon") g.road(hub, end, G.CAVE, 1, 0, (cur) => (cur === G.WALL || cur === G.VOID ? G.CAVE : cur));
+    else g.road(hub, end, floor, bg === "tunnel" ? 3 : 2, bg === "cave" ? 0.5 : bg === "tunnel" ? 0.4 : 0, (cur) => (cur === G.WALL || cur === G.VOID ? floor : cur));
   }
   // keep the north wall solid enough for a face (2 rows) everywhere
   for (let x = 0; x < g.w; x++) { if (g.get(x, 1) !== G.WALL && g.ends.north!.x !== x && g.ends.north!.x + 1 !== x) g.set(x, 1, G.WALL); }
@@ -1648,15 +1771,18 @@ function underBase(g: Gen) {
   void rooms;
 }
 
+/** Half-width of a ship's deck along its length (u: -1 stern .. 1 bow), in units of its beam. */
+const shipTaper = (u: number) => (u > 0.2 ? Math.sqrt(Math.max(0, 1 - ((u - 0.2) / 0.85) ** 2)) : u < -0.8 ? 0.8 : 1);
+const SHIP = { halfL: 12, halfW: 4 };
 /** A ship moored between piers. */
 function shipBase(g: Gen) {
   g.gnd.fill(G.DEEP);
   const cx = g.w >> 1, cy = (g.h >> 1);
   g.hub = { x: cx, y: cy };
-  const halfL = 12, halfW = 4;
+  const { halfL, halfW } = SHIP;
   for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
     const u = (x - cx) / halfL, v = (y - cy) / halfW;
-    const taper = u > 0.2 ? Math.sqrt(Math.max(0, 1 - ((u - 0.2) / 0.85) ** 2)) : u < -0.8 ? 0.8 : 1;
+    const taper = shipTaper(u);
     if (Math.abs(u) <= 1.05 && Math.abs(v) <= taper) g.set(x, y, Math.abs(v) > taper - 1 / halfW || Math.abs(u) > 0.98 ? G.RAIL : G.DECK);
   }
   // water near the hull is lighter
@@ -1677,9 +1803,10 @@ function shipBase(g: Gen) {
 // ------------------------------------------------------------ spots
 const NPC_HINT = /guard|soldier|sentry|captain|knight|watch|lính|gác/i;
 
-function attachSpots(g: Gen, spots: ExploreOpts["spots"], actorIds: string[], entry: Side | undefined): { spots: PSpot[]; npcs: { id: string; at: Pt; spot?: PSpot }[] } {
+type NpcPlace = { id: string; at: Pt; spot?: PSpot; facing?: Facing; sitDy?: number };
+function attachSpots(g: Gen, spots: ExploreOpts["spots"], actorIds: string[], entry: Side | undefined): { spots: PSpot[]; npcs: NpcPlace[] } {
   const out: PSpot[] = [];
-  const npcs: { id: string; at: Pt; spot?: PSpot }[] = [];
+  const npcs: NpcPlace[] = [];
   const bg = g.scene.bg;
   const r = new Rng(g.seed ^ 0x5eed);
   const usedSides = new Set<Side>();
@@ -1762,13 +1889,29 @@ function attachSpots(g: Gen, spots: ExploreOpts["spots"], actorIds: string[], en
   for (const s of spots.filter((x) => x.via.npc && !x.via.exit && !x.via.door)) {
     const id = s.via.npc!;
     npcIds.add(id);
+    // the keeper of the place stands at their post (behind the bar, on the throne, at the altar)
+    const H = g.host;
+    if (H && !H.used && (H.re.test(id) || H.re.test(s.label))) {
+      H.used = true;
+      const zp = [H.stand, ...[-1, 1].map((d) => ({ x: H.stand.x + d, y: H.stand.y }))].filter((p) => g.walk(p.x, p.y));
+      g.block[g.i(H.at.x, H.at.y)] = 1;
+      const top = H.at.y * TW + FEET - 54 + (H.sitDy ?? 0);
+      const sp: PSpot = {
+        key: s.key, label: s.label, via: s.via, locked: s.locked, kind: "npc", stand: H.stand, zone: zoneOf(zp),
+        ax: H.at.x * TW + TW / 2, ay: top, hit: { x0: H.at.x * TW - 4, y0: top + 2, x1: H.at.x * TW + TW + 4, y1: H.at.y * TW + FEET + 4 },
+        face: { x: Math.sign(H.at.x - H.stand.x), y: Math.sign(H.at.y - H.stand.y) },
+      };
+      for (const p of zp) g.markKeep(p.x, p.y);
+      out.push(sp);
+      npcs.push({ id, at: H.at, spot: sp, facing: H.face, sitDy: H.sitDy });
+      continue;
+    }
     // guards wait by the gate they watch
     let pref: ((p: Pt) => number) | undefined;
     if (NPC_HINT.test(id) && g.kind === "settle") {
       const gate = out.find((o) => o.kind === "exit") ?? null;
       if (gate) { const gp = { x: gate.stand.x, y: gate.stand.y }; pref = (p) => Math.abs(Math.hypot(p.x - gp.x, p.y - gp.y) - 2.2); g.npcSlots.push(...[[-2, -1], [2, -1], [-2, 1], [2, 1], [-1, -2], [1, -2]].map(([dx, dy]) => ({ x: gp.x + dx, y: gp.y + dy })).filter((p) => g.walk(p.x, p.y))); }
     }
-    if (g.kind === "interior" && bg === "inn" && /innkeep|keeper|host|merchant|owner|chủ/i.test(id) && g.npcSlots.length) pref = (p) => -p.x - (p.y < 6 ? 10 : 0);
     const at = takeSlot(pref);
     if (!at) continue;
     const near: Pt[] = [];
@@ -1886,13 +2029,21 @@ function placeDoor(g: Gen, slot: Gen["doorSlots"][0], style: BStyle, s: ExploreO
       return { ...base, stand, zone: zoneOf([stand]), ax: x * TW + TW / 2 + dir * 14, ay: y * TW - 18, hit: { x0: x * TW - 8, y0: y * TW - 24, x1: x * TW + TW + 8, y1: y * TW + TW + 8 }, face: { x: -dir, y: 0 } };
     }
     const stairs = hasWord(s.label, ["cầu thang", "lên", "lầu", "gác", "upstairs", "stairs", "tầng trên"]) ? "up" : hasWord(s.label, ["xuống", "hầm", "downstairs", "dưới"]) ? "down" : "door";
+    if (stairs === "up" && g.kind === "interior" && g.free(x - 2, 3, 2, 3) && g.free(x - 2, 6, 2, 1)) {
+      // a real staircase up the back wall; the hero steps onto its foot
+      g.sprite(fur("stairs"), x - 2, 3, 2, 3, { flat: true, dy: 0 });
+      g.hasStairs = true;
+      const stand = { x: x - 1, y: 6 };
+      g.markKeep(x - 2, 6, 3, 1);
+      return { ...base, stand, zone: zoneOf([stand, { x: x - 2, y: 6 }]), ax: (x - 1) * TW, ay: 2 * TW, hit: { x0: (x - 2) * TW, y0: TW, x1: x * TW, y1: 7 * TW }, face: { x: 0, y: -1 } };
+    }
     g.extra.set(g.i(x, y), `door:${stairs}`);
     const stand = { x, y: y + 1 };
     g.markKeep(x - 1, y + 1, 3, 2);
     return { ...base, stand, zone: zoneOf([stand]), ax: x * TW + TW / 2, ay: (y - 1) * TW - 6, hit: { x0: x * TW - 6, y0: (y - 1) * TW, x1: x * TW + TW + 6, y1: (y + 2) * TW }, face: { x: 0, y: -1 } };
   }
   // a building on a footprint, door at the bottom middle
-  const size: Record<BStyle, [number, number]> = { house: [3, 2], cottage: [3, 2], inn: [5, 3], shop: [3, 2], smith: [3, 2], temple: [5, 3], tower: [3, 3], keep: [7, 4], hut: [3, 2], tent: [3, 2], cave: [3, 2], ruin: [3, 2], barn: [5, 2], manor: [5, 3], gatehouse: [3, 2] };
+  const size: Record<BStyle, [number, number]> = { house: [3, 2], cottage: [3, 2], inn: [5, 3], shop: [3, 2], smith: [3, 2], temple: [5, 3], tower: [3, 3], keep: [7, 4], hut: [3, 2], tent: [3, 2], cave: [3, 2], ruin: [3, 2], barn: [5, 2], manor: [5, 3], gatehouse: [3, 2], stable: [5, 2] };
   let [tw, th] = size[style];
   tw = Math.min(tw, slot.tw); th = Math.min(th, slot.th);
   if (tw % 2 === 0) tw--;
@@ -2057,7 +2208,7 @@ function placeObject(g: Gen, kind: ObjectKind, s: ExploreOpts["spots"][0], zoneO
 function decorateWild(g: Gen) {
   const bg = g.scene.bg, s = g.seed, snow = g.scene.weather === "snow";
   const pine = snow ? SNOWPINE : PINE;
-  const dens: Partial<Record<Scene["bg"], number>> = { forest: 0.55, camp: 0.42, road: 0.3, field: 0.12, hill: 0.24, mountain: 0.22, sky: 0.15, river: 0.3, lake: 0.3, bridge: 0.3, swamp: 0.22, desert: 0.05, coast: 0.12, sea: 0.1, ruins: 0.28 };
+  const dens: Partial<Record<Scene["bg"], number>> = { forest: 0.4, camp: 0.32, road: 0.26, field: 0.12, hill: 0.22, mountain: 0.2, sky: 0.15, river: 0.26, lake: 0.26, bridge: 0.26, swamp: 0.17, desert: 0.05, coast: 0.12, sea: 0.1, ruins: 0.28 };
   const base = dens[bg] ?? 0.3;
   const motifs: [string, number, [string, string, string, string]?][] =
     bg === "desert" ? [["cactus", 3], ["rock", 2], ["dead_tree", 1]]
@@ -2067,7 +2218,8 @@ function decorateWild(g: Gen) {
             : bg === "coast" || bg === "sea" ? [["palm", 3], ["rock", 1], ["bush", 1]]
               : bg === "ruins" ? [["tree", 3], ["broken_pillar", 2, ["#4a4a44", "#9a9488", "#d8d0c0", "#6a6258"]], ["ruin_wall", 1, ["#4a4a44", "#9a9488", "#d8d0c0", "#6a6258"]]]
                 : bg === "lake" || bg === "river" || bg === "bridge" ? [["tree", 4], ["willow", 2], ["birch", 1]]
-                  : [["tree", 5], ["pine", 2, pine], ["birch", 1], ["bush", 1]];
+                  : bg === "forest" || bg === "camp" ? [["tree", 4], ["oak", 2], ["pine", 2, pine], ["birch", 2], ["bush", 1], ["fir", 1, pine]]
+                    : [["tree", 5], ["pine", 2, pine], ["birch", 1], ["bush", 1]];
   const total = motifs.reduce((a, m) => a + m[1], 0);
   const pickMotif = (h: number) => { let acc = 0; for (const m of motifs) { acc += m[1] / total; if (h < acc) return m; } return motifs[0]; };
   // the camp: tents around the fire, bedrolls
@@ -2091,6 +2243,10 @@ function decorateWild(g: Gen) {
     const dHub = Math.hypot(x - g.hub.x, (y - g.hub.y) * 1.2);
     const near = (k: number) => { for (let dy = -k; dy <= k; dy++) for (let dx = -k; dx <= k; dx++) { if (g.inb(x + dx, y + dy) && g.keep[g.i(x + dx, y + dy)]) return true; } return false; };
     let d = base * (0.4 + clump * 1.3) + (edge < 3 ? (3 - edge) * 0.18 * (base > 0.2 ? 1 : 0.25) : 0);
+    // glades open up between groves
+    const glade = fbm(x / 7, y / 6, s + 31);
+    const glades = bg === "forest" || bg === "swamp" || bg === "camp" || bg === "river" || bg === "lake" || bg === "road";
+    if (glades && glade < 0.4) d *= 0.12; else if (glades && glade > 0.62) d *= 1.35;
     if (dHub < 6) d *= 0.35;
     if (near(1)) d *= 0.45;
     const h = cell(x, y, s + 1);
@@ -2099,16 +2255,24 @@ function decorateWild(g: Gen) {
       const m = pickMotif(cell(x, y, s + 2));
       if (m[0] === "bush") g.sprite(prop("bush", g.biome.obs[1], x + y), x, y, 1, 1, { soft: true, dy: 1 });
       else if (m[0] === "rock") g.sprite(prop("rock", bg === "desert" ? "#c8a070" : "#8a8a90", x), x, y, 1, 1, { soft: true, dy: 2 });
+      else if (m[0] === "oak") g.tree(x, y, "tree", 3 + Math.floor(cell(x, y, s + 3) * 3), snow ? undefined : OAK[Math.floor(cell(x, y, s + 8) * OAK.length)]);
+      else if (m[0] === "fir") g.tree(x, y, "pine", 4 + Math.floor(cell(x, y, s + 3) * 3), FIR);
       else g.tree(x, y, m[0], Math.floor(cell(x, y, s + 3) * 3), m[2]);
       continue;
     }
+    const wildish = bg === "forest" || bg === "swamp" || bg === "camp" || bg === "river" || bg === "lake" || bg === "road" || bg === "hill" || bg === "bridge";
     // small things
     const h2 = cell(x, y, s + 4);
     if (h2 < 0.035) g.sprite(prop("bush", g.biome.obs[1], x * 3 + y), x, y, 1, 1, { soft: true, dy: 1 });
     else if (h2 < 0.055) g.sprite(prop("rock", bg === "desert" ? "#c8a070" : bg === "swamp" ? "#5a5e50" : "#8a8a90", x), x, y, 1, 1, { soft: true, dy: 2 });
     else if (h2 < 0.065 && bg !== "desert") g.sprite(prop("stump"), x, y, 1, 1, { soft: true, dy: 2 });
     else if (h2 < 0.09 && (bg === "forest" || bg === "swamp" || bg === "camp")) g.sprite(prop("mushrooms"), x, y, 1, 1, { soft: true, walkable: true, flat: true, dy: 8 });
-    else if (h2 < 0.2 && gg === G.GRASS && bg !== "desert" && !snow) g.set(x, y, G.FLOWER);
+    else if (h2 < 0.15 && wildish) g.sprite(fur(bg === "swamp" ? "cattail" : "fern", x + y), x, y, 1, 1, { soft: true, walkable: true, dy: 3 });
+    else if (h2 < 0.2 && wildish && !snow) g.sprite(fur("tallgrass", x * 5 + y, bg === "swamp" ? "#6a8a3a" : ""), x, y, 1, 1, { soft: true, walkable: true, dy: 2 });
+    else if (h2 < 0.215 && wildish && bg !== "swamp") g.sprite(fur("mossrock", x), x, y, 1, 1, { soft: true, dy: 2 });
+    else if (h2 < 0.228 && wildish && g.free(x + 1, y, 1, 1)) { g.sprite(prop("log"), x, y, 2, 1, { soft: true, dy: 3 }); }
+    else if (h2 < 0.3 && gg === G.GRASS && bg !== "desert" && !snow && (!glades || glade < 0.5)) g.set(x, y, G.FLOWER);
+    else if (h2 < 0.33 && glades && glade < 0.4 && !snow && bg !== "swamp") g.sprite(fur("flowerpatch", x + y * 3), x, y, 1, 1, { walkable: true, flat: true, dy: 4 });
   }
   // reeds and lily pads on the banks
   for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) {
@@ -2139,10 +2303,10 @@ function farmPlots(g: Gen, n: number) {
 function decorateSettle(g: Gen) {
   const bg = g.scene.bg, s = g.seed;
   // fill the remaining lots with houses
-  const looks: BStyle[] = bg === "village" ? ["cottage", "house", "hut", "barn", "house"] : bg === "castle" ? ["barn", "smith", "house"] : ["house", "shop", "house", "manor", "smith", "house", "inn"];
+  const looks: BStyle[] = bg === "village" ? ["cottage", "house", "hut", "barn", "house"] : bg === "castle" ? ["stable", "smith", "tower", "house"] : ["house", "shop", "house", "manor", "smith", "house", "inn"];
   g.doorSlots.forEach((d, k) => {
     if (d.used) return;
-    const style = d.style ?? looks[(k + s) % looks.length];
+    const style = d.style ?? looks[(bg === "castle" ? k : k + s) % looks.length];
     const [tw, th] = [Math.min(d.tw, style === "keep" ? 7 : 5), Math.min(d.th, style === "keep" ? 4 : 3)];
     const x0 = d.x + ((d.tw - tw) >> 1), y0 = d.y + d.th - th;
     if (!g.free(x0, y0, tw, th, () => true) && !g.doorSlots.includes(d)) return;
@@ -2198,8 +2362,29 @@ function decorateSettle(g: Gen) {
       const nextGate = DIR4.some(([dx, dy]) => g.get(x + dx, y + dy) === G.GATE);
       if (nextGate && cell(x, y, 9) > 0.3 && (y === 2 || y === g.h - 1 || x === 0 || x === g.w - 1)) wallTorch(g, x, y);
     }
+    // round towers at the corners of the curtain wall
+    const ct = cornerTower(`${bg === "castle" ? "#9a968c" : "#a8a294"}|${g.lit ? 1 : 0}`);
+    for (const [x, y] of [[0, 0], [g.w - 2, 0], [0, g.h - 3], [g.w - 2, g.h - 3]] as const) g.put({ x: (x + 1) * TW, y: (y + 3) * TW + (y ? 0 : 0), img: ct, s: 2, fade: y > 0 }, x, y, 2, 3, true);
+  }
+  if (bg === "castle") {
+    const wp = g.nearFree({ x: g.hub.x + 3, y: g.hub.y - 2 }, (x, y) => g.free(x, y, 1, 1) && g.get(x, y) !== G.FLAG, 4);
+    if (wp) g.sprite(prop("well"), wp.x, wp.y);
+    // flower beds and hedges along the keep, hay and a cart by the stables, a training ground
+    for (const dx of [-6, 5]) for (let k = 0; k < 2; k++) { const x = g.hub.x + dx + k, y = 7; if (g.free(x, y - 1, 1, 1)) g.sprite(prop("bush", "#3f8a3a", x + k), x, y - 1, 1, 1, { dy: 1 }); }
+    for (const [x, y] of [[3, 5], [4, 5], [g.w - 5, 5], [g.w - 4, 5]] as const) if (g.free(x, y, 1, 1)) g.sprite(prop("flowers"), x, y);
+    const yard = findLots(g, { x: 5, y: g.h - 6 }, [[4, 3]], 1, (x, y, w, h) => g.free(x, y, w, h), 1)[0];
+    if (yard) { g.sprite(prop("dummy"), yard.x, yard.y); g.sprite(prop("dummy"), yard.x + 2, yard.y); g.sprite(prop("rack"), yard.x + 3, yard.y + 1); g.sprite(prop("hay"), yard.x, yard.y + 2); }
+    for (const [x, y] of [[g.w - 4, g.h - 4], [g.w - 5, g.h - 4]] as const) if (g.free(x, y, 1, 1)) g.sprite(prop(x % 2 ? "barrel" : "crates"), x, y);
   }
 }
+/** A round tower of the curtain wall, crenellated, seen from the courtyard (32 x 48). */
+const cornerTower = memo((k: string) => {
+  const [st, lit] = k.split("|");
+  const [c, p] = art(32, 48);
+  softShadow(p, 16, 46, 14, 2);
+  towerArt(p, 3, 10, 26, 46, { stone: st, lit: lit === "1", seed: 7, slits: true });
+  return c;
+});
 
 function wallTorch(g: Gen, x: number, y: number) {
   const wx = x * TW + TW / 2, wy = y * TW + 6;
@@ -2209,73 +2394,169 @@ function wallTorch(g: Gen, x: number, y: number) {
 }
 
 function decorateInterior(g: Gen) {
-  const bg = g.scene.bg, s = g.seed, cx = g.hub.x;
-  const fy = 3; // first floor row
+  const v = g.ivar, s = g.seed, cx = g.hub.x, cy = g.hub.y, W = g.w, Hh = g.h;
   const usedX = new Set(g.doorSlots.filter((d) => d.used && d.wall === "n").map((d) => d.x));
-  const wallFree = (x: number) => !usedX.has(x) && Math.abs(x - g.ends.north!.x) > 1 && x > 1 && x < g.w - 2;
-  const flatOnWall = (img: HTMLCanvasElement, x: number, yOff: number, extra: Partial<Obj> = {}) => g.put({ x: x * TW + TW / 2, y: TW * 2 + yOff, img, s: 2, flat: true, ...extra }, x, 2, 1, 1, true);
-  if (bg === "inn") {
-    // hearth on the back wall
-    const hx = cx - 3;
-    if (wallFree(hx) && wallFree(hx + 1) && wallFree(hx - 1)) {
-      flatOnWall(prop("hearth"), hx, 30, { live: hearthLive });
-      g.lights.push({ x: hx * TW + TW / 2, y: TW * 3, r: 170, col: "#ff9a4a", flick: 1, on: "always", glow: 0.45 });
-      g.emit.push({ x: hx * TW + TW / 2, y: TW * 3 - 14, kind: "embers", acc: 0 });
-      g.sprite(prop("rug", "#7a2a2a"), hx - 1, fy + 1, 3, 2, { flat: true, walkable: true, dy: 8 });
+  const north = g.exits.has("north");
+  /** Is the back wall free over these columns (no door, no way out)? */
+  const wallFree = (x0: number, x1 = x0) => { for (let x = x0; x <= x1; x++) if (usedX.has(x) || x < 1 || x > W - 2 || (north && Math.abs(x - cx) <= 1)) return false; return true; };
+  /** A flat piece hung on the back wall face, centred on a world x; `bottom` is its bottom in world px. */
+  const onWall = (img: HTMLCanvasElement, wx: number, bottom: number, extra: Partial<Obj> = {}) => g.put({ x: wx, y: bottom, img, s: 2, flat: true, ...extra }, Math.floor(wx / TW), 2, 1, 1, true);
+  const midX = (x0: number, x1: number) => ((x0 + x1 + 1) / 2) * TW;
+  /** Furniture standing on free floor. */
+  const put = (img: HTMLCanvasElement, x: number, y: number, fw = 1, fh = 1, o: Partial<Obj> & { walkable?: boolean } = {}) => (g.free(x, y, fw, fh) ? g.sprite(img, x, y, fw, fh, o) : null);
+  const light = (x: number, y: number, r: number, col: string, flick = 0.6, glow = 0.35) => g.lights.push({ x, y, r, col, flick, on: "always", glow });
+  /** A table with chairs round it; north and side chairs are seats for patrons. */
+  const tableSet = (x: number, y: number, tw: number, o: { north?: boolean; south?: boolean; sides?: boolean; round?: boolean; wood?: string } = {}) => {
+    const t = o.round ? put(fur("roundtable", s + x * 3 + y), x, y, 1, 1, { dy: 4, live: flamesLive("roundtable") }) : put(fur("table", tw, s + x * 3 + y), x, y, tw, 1, { dy: 4, live: flamesLive(`table${tw}`) });
+    if (!t) return;
+    light(t.x, t.y - 34, 46, "#ffc870", 0.7, 0.32);
+    const chair = (cxx: number, cyy: number, f: string, facing: Facing, dy: number) => {
+      const c = put(fur("chair", f, o.wood ?? ""), cxx, cyy, 1, 1, { dy: f === "u" ? 1 : 8 });
+      if (c && f !== "u") g.seats.push({ x: cxx, y: cyy, facing, dy });
+    };
+    if (o.north !== false) for (let k = 0; k < tw; k++) chair(x + k, y - 1, "d", "down", -12);
+    if (o.sides !== false) { chair(x - 1, y, "r", "right", -8); chair(x + tw, y, "l", "left", -8); }
+    if (o.south) for (let k = 0; k < tw; k++) chair(x + k, y + 1, "u", "up", 0);
+  };
+  const overhead = (img: HTMLCanvasElement, x: number, y: number, kind: string, lightCol = "#ffc870") => {
+    const o = g.put({ x: x * TW + TW / 2, y: (y + 1) * TW, img, s: 2, over: true, live: flamesLive(kind) }, x, y, 1, 1, true);
+    light(o.x, o.y - 30, 120, lightCol, 0.5, 0.3);
+  };
+  const hearthAt = (wx: number, big: boolean) => {
+    const img = big ? fur("hearth") : fur("fireplace");
+    onWall(img, wx, 3 * TW + 4, { live: big ? hearthLive : fireplaceLive });
+    light(wx, 3 * TW - 6, big ? 190 : 150, "#ff9a4a", 1, 0.5);
+    g.emit.push({ x: wx, y: 3 * TW - 16, kind: "embers", acc: 0 }, { x: wx + 1, y: 3 * TW - 40, kind: "steam", acc: 0 });
+  };
+  switch (v) {
+    case "tavern": {
+      // the bar: shelves of bottles, kegs on a cradle, stools along the counter
+      if (wallFree(15, 17)) onWall(fur("backbar", s % 7), midX(15, 17), 2 * TW + 28);
+      put(fur("kegs"), 19, 3, 2, 1, { dy: 2 });
+      put(fur("barrels"), 15, 3, 1, 1, { dy: 2 });
+      if (wallFree(19)) onWall(fur("lanternwall"), 19 * TW + 4, 2 * TW + 18);
+      for (const x of [15, 16, 18, 19]) put(fur("stool"), x, 6, 1, 1, { dy: 4 });
+      light(17 * TW, 4 * TW, 110, "#ffb860", 0.5, 0.3);
+      // the hearth with chairs round a rug, a staircase in the corner
+      if (wallFree(6, 8)) { hearthAt(midX(6, 8), true); g.sprite(fur("rug", 3, 0), 6, 4, 3, 2, { flat: true, walkable: true, dy: 2 }); put(fur("armchair", "r"), 5, 5, 1, 1, { dy: 3 }); put(fur("armchair", "l"), 9, 5, 1, 1, { dy: 3 }); put(fur("woodbin"), 9, 3, 1, 1, { dy: 3 }); }
+      if (!g.hasStairs && g.free(1, 3, 2, 3)) g.sprite(fur("stairs"), 1, 3, 2, 3, { flat: true, dy: 0 });
+      else put(fur("barrels"), 1, 3, 2, 1, { dy: 2 });
+      // tables
+      tableSet(2, 11, 2); tableSet(6, 11, 2); tableSet(14, 11, 2, { south: true }); tableSet(18, 11, 1, { round: true });
+      tableSet(3, 7, 1, { round: true, north: false });
+      put(fur("barrels"), 1, 13, 2, 1, { dy: 2 }); put(fur("crates"), 20, 13, 1, 1, { dy: 2 }); put(fur("sacks"), 19, 13, 1, 1, { dy: 2 }); put(fur("plant"), 9, 13, 1, 1, { dy: 2 });
+      put(fur("bench", 2), 6, 13, 2, 1, { dy: 4 });
+      // the walls
+      if (wallFree(10)) onWall(fur("painting", s % 3), 10 * TW, 2 * TW + 24);
+      if (wallFree(12)) onWall(fur("antlers"), 12 * TW + TW, 2 * TW + 14);
+      for (const x of [5, 14]) if (wallFree(x)) onWall(fur("lanternwall"), x * TW + TW / 2, 2 * TW + 18);
+      if (wallFree(3)) onWall(fur("window", g.lit ? 1 : 0, "#7a2a2a"), 3 * TW + TW / 2, 2 * TW + 26, { live: windowLive(g) });
+      overhead(fur("chandelier"), cx, 6, "chandelier");
+      overhead(fur("chandelier"), cx, 9, "chandelier");
+      break;
     }
-    // the bar along the east side
-    const bx = g.w - 7, by = fy + 3;
-    for (let x = bx; x < g.w - 1; x++) g.sprite(prop("counter", x === bx ? 1 : 0, s + x), x, by, 1, 1, { dy: 2 });
-    for (let x = bx + 1; x < g.w - 1; x += 2) g.sprite(prop("barrel"), x, fy, 1, 1);
-    for (const x of [bx + 1, bx + 4]) if (x < g.w - 1) flatOnWall(prop("shelf", x), x, 6);
-    g.npcSlots.push({ x: bx + 2, y: fy + 2 });
-    // tables with stools
-    const tables: Pt[] = [];
-    for (let ty = fy + 3; ty < g.h - 3; ty += 3) for (let tx = 3; tx < bx - 2; tx += 5) if (Math.abs(tx + 1 - cx) > 1 || ty > fy + 5) tables.push({ x: tx + (ty % 2), y: ty });
-    tables.forEach((t, k) => {
-      if (!g.free(t.x, t.y, 2, 1)) return;
-      g.sprite(prop("table", k + s), t.x, t.y, 2, 1, { dy: 4 });
-      g.lights.push({ x: (t.x + 1) * TW, y: t.y * TW + 10, r: 40, col: "#ffc870", on: "always", flick: 0.6, glow: 0.3 });
-      for (const [dx, dy] of [[-1, 0], [2, 0], [0, 1], [1, 1]] as const) if (g.free(t.x + dx, t.y + dy, 1, 1) && cell(t.x + dx, t.y + dy, s) > 0.3) g.sprite(prop("stool"), t.x + dx, t.y + dy, 1, 1, { dy: 6, walkable: true, flat: false });
-      g.npcSlots.push({ x: t.x - 1, y: t.y }, { x: t.x + 2, y: t.y });
-    });
-    for (const x of [2, g.w - 3]) if (wallFree(x)) flatOnWall(prop("window", g.lit ? 1 : 0, "#c8b090"), x, 8, { live: windowLive(g) });
-  } else {
-    // pillars in two rows, the carpet up the middle, the seat of honour at the back
-    const marble = bg === "temple";
-    for (let y = fy; y < g.h - 1; y++) for (let x = cx - 1; x <= cx + 1; x++) if (g.get(x, y) !== G.WALL) g.set(x, y, G.CARPET);
-    const pcol = marble ? "#e8e2d4" : "#a8a090";
-    for (let y = fy + 2; y < g.h - 2; y += 3) for (const x of [cx - 5, cx + 5, cx - 10, cx + 10]) if (x > 1 && x < g.w - 2 && g.free(x, y, 1, 1)) g.sprite(prop("pillar", pcol), x, y, 1, 1, { dy: 0 });
-    if (bg === "hall") {
-      if (g.free(cx, fy, 1, 1)) g.sprite(prop("throne"), cx, fy, 1, 1, { dy: 2 });
-      for (const x of [cx - 2, cx + 2]) if (g.free(x, fy, 1, 1)) { const o = g.sprite(prop("brazier"), x, fy); g.lights.push({ x: o.x, y: o.y - 20, r: 110, col: "#ffa850", flick: 1, on: "always", glow: 0.5 }); g.emit.push({ x: o.x, y: o.y - 26, kind: "embers", acc: 0 }); }
-      for (let x = 2; x < g.w - 2; x += 3) if (wallFree(x) && Math.abs(x - cx) > 2) flatOnWall(prop("banner", x % 2 ? "#8a1e2a" : "#2a4a8a"), x, 2);
-      for (const tx of [cx - 9, cx + 6]) if (tx > 1 && g.free(tx, fy + 5, 2, 1)) g.sprite(prop("table", tx), tx, fy + 5, 2, 1, { dy: 4 });
-    } else {
-      if (g.free(cx, fy, 1, 1)) { const o = g.sprite(prop("altar"), cx, fy, 1, 1, { dy: 2 }); g.lights.push({ x: o.x, y: o.y - 34, r: 110, col: "#ffe0a0", flick: 0.4, on: "always", glow: 0.45 }); g.emit.push({ x: o.x, y: o.y - 44, kind: "incense", acc: 0 }); }
-      for (const x of [cx - 3, cx + 3]) if (g.free(x, fy, 1, 1)) g.sprite(prop("statue", "#d8d0c0"), x, fy, 1, 1, { dy: 0 });
-      for (let y = fy + 4; y < g.h - 3; y += 2) for (const x of [cx - 4, cx + 2]) if (g.free(x, y, 2, 1)) g.sprite(prop("bench"), x, y, 2, 1, { dy: 6 });
-      for (let x = 2; x < g.w - 2; x += 4) if (wallFree(x) && Math.abs(x - cx) > 4) flatOnWall(prop("window", 1, "#e0d8c8"), x, 8, { live: windowLive(g, true) });
-      for (const x of [cx - 6, cx + 6]) if (g.free(x, fy, 1, 1)) { const o = g.sprite(prop("candles"), x, fy); g.lights.push({ x: o.x, y: o.y - 20, r: 60, col: "#ffd890", flick: 0.6, on: "always", glow: 0.4 }); }
+    case "shop": {
+      for (const x of [10, 11, 13, 14]) put(fur("goodsshelf", s + x), x, 3, 1, 1, { dy: 2 });
+      for (const x of [1, 2, 3]) put(fur("goodsshelf", s + x * 5), x, 3, 1, 1, { dy: 2 });
+      if (wallFree(6, 7)) onWall(fur("weaponwall"), 7 * TW, 2 * TW + 24);
+      put(fur("display", 0), 2, 5, 2, 1, { dy: 3 });
+      put(fur("armorstand"), 5, 4, 1, 1, { dy: 2 });
+      put(fur("display", 1 + (s % 2)), 2, 9, 2, 1, { dy: 3 });
+      put(fur("barrels"), 1, 10, 1, 1, { dy: 2 }); put(fur("sacks"), 4, 10, 1, 1, { dy: 2 }); put(fur("crates"), 14, 10, 1, 1, { dy: 2 });
+      put(fur("display", 2), 11, 9, 2, 1, { dy: 3 }); put(fur("plant"), 14, 9, 1, 1, { dy: 2 }); put(fur("chest"), 6, 10, 1, 1, { dy: 2 });
+      g.sprite(fur("rug", 3, 4), cx - 1, cy + 2, 3, 2, { flat: true, walkable: true, dy: 2 });
+      if (wallFree(12)) onWall(fur("painting", 1), 12 * TW + TW / 2, 2 * TW + 22);
+      if (wallFree(9)) onWall(fur("window", g.lit ? 1 : 0, "#3a5a7a"), 9 * TW + TW / 2, 2 * TW + 26, { live: windowLive(g) });
+      overhead(fur("hanglantern"), 4, 7, "none"); overhead(fur("hanglantern"), 12, 7, "none");
+      light(12 * TW, 4 * TW, 90, "#ffc870");
+      break;
     }
-    g.npcSlots.push({ x: cx - 2, y: fy + 2 }, { x: cx + 2, y: fy + 2 }, { x: cx - 2, y: fy + 6 }, { x: cx + 2, y: fy + 5 });
+    case "house": {
+      if (wallFree(3, 4)) { hearthAt(4 * TW, false); g.sprite(fur("rug", 3, 1), 2, 4, 3, 2, { flat: true, walkable: true, dy: 2 }); put(fur("armchair", "r"), 1, 5, 1, 1, { dy: 3 }); put(fur("loom"), 5, 4, 1, 1, { dy: 2 }); put(fur("woodbin"), 1, 3, 1, 1, { dy: 2 }); }
+      put(fur("bed", s % 5), 13, 3, 1, 2, { dy: 2 }); put(fur("bed", (s + 2) % 5), 14, 3, 1, 2, { dy: 2 });
+      put(fur("chest"), 13, 5, 1, 1, { dy: 2 }); put(fur("cupboard"), 10, 3, 1, 1, { dy: 2 }); put(fur("plant"), 12, 3, 1, 1, { dy: 2 });
+      tableSet(2, 9, 2, { south: true });
+      put(fur("kitchen"), 11, 9, 2, 1, { dy: 2 }); put(fur("barrels"), 14, 9, 1, 2, { dy: 2 }); put(fur("sacks"), 13, 10, 1, 1, { dy: 2 });
+      if (wallFree(7)) onWall(fur("window", g.lit ? 1 : 0, "#3a6a4a"), 7 * TW + TW / 2, 2 * TW + 26, { live: windowLive(g) });
+      if (wallFree(9)) onWall(fur("window", g.lit ? 1 : 0, "#3a6a4a"), 9 * TW + TW / 2, 2 * TW + 26, { live: windowLive(g) });
+      if (wallFree(6)) onWall(fur("painting", s % 3), 6 * TW, 2 * TW + 22);
+      overhead(fur("hanglantern"), 3, 8, "none");
+      break;
+    }
+    case "guild": {
+      for (const x of [15, 16]) put(fur("bookcase", s + x), x, 3, 1, 1, { dy: 2 });
+      put(fur("chest"), 19, 3, 1, 1, { dy: 2 }); put(fur("barrels"), 20, 3, 2, 1, { dy: 2 });
+      if (wallFree(18)) onWall(fur("mapwall"), 18 * TW + TW / 2, 2 * TW + 22);
+      if (wallFree(5, 6)) onWall(fur("noticeboard", s % 9), 6 * TW, 2 * TW + 26);
+      if (wallFree(8, 9)) { hearthAt(9 * TW, false); put(fur("armchair", "r"), 7, 4, 1, 1, { dy: 3 }); put(fur("armchair", "l"), 10, 4, 1, 1, { dy: 3 }); }
+      for (const [x, k] of [[2, 0], [13, 1], [22, 1]] as const) if (wallFree(x)) onWall(fur("trophy", k + s), x * TW + TW / 2, 2 * TW + 16);
+      if (wallFree(4)) onWall(fur("shieldx", s % 5), 4 * TW + TW / 2, 2 * TW + 22);
+      put(fur("armorstand"), 1, 5, 1, 1, { dy: 2 }); put(fur("armorstand"), 22, 6, 1, 1, { dy: 2 });
+      g.sprite(prop("rack"), 1, 7, 1, 1, { dy: 2 });
+      // long tables with benches and adventurers
+      for (const x0 of [3, 15]) {
+        const t = put(fur("longtable", 4, s + x0), x0, 12, 4, 1, { dy: 4 });
+        if (!t) continue;
+        light(t.x, t.y - 30, 70, "#ffc870", 0.6, 0.3);
+        if (put(fur("bench", 4), x0, 11, 4, 1, { dy: 8 })) for (let k = 0; k < 4; k++) g.seats.push({ x: x0 + k, y: 11, facing: "down", dy: -8 });
+        put(fur("bench", 4), x0, 13, 4, 1, { dy: 1 });
+      }
+      put(fur("barrels"), 1, 13, 1, 1, { dy: 2 }); put(fur("crates"), 22, 13, 1, 1, { dy: 2 });
+      g.sprite(fur("rug", 3, 1), cx - 1, cy + 2, 3, 2, { flat: true, walkable: true, dy: 2 });
+      overhead(fur("chandelier"), cx, 6, "chandelier"); overhead(fur("chandelier"), cx, 12, "chandelier");
+      break;
+    }
+    case "throne": {
+      // the red carpet from the door to the steps
+      for (let y = 5; y < Hh - 1; y++) for (let x = cx - 1; x <= cx + 1; x++) if (g.get(x, y) !== G.WALL) g.set(x, y, G.CARPET);
+      for (const x of [cx - 3, cx + 3]) { const o = put(fur("brazier"), x, 3, 1, 1, { dy: 2 }); if (o) { light(o.x, o.y - 24, 120, "#ffa850", 1, 0.5); g.emit.push({ x: o.x, y: o.y - 26, kind: "embers", acc: 0 }); } }
+      for (const x of [cx - 4, cx + 4]) put(fur("banner", 1, x < cx ? "#8a1e2a" : "#2a4a8a"), x, 3, 1, 1, { dy: 10, walkable: true });
+      // columns with torches down both sides
+      for (const y of [6, 9, 13, 16]) for (const x of [cx - 5, cx + 5]) { const o = put(fur("pillar", 1, "#c8c0b0"), x, y, 1, 1, { dy: 0, live: flamesLive("pillar") }); if (o) { light(o.x, o.y - 66, 90, "#ffa850", 1, 0.45); } }
+      for (const y of [6, 13]) for (const x of [1, W - 2]) put(fur("armor"), x, y, 1, 1, { dy: 2 });
+      // tapestries and banners on the back wall
+      for (let x = 2; x < W - 2; x += 3) {
+        if (Math.abs(x - cx) < 5 || !wallFree(x, x + 1)) continue;
+        onWall(x % 2 ? fur("tapestry", x, "#7a1e2a") : fur("tapestry", x + 1, "#2a3a7a"), (x + 1) * TW, 2 * TW + 30);
+      }
+      if (wallFree(cx - 1, cx + 1)) onWall(fur("shieldx", 1), (cx + 0.5) * TW, 2 * TW + 16);
+      // side tables for a feast and plants
+      put(fur("longtable", 4, s), 2, 15, 4, 1, { dy: 4 }); put(fur("longtable", 4, s + 3), W - 6, 15, 4, 1, { dy: 4 });
+      put(fur("vase"), 4, 9, 1, 1, { dy: 2 }); put(fur("vase"), W - 5, 9, 1, 1, { dy: 2 });
+      overhead(fur("chandelier"), cx, 8, "chandelier"); overhead(fur("chandelier"), cx, 14, "chandelier");
+      break;
+    }
+    case "temple": {
+      for (let y = 5; y < Hh - 1; y++) for (let x = cx - 1; x <= cx + 1; x++) if (g.get(x, y) !== G.WALL) g.set(x, y, G.CARPET);
+      for (const x of [cx - 4, cx + 4]) put(fur("saint", 0, "#e0d8c8"), x, 3, 1, 1, { dy: 2 });
+      for (const x of [cx - 3, cx + 3]) { const o = put(fur("candelabra"), x, 4, 1, 1, { dy: 2, live: flamesLive("candelabra") }); if (o) light(o.x, o.y - 56, 70, "#ffd890", 0.6, 0.4); }
+      put(fur("vase"), cx - 2, 3, 1, 1, { dy: 4 }); put(fur("vase"), cx + 2, 3, 1, 1, { dy: 4 });
+      for (const y of [6, 8, 12, 14]) for (const x of [cx - 8, cx - 5, cx + 2, cx + 5]) {
+        if (put(fur("pew", 3), x, y, 3, 1, { dy: 2 })) for (let k = 0; k < 3; k++) g.seats.push({ x: x + k, y, facing: "up", dy: -4 });
+      }
+      for (const y of [7, 13]) for (const x of [1, W - 2]) put(fur("pillar", 0, "#e8e2d4"), x, y, 1, 1, { dy: 0 });
+      for (const x of [cx - 3, cx + 3]) put(fur("font"), x, Hh - 3, 1, 1, { dy: 3 });
+      for (const x of [2, 5, W - 6, W - 3]) if (wallFree(x)) {
+        onWall(fur("stained", x), x * TW + TW / 2, 2 * TW + 30, { live: stainedLive(g, x) });
+        g.lights.push({ x: x * TW + TW / 2 + 20, y: 4 * TW + 10, r: 70, col: ["#c85a8a", "#5a8ae0", "#e0b040", "#5ac08a"][x % 4], on: "always", glow: 0.2 });
+      }
+      put(fur("incense"), cx + 2, 5, 1, 1, { dy: 6, walkable: true });
+      break;
+    }
   }
-  // wall torches between things
-  for (let x = 3; x < g.w - 3; x += 6) if (wallFree(x) && !g.objs.some((o) => o.flat && Math.abs(o.x - (x * TW + TW / 2)) < TW * 1.5 && o.y < TW * 3)) wallTorch(g, x, 1);
-  for (const [y, x] of [[g.h - 3, 1], [g.h - 3, g.w - 2]] as const) if (g.free(x, y, 1, 1)) g.sprite(prop(bg === "inn" ? "barrel" : "pot"), x, y);
-  g.objSlots = [{ x: cx, y: fy + 4 }, { x: cx - 3, y: fy + 6 }, { x: cx + 3, y: fy + 6 }, ...g.objSlots];
 }
 
 function decorateUnder(g: Gen) {
   const bg = g.scene.bg, s = g.seed;
+  if (bg === "dungeon") dungeonRooms(g);
   for (let y = 2; y < g.h - 1; y++) for (let x = 1; x < g.w - 1; x++) {
     const i = g.i(x, y), gg = g.gnd[i];
     // wall dressings on faces (a wall with floor under it and wall above)
     if (gg === G.WALL && !UNWALK.has(g.get(x, y + 1)) && g.get(x, y - 1) === G.WALL && !g.extra.has(i)) {
       const h = cell(x, y, s + 31);
+      if (g.objs.some((o) => o.flat && o.tiles.includes(i))) continue;
       if (h < (bg === "dungeon" ? 0.2 : 0.12) && x % 2 === 0) wallTorch(g, x, y - 1);
-      else if (bg === "dungeon" && h < 0.28) g.put({ x: x * TW + TW / 2, y: y * TW + 22, img: prop("chains"), s: 2, flat: true }, x, y, 1, 1, true);
-      else if (bg === "dungeon" && h < 0.32) g.put({ x: x * TW + TW / 2, y: y * TW + 28, img: prop("bars"), s: 2, flat: true }, x, y, 1, 1, true);
+      else if (bg === "dungeon" && h < 0.27) g.put({ x: x * TW + TW / 2, y: y * TW + 22, img: prop("chains"), s: 2, flat: true }, x, y, 1, 1, true);
       continue;
     }
     if (UNWALK.has(gg) || g.keep[i] || g.block[i]) continue;
@@ -2303,15 +2584,87 @@ function decorateUnder(g: Gen) {
   if (bg === "cave") g.emit.push({ x: g.hub.x * TW, y: g.hub.y * TW - 60, kind: "drip", acc: 0 });
 }
 
+/** Dungeon rooms: cells along the walls, archways where corridors come in, and a use for each room. */
+function dungeonRooms(g: Gen) {
+  const s = g.seed;
+  const W = (x: number, y: number) => g.get(x, y) === G.WALL;
+  // archways where a corridor passes through a room's north wall
+  for (let y = 3; y < g.h - 1; y++) for (let x = 1; x < g.w - 1; x++) {
+    if (g.get(x, y) !== G.CAVE || g.get(x, y + 1) !== G.FLAG || !W(x - 1, y) || !W(x + 1, y) || !W(x - 1, y - 1) || !W(x + 1, y - 1)) continue;
+    g.put({ x: x * TW + TW / 2, y: (y + 1) * TW, img: fur("archway"), s: 2, flat: true }, x, y, 1, 1, true);
+  }
+  g.rooms.forEach((q, k) => {
+    const theme = k === 0 ? "hall" : ["prison", "guard", "store", "crypt", "prison"][(k + s) % 5];
+    const free = (x: number, y: number, w = 1, h = 1) => g.free(x, y, w, h) && g.get(x, y) === G.FLAG;
+    if (theme === "prison" || (theme === "hall" && q.w >= 9)) {
+      // cells let into the north wall, barred
+      for (let x = q.x + 1; x + 1 < q.x + q.w - 1; x += 3) {
+        let ok = true;
+        for (let yy = q.y - 4; yy <= q.y - 1 && ok; yy++) for (let xx = x - 1; xx <= x + 2 && ok; xx++) if (!W(xx, yy) || g.keep[g.i(xx, yy)] || g.extra.has(g.i(xx, yy)) || g.block[g.i(xx, yy)]) ok = false;
+        for (const xx of [x, x + 1]) if (g.keep[g.i(xx, q.y)] || g.block[g.i(xx, q.y)]) ok = false;
+        if (!ok) continue;
+        g.rect(x, q.y - 2, 2, 2, G.FLAG);
+        g.put({ x: (x + 1) * TW, y: q.y * TW, img: fur("cellbars"), s: 2 }, x, q.y - 1, 2, 1);
+        g.put({ x: (x + 1) * TW, y: (q.y - 1) * TW + 4, img: fur("straw", x), s: 2, flat: true }, x, q.y - 2, 2, 1);
+        if (cell(x, q.y, s) > 0.4) g.put({ x: x * TW + TW / 2 + (cell(x, 1, s) > 0.5 ? TW : 0), y: (q.y - 1) * TW - 2, img: fur("skeleton"), s: 2, flat: true }, x, q.y - 2, 1, 1);
+        else g.put({ x: x * TW + TW, y: (q.y - 1) * TW + 8, img: prop("bones"), s: 2, flat: true }, x, q.y - 2, 1, 1);
+        g.put({ x: x * TW + TW / 2, y: (q.y - 3) * TW + 22, img: prop("chains"), s: 2, flat: true }, x, q.y - 3, 1, 1, true);
+        x += 1;
+        if (theme === "hall") break;
+      }
+    }
+    const spot = (fw = 1): Pt | null => {
+      for (let t = 0; t < 30; t++) {
+        const x = q.x + Math.floor(cell(t, k, s + 5) * q.w), y = q.y + Math.floor(cell(t, k, s + 6) * q.h);
+        if (free(x, y, fw, 1)) return { x, y };
+      }
+      return null;
+    };
+    const at = (img: HTMLCanvasElement, fw = 1, o: Partial<Obj> & { walkable?: boolean } = {}) => { const p = spot(fw); return p ? g.sprite(img, p.x, p.y, fw, 1, { dy: 2, ...o }) : null; };
+    // cobwebs in the upper corners
+    if (W(q.x - 1, q.y - 1)) g.put({ x: q.x * TW + 16, y: (q.y - 1) * TW + 4, img: fur("cobweb"), s: 2, flat: true }, q.x, q.y - 1, 1, 1, true);
+    if (W(q.x + q.w, q.y - 1) && cell(k, 2, s) > 0.4) g.put({ x: (q.x + q.w) * TW - 16, y: (q.y - 1) * TW + 4, img: fur("cobweb", "r"), s: 2, flat: true }, q.x + q.w - 1, q.y - 1, 1, 1, true);
+    if (theme === "guard") {
+      const p = spot(2);
+      if (p && free(p.x, p.y, 2, 1)) {
+        const t = g.sprite(fur("table", 2, s + k), p.x, p.y, 2, 1, { dy: 4, live: flamesLive("table2") });
+        g.lights.push({ x: t.x, y: t.y - 34, r: 60, col: "#ffc870", flick: 0.7, on: "always", glow: 0.35 });
+        for (const [dx, dy] of [[-1, 0], [2, 0], [0, -1]] as const) if (free(p.x + dx, p.y + dy)) g.sprite(fur("stool"), p.x + dx, p.y + dy, 1, 1, { dy: 4 });
+      }
+      at(prop("rack")); at(fur("barrels")); at(fur("armorstand"));
+    } else if (theme === "store") {
+      at(fur("crates")); at(fur("barrels")); at(fur("sacks")); at(fur("crates")); at(prop("barrel"));
+    } else if (theme === "crypt") {
+      at(fur("sarcophagus"), 2, { dy: 3 }); at(fur("sarcophagus"), 2, { dy: 3 });
+      const c = at(fur("candelabra"), 1, { live: flamesLive("candelabra") });
+      if (c) g.lights.push({ x: c.x, y: c.y - 56, r: 70, col: "#ffd890", flick: 0.6, on: "always", glow: 0.4 });
+      at(prop("bones"), 1, { flat: true, walkable: true, dy: 8 });
+    } else if (theme === "prison") {
+      at(prop("bones"), 1, { flat: true, walkable: true, dy: 8 }); at(fur("straw", k), 1, { flat: true, walkable: true, dy: 6 }); at(prop("rack"));
+    }
+    if (theme === "hall") for (const [x, y] of [[q.x + 1, q.y + 1], [q.x + q.w - 2, q.y + 1], [q.x + 1, q.y + q.h - 1], [q.x + q.w - 2, q.y + q.h - 1]] as const) {
+      if (!free(x, y)) continue;
+      const o = g.sprite(fur("pillar", 1, "#8a8694"), x, y, 1, 1, { dy: 0, live: flamesLive("pillar") });
+      g.lights.push({ x: o.x, y: o.y - 66, r: 100, col: "#ffa850", flick: 1, on: "always", glow: 0.5 });
+    }
+    if (cell(k, 9, s) > 0.5) at(fur("puddle", 0), 1, { flat: true, walkable: true, dy: 8 });
+  });
+}
+
 function decorateShip(g: Gen) {
   const cx = g.hub.x, cy = g.hub.y;
-  for (const [dx, h] of [[-4, 0], [4, 1]] as const) if (g.get(cx + dx, cy - 1) === G.DECK && !g.block[g.i(cx + dx, cy - 1)]) g.put({ x: (cx + dx) * TW + TW / 2, y: cy * TW - 2, img: prop("mast", h), s: 2, fade: true }, cx + dx, cy - 1, 1, 1);
+  for (const dx of [-4, 4]) if (g.get(cx + dx, cy - 1) === G.DECK && !g.block[g.i(cx + dx, cy - 1)]) g.put({ x: (cx + dx) * TW + TW / 2, y: cy * TW - 2, img: fur("mast"), s: 2, fade: true }, cx + dx, cy - 1, 1, 1);
   if (g.free(cx - 10, cy, 1, 1)) g.sprite(prop("wheel"), cx - 10, cy);
-  for (const [dx, dy, k] of [[-7, -2, "crates"], [-6, -2, "barrel"], [6, 2, "barrel"], [7, 2, "crates"], [1, -2, "rope"], [-2, 2, "cannon"], [3, -2, "cannon"], [9, 0, "rope"]] as const) {
+  const on = (dx: number, dy: number, img: HTMLCanvasElement, fw = 1, o: Partial<Obj> & { walkable?: boolean } = {}) => {
     const x = cx + dx, y = cy + dy;
-    if (g.get(x, y) === G.DECK && g.free(x, y, 1, 1)) g.sprite(prop(k), x, y);
-  }
-  for (const [dx, dy] of [[-10, -2], [10, 1], [-10, 2]] as const) { const x = cx + dx, y = cy + dy; if (g.get(x, y) === G.DECK && g.free(x, y, 1, 1)) { const o = g.sprite(prop("lamp"), x, y); g.lights.push({ x: o.x, y: o.y - 44, r: 60, col: "#ffd890", on: "dark", glow: 0.45, flick: 0.2 }); } }
+    for (let k = 0; k < fw; k++) if (g.get(x + k, y) !== G.DECK) return null;
+    return g.free(x, y, fw, 1) ? g.sprite(img, x, y, fw, 1, o) : null;
+  };
+  on(-7, -3, fur("barrels"), 2, { dy: 2 }); on(-7, 3, fur("crates"), 1, { dy: 2 }); on(-6, 3, fur("sacks")); on(6, 3, fur("barrels"), 2, { dy: 2 });
+  on(1, -3, prop("rope")); on(9, 0, fur("capstan")); on(-11, -1, fur("bell"));
+  on(-2, 3, prop("cannon")); on(2, 3, prop("cannon")); on(-1, -3, prop("cannon")); on(3, -3, prop("cannon"));
+  on(5, -3, fur("nets"), 1, { flat: true, walkable: true, dy: 6 }); on(-3, 2, prop("rope"));
+  for (const [dx, dy] of [[-10, -2], [10, 1], [-10, 2]] as const) { const o = on(dx, dy, prop("lamp")); if (o) g.lights.push({ x: o.x, y: o.y - 44, r: 60, col: "#ffd890", on: "dark", glow: 0.45, flick: 0.2 }); }
 }
 
 // ------------------------------------------------------------ live drawings (flames, sparkles...)
@@ -2343,9 +2696,42 @@ function campfire(c: CanvasRenderingContext2D, x: number, y: number, t: number) 
   flame(c, x + 5, y - 6, t + 650, 0.9);
 }
 function torchLive(c: CanvasRenderingContext2D, x: number, y: number, t: number) { flame(c, x, y - 26, t + x * 13, 0.7); }
-function hearthLive(c: CanvasRenderingContext2D, x: number, y: number, t: number) {
-  c.fillStyle = "rgba(255,120,40,.35)"; c.fillRect(x - 20, y - 32, 40, 30);
-  flame(c, x - 8, y - 6, t, 1.3); flame(c, x + 7, y - 6, t + 400, 1.2); flame(c, x, y - 5, t + 200, 1.7);
+/** Fire in a hearth sprite, with the cooking pot hung over it drawn back on top. */
+function potFire(c: CanvasRenderingContext2D, x: number, y: number, t: number, big: boolean) {
+  const w = big ? 22 : 14, k = big ? 1 : 0.75;
+  c.fillStyle = `rgba(255,120,40,${0.22 + Math.sin(t / 130) * 0.05})`; c.fillRect(x - w, y - 36, w * 2, 30);
+  flame(c, x - 9 * k, y - 8, t, 1.05 * k); flame(c, x + 9 * k, y - 8, t + 400, 0.95 * k); flame(c, x, y - 7, t + 200, 1.4 * k);
+  const rx = big ? 10 : 8, ry = big ? 8 : 7, px = x + (big ? 1 : 0);
+  c.fillStyle = "#1e1c24"; c.beginPath(); c.ellipse(px, y - 21, rx, ry, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#3a3842"; c.beginPath(); c.ellipse(px - 3, y - 23, rx * 0.45, ry * 0.4, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#4a4850"; c.fillRect(px - rx - 1, y - 29 - (big ? 1 : 0), rx * 2 + 2, 4);
+  c.fillStyle = "#6a6870"; c.fillRect(px - rx + 1, y - 29 - (big ? 1 : 0), rx * 2 - 2, 1);
+  c.fillStyle = "#8a6a3a"; c.fillRect(px - rx + 2, y - 30 - (big ? 1 : 0), rx * 2 - 4, 1);
+  if (Math.floor(t / 300) % 3 === 0) { c.fillStyle = "#c89a5a"; c.fillRect(px - 3 + (Math.floor(t / 300) % 5), y - 31, 2, 1); }
+}
+function hearthLive(c: CanvasRenderingContext2D, x: number, y: number, t: number) { potFire(c, x, y, t, true); }
+function fireplaceLive(c: CanvasRenderingContext2D, x: number, y: number, t: number) { potFire(c, x, y, t, false); }
+/** A furniture sprite (native scale). */
+const fur = (kind: string, a: string | number = "", b: string | number = "") => furniture(`${kind}|${a}|${b}`);
+/** Candle and torch flames at the points a furniture sprite lists. */
+function flamesLive(kind: string) {
+  const pts = FLAMES[kind] ?? [];
+  return (c: CanvasRenderingContext2D, x: number, y: number, t: number) => { for (const [dx, dy, sz] of pts) flame(c, x + dx * 2, y + dy * 2, t + dx * 97 + x * 7, sz); };
+}
+/** Coloured daylight falling from a stained-glass window. */
+function stainedLive(g: Gen, seed: number) {
+  const day = !g.lit;
+  const cols = ["255,120,160", "120,160,255", "255,210,110", "120,230,160"];
+  return (c: CanvasRenderingContext2D, x: number, y: number, t: number) => {
+    const a = (day ? 0.13 : 0.06) + Math.sin(t / 2600 + seed) * 0.02;
+    c.globalCompositeOperation = "lighter";
+    for (let k = 0; k < 3; k++) {
+      c.fillStyle = `rgba(${cols[(seed + k) % 4]},${a})`;
+      const o = -10 + k * 7;
+      c.beginPath(); c.moveTo(x + o, y - 30); c.lineTo(x + o + 7, y - 30); c.lineTo(x + o + 40, y + 70); c.lineTo(x + o + 30, y + 70); c.closePath(); c.fill();
+    }
+    c.globalCompositeOperation = "source-over";
+  };
 }
 function sparkleLive(c: CanvasRenderingContext2D, x: number, y: number, t: number) {
   const k = Math.floor(t / 180) % 12;
@@ -2389,7 +2775,7 @@ function windowLive(g: Gen, coloured = false) {
 // ------------------------------------------------------------ the static ground
 const FAMILY: Partial<Record<number, string>> = {
   [G.DIRT]: "dirt_road", [G.PATHSAND]: "sand_path", [G.COBBLE]: "cobble", [G.GATE]: "cobble", [G.FLAG]: "flagstone",
-  [G.PLANK]: "plank_deck", [G.DECK]: "plank_deck", [G.CARPET]: "red_carpet", [G.MARBLE]: "mosaic",
+  [G.PLANK]: "plank_deck", [G.DECK]: "plank_deck", [G.CARPET]: "red_carpet", [G.MARBLE]: "mosaic", [G.PARQ]: "herringbone", [G.CHECK]: "checker",
 };
 const sameFam = (a: number, b: number) => a === b || (FAMILY[a] && FAMILY[a] === FAMILY[b]) || ((a === G.DIRT || a === G.PATHSAND) && b === G.BRIDGE);
 const WALL_LOOK: Record<WallStyle, { face: string; kind: WallKind | "rock"; cap: string; trim: string }> = {
@@ -2400,6 +2786,7 @@ const WALL_LOOK: Record<WallStyle, { face: string; kind: WallKind | "rock"; cap:
   brick: { face: "#a8604a", kind: "brick", cap: "#3a2a26", trim: "#d8ccb8" },
   city: { face: "#a8a294", kind: "stone", cap: "#5e5a52", trim: "#c8c2b4" },
   hedge: { face: "#3f7a3a", kind: "rock", cap: "#2a5a2a", trim: "#5a9a4a" },
+  palace: { face: "#b4a890", kind: "stone", cap: "#2e2620", trim: "#d8c080" },
 };
 
 function renderGround(a: Area): HTMLCanvasElement {
@@ -2424,6 +2811,8 @@ function renderGround(a: Area): HTMLCanvasElement {
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const g = gnd[y * w + x], X = x * 16, Y = y * 16, vv = v(x, y);
     if (g === G.VOID || g === G.WALL) { c.fillStyle = "#0c0a0e"; c.fillRect(X, Y, 16, 16); continue; }
+    // the ship is drawn whole over the water afterwards
+    if (a.kind === "ship" && (g === G.DECK || g === G.RAIL)) { c.drawImage(floorTile("deep_water", 255, 0, vv), X, Y); continue; }
     if (g === G.GRASS || g === G.FLOWER || g === G.ROCK || g === G.SOIL) c.drawImage(set.tiles[g === G.FLOWER ? T.DECOR : T.GROUND][vv], X, Y);
     else if (g === G.SAND) c.drawImage(sand.tiles[T.GROUND][vv], X, Y);
     else if (g === G.MUD) c.drawImage(swamp.tiles[T.SHALLOW][vv], X, Y);
@@ -2472,6 +2861,24 @@ function renderGround(a: Area): HTMLCanvasElement {
       c.fillStyle = "#3a2414"; c.fillRect(X, Y + 8, 16, 1);
       if (WATERY.has(at(x, y + 1)) || at(x, y + 1) === -1) { for (let k = 9; k < 16; k += 3) { c.fillStyle = k % 2 ? "#4a2e18" : "#5a3a22"; c.fillRect(X, Y + k, 16, 3); } }
       else { c.fillStyle = "#9a6a3a"; c.fillRect(X, Y + 9, 16, 7); for (let k = 0; k < 16; k += 4) { c.fillStyle = "#6a4428"; c.fillRect(X + k, Y + 9, 1, 7); } }
+    }
+  }
+  // ---- the ship: a smooth hull, a planked deck and bulwarks, opened where a gangway comes aboard
+  if (a.kind === "ship") {
+    const cxp = (w >> 1) * 16 + 8, cyp = (h >> 1) * 16 + 8, hl = SHIP.halfL * 16;
+    drawShip(p, {
+      cx: cxp, cy: cyp, halfL: hl, halfW: 1,
+      deckOf: (u) => {
+        if (Math.abs(u) > 1.06) return 0;
+        let t = shipTaper(u);
+        if (u < -0.55) { const k = Math.min(1, Math.max(0, (u + 0.95) / 0.4)); t = 0.8 + 0.2 * k * k * (3 - 2 * k); }
+        if (u < -0.98) t *= Math.sqrt(Math.max(0.2, 1 - ((u + 0.98) / 0.09) ** 2));
+        return t * SHIP.halfW * 16 + 7;
+      },
+    });
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      if (gnd[y * w + x] !== G.DECK || !DIR4.some(([dx, dy]) => at(x + dx, y + dy) === G.BRIDGE)) continue;
+      c.drawImage(floorTile("plank_deck", 255, 0, v(x, y)), x * 16, y * 16 - 4, 16, 22);
     }
   }
   // ---- crops
@@ -2533,7 +2940,10 @@ function renderGround(a: Area): HTMLCanvasElement {
           c.fillStyle = "#7a5030"; c.fillRect(X0, top + hh - 11, Wd, 11);
           for (let xx = X0; xx < X0 + Wd; xx += 4) { c.fillStyle = "#6a4428"; c.fillRect(xx, top + hh - 11, 1, 11); }
           c.fillStyle = "#9a6a3a"; c.fillRect(X0, top + hh - 12, Wd, 2);
-        } else wallTex(p, X0, top, Wd, hh, L.face, L.kind as WallKind, x * 3 + y);
+        } else {
+          wallTex(p, X0, top, Wd, hh, L.face, L.kind as WallKind, x * 3 + y);
+          if (a.kind === "under" && hh > 16) dungeonFace(p, X0, top, Wd, hh, L.face, x * 7 + y);
+        }
         c.fillStyle = L.trim; c.fillRect(X0, top, Wd, 2);
         c.fillStyle = hs(L.trim, 0.25); c.fillRect(X0, top, Wd, 1);
         c.fillStyle = "rgba(10,6,16,.45)"; c.fillRect(X0, top + hh - 1, Wd, 1);
@@ -2615,14 +3025,30 @@ function rockFace(p: Paint, x: number, y: number, w: number, h: number, col: str
 }
 
 // ------------------------------------------------------------ building an area
+function interiorVar(sc: Scene): IVar {
+  const L = sc.place ?? "";
+  if (sc.bg === "temple") return "temple";
+  if (sc.bg === "hall") return hasWord(L, ["hội", "hội quán", "guild", "phường hội", "doanh trại", "barracks", "hiệp hội", "nghiệp đoàn", "võ đường"]) ? "guild" : "throne";
+  if (sc.bg !== "inn") return "tavern";
+  if (hasWord(L, ["quán", "quán trọ", "nhà trọ", "lữ quán", "inn", "tavern", "quán rượu", "tửu quán", "tửu lâu"])) return "tavern";
+  if (hasWord(L, ["cửa hàng", "cửa hiệu", "tiệm", "shop", "store", "hiệu", "chợ", "market", "lò rèn", "smithy", "forge"])) return "shop";
+  if (hasWord(L, ["nhà", "home", "house", "cottage", "chòi", "túp lều", "phòng", "room", "lều", "hut", "dinh thự", "manor"])) return "house";
+  return "tavern";
+}
+
 function buildArea(o: ExploreOpts): Area {
   const sc = o.scene, bg = sc.bg;
   const kind: Kind = ["inn", "hall", "temple"].includes(bg) ? "interior" : ["cave", "tunnel", "dungeon"].includes(bg) ? "under" : ["ship", "sea"].includes(bg) ? "ship" : ["village", "town", "city", "castle"].includes(bg) ? "settle" : "wild";
   const biome = biomeOf(bg, sc.weather);
   const dark = sc.time === "night" || sc.time === "dusk" || kind === "under";
   const seed = hashString(`${o.seed}|${bg}`);
-  const [w, h] = kind === "interior" ? (bg === "hall" ? [28, 19] : bg === "temple" ? [24, 18] : [22, 15]) : [36, 26];
+  const ivar = interiorVar(sc);
+  const ISIZE: Record<IVar, [number, number]> = { tavern: [22, 15], shop: [16, 12], house: [16, 12], throne: [28, 19], guild: [24, 16], temple: [24, 18] };
+  const [w, h] = kind === "interior" ? ISIZE[ivar] : [36, 26];
   const g = new Gen(w, h, seed, sc, kind, biome, dark);
+  g.ivar = ivar;
+  for (const s of o.spots) if (s.via.exit) g.exits.add(s.via.exit);
+  if (o.entryFrom) g.exits.add(o.entryFrom);
   if (kind === "wild") wildBase(g);
   else if (kind === "settle") settleBase(g);
   else if (kind === "interior") interiorBase(g);
@@ -2654,7 +3080,7 @@ function buildArea(o: ExploreOpts): Area {
   if (startWalk && !g.walk(startWalk.x, startWalk.y)) startWalk = undefined;
   const water: number[] = [];
   for (let k = 0; k < w * h; k++) if (g.gnd[k] === G.WATER || g.gnd[k] === G.DEEP) water.push(k);
-  const wallStyle: WallStyle = kind === "under" ? (bg === "dungeon" ? "stone" : "rock") : bg === "inn" ? "wood" : bg === "temple" ? "marble" : bg === "hall" ? "stone" : "city";
+  const wallStyle: WallStyle = kind === "under" ? (bg === "dungeon" ? "stone" : "rock") : kind === "interior" ? ({ tavern: "wood", shop: "wood", house: "wood", throne: "palace", guild: "brick", temple: "marble" } as const)[ivar] : "city";
   const area: Area = {
     w, h, gnd: g.gnd, block: g.block, objs: g.objs, lights: g.lights, emit: g.emit, spots, actors: [], start, startWalk, kind, bg, biome, wallStyle,
     floor: FAMILY[floorG] ?? "", extra: g.extra, water, indoor: kind === "interior" || kind === "under", dark, murky: bg === "swamp", snow: sc.weather === "snow", hub: g.hub,
@@ -2664,8 +3090,8 @@ function buildArea(o: ExploreOpts): Area {
     const person = !isMonster(n.id);
     const a: Actor = {
       id: n.id, type: person ? "person" : "monster", look: person ? lookFor(n.id) : undefined, variant: 0,
-      x: n.at.x * TW + TW / 2, y: n.at.y * TW + FEET, path: [], speed: 0.05, facing: "down", moving: false, phase: Math.random() * 1000,
-      ai: n.spot ? "npc" : "still", home: n.at, range: 0, wait: 0, z: 0, alpha: 1,
+      x: n.at.x * TW + TW / 2, y: n.at.y * TW + FEET, path: [], speed: 0.05, facing: n.facing ?? "down", moving: false, phase: Math.random() * 1000,
+      ai: n.spot ? "npc" : "still", home: n.at, range: 0, wait: 0, z: 0, alpha: 1, sit: n.sitDy !== undefined, sitDy: n.sitDy,
     };
     if (n.spot) n.spot.npc = a;
     area.actors.push(a);
@@ -2698,7 +3124,67 @@ function populate(a: Area, g: Gen, sc: Scene) {
   const folkBark = worried ? ["Dạo này chẳng yên chút nào...", "Cẩn thận đấy, lữ khách.", "Mong mọi chuyện qua mau."] : night ? ["Khuya rồi, về nghỉ thôi.", "Đêm nay lạnh quá.", "Chúc ngủ ngon."] : ["Chào lữ khách!", "Hôm nay trời đẹp nhỉ.", "Đi đường bình an.", "Ghé chợ chưa?"];
   const guardBark = worried ? ["Đứng lại! À... đi đi.", "Giữ cảnh giác."] : ["Mọi thứ yên ổn.", "Đi đường cẩn thận."];
   const folk = night ? 1 : wet ? 2 : 4;
-  switch (bg) {
+  // people sitting at tables, on benches and in pews
+  const seats = [...g.seats].sort((p, q) => cell(p.x, p.y, g.seed) - cell(q.x, q.y, g.seed));
+  const sitDown = (id: string, n: number, bark: string[]) => {
+    for (let i = 0; i < n && seats.length; i++) {
+      const st = seats.pop()!, k = st.y * a.w + st.x;
+      if (a.actors.some((x) => Math.floor(x.x / TW) === st.x && Math.floor((x.y - FEET + TW / 2) / TW) === st.y)) continue;
+      a.actors.push({ id: `${id}-${i}`, type: "person", look: lookFor(`${id}-${i}`), variant: 0, x: st.x * TW + TW / 2, y: st.y * TW + FEET, path: [], speed: 0.04, facing: st.facing, moving: false, phase: r.next() * 2000, ai: "still", home: { x: st.x, y: st.y }, range: 0, wait: 0, z: 0, alpha: 1, bark, sit: true, sitDy: st.dy });
+      a.block[k] = 1;
+    }
+  };
+  /** The keeper of the place, when no section spot put someone there. */
+  const keeper = (id: string, bark: string[]) => {
+    const H = g.host;
+    if (!H || H.used) return;
+    a.actors.push({ id, type: "person", look: lookFor(id), variant: 0, x: H.at.x * TW + TW / 2, y: H.at.y * TW + FEET, path: [], speed: 0.04, facing: H.face, moving: false, phase: r.next() * 2000, ai: "still", home: H.at, range: 0, wait: 0, z: 0, alpha: 1, bark, sit: H.sitDy !== undefined, sitDy: H.sitDy });
+    a.block[H.at.y * a.w + H.at.x] = 1;
+  };
+  const guardPost = (p: Pt, id: string) => {
+    if (!g.walk(p.x, p.y)) return;
+    a.actors.push({ id, type: "person", look: lookFor(id), variant: 0, x: p.x * TW + TW / 2, y: p.y * TW + FEET, path: [], speed: 0.04, facing: "down", moving: false, phase: r.next() * 2000, ai: "still", home: p, range: 0, wait: 0, z: 0, alpha: 1, bark: guardBark });
+    a.block[p.y * a.w + p.x] = 1;
+  };
+  if (a.kind === "interior") {
+    switch (g.ivar) {
+      case "tavern":
+        keeper(`innkeeper-${g.seed % 5}`, ["Mời quý khách!", "Uống gì nào?", "Phòng trên lầu còn trống."]);
+        sitDown(`patron-${g.seed % 31}`, night ? 6 : 4, ["Thêm một vại nữa!", "Nghe đồn gì chưa?", "Rượu ở đây ngon đấy.", "Món hầm hôm nay tuyệt lắm."]);
+        person(`servant-${g.seed % 7}`, "wander", all, ["Mời quý khách!", "Có ngay đây ạ."], { range: 8 });
+        animal("cat", 1, all);
+        animal("rat", 1, all, { timid: 2.5 });
+        break;
+      case "shop":
+        keeper(`merchant-${g.seed % 5}`, ["Hàng tốt, giá phải chăng!", "Cứ xem thoải mái."]);
+        if (!night) person(`townsfolk-${g.seed % 97}`, "wander", all, folkBark, { range: 5 });
+        animal("cat", 1, all);
+        break;
+      case "house":
+        sitDown(`villager-${g.seed % 41}`, 1, folkBark);
+        animal(g.seed % 2 ? "cat" : "dog", 1, all);
+        break;
+      case "guild":
+        keeper(`clerk-${g.seed % 5}`, ["Có việc mới trên bảng đấy.", "Ký tên ở đây."]);
+        sitDown(`adventurer-${g.seed % 23}`, 4, ["Chuyến đi vừa rồi suýt chết!", "Ai cần người hộ tống không?", "Treo thưởng cao đấy."]);
+        person(`guard-${g.seed % 13}`, "wander", all, guardBark, { range: 6 });
+        animal("dog", 1, all);
+        break;
+      case "throne":
+        guardPost({ x: g.hub.x - 2, y: 5 }, `guard-${g.seed % 13}`);
+        guardPost({ x: g.hub.x + 2, y: 5 }, `guard-${(g.seed % 13) + 1}`);
+        for (let i = 0; i < 2; i++) person(`guard-${(g.seed % 13) + 2 + i}`, "patrol", all, guardBark);
+        person(`servant-${g.seed % 7}`, "wander", all, folkBark);
+        person(`noble-${g.seed % 11}`, "wander", all, ["Thật vinh dự.", "Bệ hạ hôm nay có vẻ mệt."], { range: 5 });
+        break;
+      case "temple":
+        keeper(`priest-${g.seed % 5}`, ["Bình an cho người.", "Hãy thắp một ngọn nến."]);
+        sitDown(`pilgrim-${g.seed % 17}`, 3, ["...", "Xin phù hộ cho chúng con."]);
+        for (let i = 0; i < 2; i++) person(`monk-${g.seed % 9}-${i}`, "wander", all, ["Bình an cho người.", "Hãy giữ yên lặng."], { speed: 0.03 });
+        animal("pigeon", 2, all, { timid: 3 });
+        break;
+    }
+  } else switch (bg) {
     case "village":
       for (let i = 0; i < folk; i++) person(`villager-${g.seed % 97}-${i}`, "wander", plaza, folkBark, { range: 9 });
       if (!night) animal("chicken", 4, near(a.hub, 9));
@@ -2715,6 +3201,11 @@ function populate(a: Area, g: Gen, sc: Scene) {
       break;
     case "castle":
       for (let i = 0; i < 3; i++) person(`guard-${(g.seed % 13) + i}`, "patrol", all, guardBark);
+      // sentries keep watch on the walls
+      for (const [x, y, f] of [[0, 9, "right"], [a.w - 1, 15, "left"], [0, 18, "right"], [a.w - 1, 6, "left"]] as const) {
+        if (a.gnd[y * a.w + x] !== G.WALL) continue;
+        a.actors.push({ id: `guard-${(g.seed % 13) + x + y}`, type: "person", look: lookFor(`guard-${(g.seed % 13) + 3}`), variant: 0, x: x * TW + TW / 2, y: y * TW + FEET, path: [], speed: 0, facing: f, moving: false, phase: r.next() * 2000, ai: "still", home: { x, y }, range: 0, wait: 0, z: 0, alpha: 1 });
+      }
       if (!night) person(`servant-${g.seed % 7}`, "wander", plaza, folkBark);
       if (!night) animal("chicken", 2, all);
       animal("crow", 1, all, { timid: 3 });
@@ -2738,26 +3229,6 @@ function populate(a: Area, g: Gen, sc: Scene) {
     case "coast": case "sea": case "ship":
       animal("gull", bg === "ship" ? 2 : 4, all, { timid: 3 });
       if (bg === "ship") for (let i = 0; i < (night ? 1 : 3); i++) person(`sailor-${g.seed % 11}-${i}`, "wander", all, ["Gió thuận đấy.", "Coi chừng sóng."], { range: 10 });
-      break;
-    case "inn":
-      for (let i = 0; i < 3; i++) {
-        const seat = g.npcSlots[i];
-        if (seat && a.block[seat.y * a.w + seat.x] === 0 && !UNWALK.has(a.gnd[seat.y * a.w + seat.x])) {
-          a.actors.push({ id: `patron-${g.seed % 31}-${i}`, type: "person", look: lookFor(`patron-${g.seed % 31}-${i}`), variant: 0, x: seat.x * TW + TW / 2, y: seat.y * TW + FEET, path: [], speed: 0.04, facing: seat.x < a.w / 2 ? "right" : "left", moving: false, phase: i * 700, ai: "still", home: seat, range: 0, wait: 0, z: 0, alpha: 1, bark: ["Thêm một vại nữa!", "Nghe đồn gì chưa?", "Rượu ở đây ngon đấy."] });
-          a.block[seat.y * a.w + seat.x] = 1;
-        }
-      }
-      person(`servant-${g.seed % 7}`, "wander", all, ["Mời quý khách!", "Có ngay đây ạ."], { range: 8 });
-      animal("cat", 1, all);
-      animal("rat", 1, all, { timid: 2.5 });
-      break;
-    case "hall":
-      for (let i = 0; i < 2; i++) person(`guard-${(g.seed % 13) + i}`, "patrol", all, guardBark);
-      person(`servant-${g.seed % 7}`, "wander", all, folkBark);
-      break;
-    case "temple":
-      for (let i = 0; i < 2; i++) person(`monk-${g.seed % 9}-${i}`, "wander", all, ["Bình an cho người.", "Hãy giữ yên lặng."], { speed: 0.03 });
-      animal("pigeon", 2, all, { timid: 3 });
       break;
     case "dungeon": case "tunnel": case "cave":
       animal("rat", 3, all, { timid: 2.5 });
@@ -3119,7 +3590,7 @@ export function mountExplore(o: ExploreOpts): { destroy(): void; pause(on: boole
     const hd = Math.hypot(hero.x - a.x, hero.y - a.y) / TW;
     if (a.gone) { a.gone -= dt; if (a.gone <= 0) { a.gone = 0; const p = randomNear(a, 8, canWalk); if (p && hd > 4) { a.x = p.x * TW + TW / 2; a.y = p.y * TW + FEET; a.z = 0; a.alpha = 1; a.ai = "wander"; a.path = []; } else a.gone = 2000; } return; }
     if (a.ai === "npc" || a.ai === "still") {
-      if (hd < 5) a.facing = facingTo(hero.x - a.x, hero.y - a.y);
+      if (hd < 5 && !a.sit) a.facing = facingTo(hero.x - a.x, hero.y - a.y);
       return;
     }
     if (a.ai === "fly") {
@@ -3222,7 +3693,9 @@ export function mountExplore(o: ExploreOpts): { destroy(): void; pause(on: boole
     if (a.type === "person") {
       const pose: Pose = a.moving ? "walk" : "idle";
       const f = a.moving ? Math.floor(a.phase / 7.5) : Math.floor((now + a.phase * 100) / 480);
-      return [personFrame(a.look ?? lookFor(a.id), a.facing, pose, f), 0];
+      const fr = personFrame(a.look ?? lookFor(a.id), a.facing, pose, f);
+      if (a.sit && !a.moving) return [seated(fr), -(a.sitDy ?? 0)];
+      return [fr, 0];
     }
     if (a.type === "monster") {
       const f = Math.floor((now + a.phase * 50) / (a.moving ? 130 : 380));
@@ -3353,7 +3826,7 @@ export function mountExplore(o: ExploreOpts): { destroy(): void; pause(on: boole
     g.globalAlpha = 1;
     // ---- things and people, back to front
     const items: { y: number; ob?: Obj; a?: Actor }[] = [];
-    for (const ob of vis) if (!ob.flat) items.push({ y: ob.y, ob });
+    for (const ob of vis) if (!ob.flat && !ob.over) items.push({ y: ob.y, ob });
     for (const a of actors) if (!a.gone && a.x > ox - 40 && a.x < x1 + 40 && a.y > oy - 20 && a.y < y1 + 80) items.push({ y: a.y, a });
     items.sort((p, q) => p.y - q.y);
     const hx0 = hero.x - 14, hx1 = hero.x + 14, hy0 = hero.y - 44, hy1 = hero.y;
@@ -3384,15 +3857,17 @@ export function mountExplore(o: ExploreOpts): { destroy(): void; pause(on: boole
         if (sp && sp !== active) speechMark(g, Math.round(a.x - ox), sy - 4 + Math.round(Math.sin(now / 280) * 1.5), !!sp.locked);
       }
     }
+    for (const ob of vis) if (ob.over) drawObj(ob, ox, oy, false);
     // ---- particles
     for (const em of A.emit) {
       if (em.x < ox - 80 || em.x > x1 + 80 || em.y < oy - 120 || em.y > y1 + 120) continue;
       em.acc += dt;
-      const every = em.kind === "smoke" ? 300 : em.kind === "fire" ? 90 : em.kind === "embers" ? 420 : em.kind === "incense" ? 260 : em.kind === "spray" ? 50 : em.kind === "drip" ? 900 : 600;
+      const every = em.kind === "smoke" ? 300 : em.kind === "fire" ? 90 : em.kind === "embers" ? 420 : em.kind === "incense" ? 260 : em.kind === "spray" ? 50 : em.kind === "drip" ? 900 : em.kind === "steam" ? 380 : 600;
       while (em.acc > every) {
         em.acc -= every;
         if (em.kind === "smoke") parts.push({ x: em.x + (Math.random() - 0.5) * 3, y: em.y, vx: 0.006 * wind + (Math.random() - 0.5) * 0.004, vy: -0.014 - Math.random() * 0.006, life: 0, max: 2600 + Math.random() * 1200, col: night ? "#6a6a78" : "#d8d8e0", size: 3, kind: "puff", grow: 0.0016 });
         else if (em.kind === "fire" || em.kind === "embers") parts.push({ x: em.x + (Math.random() - 0.5) * 10, y: em.y, vx: (Math.random() - 0.5) * 0.02 + 0.004 * wind, vy: -0.03 - Math.random() * 0.03, life: 0, max: 700 + Math.random() * 700, col: Math.random() < 0.5 ? "#ffb040" : "#ff6a2a", size: Math.random() < 0.3 ? 2 : 1, glow: true });
+        else if (em.kind === "steam") parts.push({ x: em.x + (Math.random() - 0.5) * 8, y: em.y, vx: (Math.random() - 0.5) * 0.006, vy: -0.02, life: 0, max: 1500, col: "#e8e8f0", size: 2, kind: "puff", grow: 0.0014 });
         else if (em.kind === "incense") parts.push({ x: em.x + (Math.random() - 0.5) * 2, y: em.y, vx: (Math.random() - 0.5) * 0.004, vy: -0.012, life: 0, max: 2200, col: "#e8e0f0", size: 1, kind: "puff", grow: 0.0008 });
         else if (em.kind === "spray") parts.push({ x: em.x + (Math.random() - 0.5) * 4, y: em.y, vx: (Math.random() - 0.5) * 0.05, vy: -0.07 - Math.random() * 0.03, life: 0, max: 700, col: "#c8ecff", size: 2, g: 0.00022 });
         else if (em.kind === "drip") {

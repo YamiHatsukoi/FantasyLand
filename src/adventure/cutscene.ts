@@ -56,7 +56,7 @@ export function playCutscene(host: HTMLElement, book: Book, sid: string, heroLoo
   const box = h("div", { class: "adv-cine-scene" });
   const el = h("div", { class: "adv-cine" }, box, h("div", { class: "adv-cine-bar top" }), h("div", { class: "adv-cine-bar bottom" }), caption, dlg, skip);
   host.append(el);
-  const fit = new StageFit(box, stage, { minVis: 0.6, anchorY: 0.66 });
+  const fit = new StageFit(box, stage, { minVis: 0.5, anchorY: 0.66 });
   const nameOf = (id: string) => (book.actors?.[id]?.split(/\s+[-–]\s+/)[0] ?? id.split("-").map((w) => w[0].toUpperCase() + w.slice(1)).join(" "));
 
   let skipped = false;

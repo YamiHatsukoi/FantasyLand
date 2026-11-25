@@ -1478,7 +1478,8 @@ img.iicon.lg { width: 48px; height: 48px; }
 .hub-logo { margin: 0; font-family: var(--pixel); font-weight: normal; font-size: clamp(44px, 12vw, 72px); line-height: .9; color: #ffe4a0; text-shadow: 0 4px 0 #3a2208, 0 0 30px rgba(255,190,90,.35); }
 .hub-user { color: var(--muted); margin-top: 6px; font-size: 14px; }
 .hub-user b { color: var(--text); }
-.hub-cards { position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 22px 18px; width: min(820px, 100%); }
+.hub-cards { position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 22px 18px; width: min(940px, 100%); }
+@media (min-height: 760px) and (min-width: 900px) { .hub { justify-content: center; } .hub-title { font-size: 56px; } }
 .hub-card { position: relative; display: flex; flex-direction: column; padding: 0; cursor: pointer; text-align: left; color: var(--text); background: #1a120b;
   box-shadow: 0 0 0 2px #090604, 0 0 0 4px #c99640, 0 0 0 6px #090604, 0 14px 30px rgba(0,0,0,.55); margin: 6px; transition: transform .15s, box-shadow .15s; animation: hubIn .5s both; }
 .hub-card.adventure { animation-delay: .08s; }

@@ -192,6 +192,8 @@ export class StageFit {
     cv.style.height = `${ch}px`;
     cv.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
     this.box.classList.toggle("gaps", cw < W - 1 || ch < H - 1);
+    this.box.classList.toggle("gap-v", ch < H - 1);
+    this.box.classList.toggle("gap-h", cw < W - 1);
   }
 
   destroy() {
