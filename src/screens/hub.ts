@@ -52,6 +52,10 @@ function diorama(kind: "fantasy" | "adventure", heroes: string[]) {
   return c;
 }
 
+/** Accounts allowed into Adventure (the server enforces the same list in supabase/06_adventure.sql). */
+export const ADVENTURE_USERS = ["andi"];
+export const canAdventure = (s: Session) => s.offline === true && import.meta.env.DEV ? true : ADVENTURE_USERS.includes(s.username.toLowerCase());
+
 export function mountHub(root: HTMLElement, s: Session, o: HubOpts): Screen {
   playMusic("title");
   let last = "";
@@ -78,8 +82,8 @@ export function mountHub(root: HTMLElement, s: Session, o: HubOpts): Screen {
     h("div", { class: "hub-cards" },
       card("fantasy", "FantasyLand", "Vực Sâu Bách Tầng", "Xây Thánh Địa, khám phá 100 tầng vực sâu, chiến đấu theo đội.",
         ["hero_warrior", "hero_mage", "lyra"], o.fantasy),
-      card("adventure", "Adventure", "Lone Wolf", "Phiêu lưu theo sách: chọn đường, đi trên bản đồ, chiến đấu theo lượt.",
-        ["hero_ranger"], o.adventure)),
+      canAdventure(s) ? card("adventure", "Adventure", "Lone Wolf", "Phiêu lưu theo sách: chọn đường, đi trên bản đồ, chiến đấu theo lượt.",
+        ["hero_ranger"], o.adventure) : null),
     h("button", { class: "hub-logout", type: "button", onclick: o.logout }, "Đăng xuất"));
   root.append(el);
   return { destroy: () => el.remove() };

@@ -15,7 +15,7 @@ import { SaveManager } from "./net/save";
 import { openAppearance } from "./screens/appearance";
 import { mountDungeon, startExpedition } from "./screens/dungeon";
 import { mountArena } from "./screens/arena";
-import { mountHub } from "./screens/hub";
+import { canAdventure, mountHub } from "./screens/hub";
 import { mountLogin } from "./screens/login";
 import { mountSafeZone } from "./screens/safezone";
 import { mountVisit } from "./screens/visit";
@@ -36,6 +36,8 @@ function showLogin(err = "") {
 /** After login: pick FantasyLand or Adventure (same account, separate saves). */
 function showHub(s: Session) {
   app.session = s;
+  // only some accounts play Adventure: everyone else goes straight into FantasyLand as before
+  if (!canAdventure(s)) { void startSession(s); return; }
   closeAllModals();
   app.show((root) => mountHub(root, s, {
     fantasy: () => void startSession(s),
@@ -45,6 +47,7 @@ function showHub(s: Session) {
 }
 
 async function goAdventure(s: Session) {
+  if (!canAdventure(s)) return void startSession(s);
   app.root.replaceChildren(h("div", { class: "screen login" }, h("p", { class: "note" }, "Đang mở Adventure…")));
   try {
     const m = await import("./adventure/main");

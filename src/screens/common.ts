@@ -9,6 +9,7 @@ import { spriteImg } from "../render/pixel";
 import { getNpc, hearts, questGoal, questLog, questProgress } from "../world/people";
 import { getFloor } from "../world/floors";
 import { bar, confirmBox, h, openModal, toast } from "../ui/dom";
+import { canAdventure } from "./hub";
 
 export function partyMini(): { el: HTMLElement; update: () => void } {
   const el = h("div", { class: "party-mini" });
@@ -108,7 +109,7 @@ export function openMenu(extra: HTMLElement[] = []) {
           try { await app.saver?.wipe(); location.reload(); } catch (e) { toast(errorText(e), "bad"); }
         },
       }, "🔄 Chơi lại từ đầu"),
-      h("button", { class: "btn", onclick: () => void app.toHub?.() }, "🎮 Đổi game"),
+      app.session && canAdventure(app.session) ? h("button", { class: "btn", onclick: () => void app.toHub?.() }, "Đổi game") : null,
       h("button", {
         class: "btn",
         onclick: async () => {

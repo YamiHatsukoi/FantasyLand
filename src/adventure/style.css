@@ -538,3 +538,7 @@
 @media (prefers-reduced-motion: reduce) {
   .adv *, .adv *::before, .adv *::after { animation: none !important; transition: none !important; }
 }
+
+/* GitHub shelf window */
+.adv-steps { margin: 8px 0 12px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 1.5; }
+.adv-win .input { width: 100%; margin-bottom: 12px; }

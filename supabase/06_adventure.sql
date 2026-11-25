@@ -5,6 +5,26 @@
 -- Mỗi tài khoản có nhiều ô lưu cho mỗi cuốn sách: (player_id, book_id, slot).
 -- Bảng `saves` của FantasyLand KHÔNG bị đụng tới.
 
+-- ---------------------------------------------------------------- ai được chơi Adventure
+-- Chỉ các tài khoản trong danh sách này dùng được Adventure (lưu game, sách). Thêm/bớt tên ở đây rồi chạy lại file.
+create or replace function public.adv_player(p_token uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, extensions
+as $fn$
+declare
+  v_player uuid := public.game_session_player(p_token);
+begin
+  if v_player is null then return null; end if;
+  if not exists (select 1 from public.players where id = v_player and lower(username) in ('andi')) then
+    return null;
+  end if;
+  return v_player;
+end;
+$fn$;
+revoke all on function public.adv_player(uuid) from public, anon, authenticated;
+
 create table if not exists public.adv_saves (
   player_id   uuid not null references public.players (id) on delete cascade,
   book_id     text not null check (book_id ~ '^[a-z0-9_-]{1,40}$'),
@@ -26,7 +46,7 @@ security definer
 set search_path = public, extensions
 as $fn$
 declare
-  v_player uuid := public.game_session_player(p_token);
+  v_player uuid := public.adv_player(p_token);
 begin
   if v_player is null then
     return json_build_object('error', 'invalid_session');
@@ -47,7 +67,7 @@ security definer
 set search_path = public, extensions
 as $fn$
 declare
-  v_player  uuid := public.game_session_player(p_token);
+  v_player  uuid := public.adv_player(p_token);
   v_current integer;
 begin
   if v_player is null then
@@ -87,7 +107,7 @@ security definer
 set search_path = public, extensions
 as $fn$
 declare
-  v_player uuid := public.game_session_player(p_token);
+  v_player uuid := public.adv_player(p_token);
 begin
   if v_player is null then
     return json_build_object('error', 'invalid_session');
@@ -121,7 +141,7 @@ revoke all on public.adv_books from anon, authenticated;
 
 create or replace function public.adv_books_list(p_token uuid)
 returns json language plpgsql security definer set search_path = public, extensions as $fn$
-declare v_player uuid := public.game_session_player(p_token);
+declare v_player uuid := public.adv_player(p_token);
 begin
   if v_player is null then return json_build_object('error', 'invalid_session'); end if;
   return json_build_object('books', coalesce((
@@ -131,7 +151,7 @@ end; $fn$;
 
 create or replace function public.adv_book_get(p_token uuid, p_book text)
 returns json language plpgsql security definer set search_path = public, extensions as $fn$
-declare v_player uuid := public.game_session_player(p_token); v_data jsonb; v_at timestamptz;
+declare v_player uuid := public.adv_player(p_token); v_data jsonb; v_at timestamptz;
 begin
   if v_player is null then return json_build_object('error', 'invalid_session'); end if;
   select data, updated_at into v_data, v_at from public.adv_books where player_id = v_player and book_id = p_book;
@@ -141,7 +161,7 @@ end; $fn$;
 
 create or replace function public.adv_book_put(p_token uuid, p_book text, p_title text, p_num integer, p_data jsonb)
 returns json language plpgsql security definer set search_path = public, extensions as $fn$
-declare v_player uuid := public.game_session_player(p_token);
+declare v_player uuid := public.adv_player(p_token);
 begin
   if v_player is null then return json_build_object('error', 'invalid_session'); end if;
   if p_book !~ '^[a-z0-9_-]{1,40}$' then return json_build_object('error', 'bad_book'); end if;
@@ -153,7 +173,7 @@ end; $fn$;
 
 create or replace function public.adv_book_delete(p_token uuid, p_book text)
 returns json language plpgsql security definer set search_path = public, extensions as $fn$
-declare v_player uuid := public.game_session_player(p_token);
+declare v_player uuid := public.adv_player(p_token);
 begin
   if v_player is null then return json_build_object('error', 'invalid_session'); end if;
   delete from public.adv_books where player_id = v_player and book_id = p_book;

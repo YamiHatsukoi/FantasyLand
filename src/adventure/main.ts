@@ -23,7 +23,7 @@ import {
   profile, randomResult, retry, takeOffer, useItem, apply, continueRun, visibleChoices, type Change,
 } from "./engine";
 import { runFight } from "./fight";
-import { importBook, listBooks, loadBook, removeBook, type BookEntry } from "./library";
+import { importBook, listBooks, loadBook, newShelfLink, removeBook, saveShelfLink, shelfLink, syncShelf, type BookEntry } from "./library";
 import { AdvSaves, type SlotInfo } from "./save";
 import { Stage } from "./stage";
 import type { AdvState, Book, Choice, Disc, Offer } from "./types";
@@ -97,17 +97,57 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       try { const e = await importBook(session, f); toast(`Đã nạp: ${e.title}`, "good"); void library(); } catch (e) { fail(e); }
     };
     const bg = h("div", { class: "adv-menu-bg" });
+    const linked = !!shelfLink(session);
     const addCard = h("button", { class: "adv-addbook fr-slot", type: "button", onclick: () => file.click() },
       h("span", { class: "adv-addbook-plus" }, "+"), h("b", null, "Nạp sách"), h("small", null, "Gói sách .json của bạn"));
+    const shelfCard = h("button", { class: "adv-addbook fr-slot", type: "button", onclick: () => shelfWindow() },
+      h("span", { class: "adv-addbook-plus" }, linked ? "↻" : "⇩"), h("b", null, linked ? "Kho sách GitHub" : "Kết nối kho sách"),
+      h("small", null, linked ? "Tự cập nhật sách mới" : "Tự tải sách từ kho riêng của bạn"));
     show(h("div", { class: "adv-menu" }, bg,
       head("Thư Viện", leave, h("span", { class: "adv-user fr-chip" }, ui("user", 1), session.username)),
       h("div", { class: "adv-menu-scroll" },
         h("div", { class: "adv-menu-inner" },
           h("p", { class: "adv-kicker" }, books.length ? "Chọn một cuốn sách để bắt đầu hành trình" : "Thư viện đang trống"),
-          h("div", { class: "adv-shelf" }, ...books.map(bookCard), addCard),
+          h("div", { class: "adv-shelf" }, ...books.map(bookCard), shelfCard, addCard),
           books.length ? null : h("p", { class: "adv-hint" }, "Nạp file gói sách (.json) của bạn. Sách được lưu riêng trong tài khoản này, chỉ bạn đọc được."),
           file))));
     backdrop(bg, { bg: "camp", time: "night", weather: "clear", mood: "calm", seed: "library" }, ["lonewolf"], undefined, { minVis: 0.5, anchorY: 0.62 });
+    if (linked && !synced) void runSync(false);
+  }
+
+  /** Pull new/changed books from the player's private GitHub shelf. */
+  let synced = false;
+  async function runSync(loud: boolean) {
+    synced = true;
+    try {
+      const got = await syncShelf(session, (t) => { if (loud) toast(t); });
+      if (got.length) { toast(`Đã cập nhật ${got.length} cuốn: ${got.join(", ")}`, "good", 5000); if (alive) void library(); }
+      else if (loud) toast("Thư viện đã là bản mới nhất.", "good");
+    } catch (e) { if (loud) fail(e); }
+  }
+
+  function shelfWindow() {
+    const w = advWindow(el, "Kho sách GitHub", { icon: "book" });
+    const link = shelfLink(session);
+    const input = h("input", { class: "input", type: "password", autocomplete: "off", spellcheck: "false", placeholder: "github_pat_…" }) as HTMLInputElement;
+    const steps = h("ol", { class: "adv-steps" },
+      h("li", null, "Mở github.com → ảnh đại diện → Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token."),
+      h("li", null, "Repository access: Only select repositories → chọn lonewolf-vi. Permissions → Repository permissions → Contents: Read-only. Bấm Generate token."),
+      h("li", null, "Sao chép mã và dán vào ô dưới đây. Mã chỉ lưu trên thiết bị này, không nằm trong code game."));
+    w.body.append(...nn(
+      h("p", { class: "adv-hint" }, "Game sẽ tự tải sách từ kho riêng lonewolf-vi của bạn và tự cập nhật khi có cuốn mới. Sách được lưu vào tài khoản, các máy khác đăng nhập cùng tài khoản không cần kết nối lại."),
+      link ? null : steps,
+      link ? h("p", null, "Đã kết nối. Sách mới sẽ tự tải mỗi lần mở thư viện.") : input,
+      h("div", { class: "adv-row-btns" }, ...nn(
+        link ? gameBtn("Ngắt kết nối", () => { saveShelfLink(session, null); w.close(); void library(); }) : null,
+        link ? gameBtn("Cập nhật ngay", () => { w.close(); void runSync(true); }, { kind: "gold" })
+          : gameBtn("Kết nối và tải sách", async () => {
+            if (input.value.trim().length < 20) { toast("Mã truy cập chưa đúng.", "bad"); return; }
+            saveShelfLink(session, newShelfLink(input.value));
+            w.close();
+            await runSync(true);
+            void library();
+          }, { kind: "gold" })))));
   }
 
   function bookCard(b: BookEntry) {
