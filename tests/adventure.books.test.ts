@@ -8,7 +8,7 @@
 import { describe, expect, it } from "vitest";
 import {
   battleExit, canEvade, choiceState, continueRun, discsOf, enter, newRun, phase, playRound, randomResult,
-  startBattle, takeOffer, apply, visibleChoices, rollRandom, carryNeeds,
+  startBattle, takeOffer, apply, visibleChoices, rollRandom, carryNeeds, playChoice,
 } from "../src/adventure/engine";
 import type { AdvState, Book, Disc } from "../src/adventure/types";
 
@@ -104,6 +104,18 @@ function playOnce(book: Book, s: AdvState, rng: () => number, r: Report, careful
       enter(book, s, res.to);
       continue;
     }
+    // buy something now and then; play a game of chance for a while
+    let leave = "";
+    for (let k = 0; k < 60 && !leave && !s.ended; k++) {
+      const rep = visibleChoices(sec, s).filter((c) => c.repeat && choiceState(s, c) === "ok");
+      const games = rep.filter((c) => c.roll);
+      if (!rep.length || rng() > (games.length ? 0.9 : 0.3)) break;
+      const c = (games.length ? games : rep)[Math.floor(rng() * (games.length || rep.length))];
+      if (c.roll) leave = playChoice(book, s, c, rollRandom(c.roll, rng)).to;
+      else if (c.fx) apply(book, s, c.fx);
+    }
+    if (s.ended) continue;
+    if (leave) { enter(book, s, leave); continue; }
     const open = visibleChoices(sec, s).filter((c) => choiceState(s, c) === "ok");
     const moves = open.filter((c) => !c.repeat);
     if (!moves.length) {
@@ -113,6 +125,11 @@ function playOnce(book: Book, s: AdvState, rng: () => number, r: Report, careful
     const safe = careful ? moves.filter((m) => !doomed(book).has(m.to)) : moves;
     const pool = safe.length ? safe : moves;
     const c = pool[Math.floor(rng() * pool.length)];
+    if (c.roll) {
+      const to = playChoice(book, s, c, rollRandom(c.roll, rng)).to;
+      if (!s.ended && to) enter(book, s, to);
+      continue;
+    }
     if (c.fx) apply(book, s, c.fx);
     if (!book.sections[c.to]) throw new Error(`§${s.section}: choice leads to "${c.to}"`);
     enter(book, s, c.to);

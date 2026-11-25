@@ -21,7 +21,7 @@ import { makeScene, type SceneSpec } from "./art/scene";
 import { Performance } from "./director";
 import {
   choiceState, condText, discsOf, drop, enter, epMax, itemName, newRun, pendingLoss, phase, pick10,
-  profile, randomResult, retry, takeOffer, useItem, apply, continueRun, visibleChoices, type Change,
+  profile, randomResult, playChoice, retry, takeOffer, useItem, apply, continueRun, visibleChoices, type Change,
   baseCs, randomPicks, carryNeeds, loreCircles, masteryCount, newSeries, ownDiscs, rankName, tierOf,
 } from "./engine";
 import { runFight } from "./fight";
@@ -943,9 +943,25 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
     /** A choice: pay its price / apply its effects, then go (or stay, for repeatable purchases). */
     function pick(c: Choice) {
       entrySide = c.via?.exit ? OPPOSITE[c.via.exit] : undefined;
+      if (c.roll) return void gamble(c);
       const ch = c.fx ? apply(book, s, c.fx) : [];
       if (c.repeat) { save(); render(); showChanges(ch); return; }
       void goTo(c.to, ch);
+    }
+
+    /** A game of chance in a choice: spin the wheel, pay or collect, then stay (another round) or go on. */
+    async function gamble(c: Choice) {
+      const wheel = h("div", { class: "adv-wheel-box" });
+      dock.replaceChildren(h("div", { class: "adv-roll fr-chip" }, c.text), wheel);
+      const nums: number[] = [];
+      for (let i = 0; i < randomPicks(c.roll!); i++) { if (i) await sleep(350); nums.push(await wheelRoll(wheel)); }
+      const res = playChoice(book, s, c, nums);
+      save(!!res.end);
+      if (!view.isConnected) return;
+      showChanges(res.changes);
+      renderChips();
+      dock.append(h("div", { class: "adv-roll fr-chip" }, `Số ${nums.length > 1 ? `${nums.join(" + ")} = ${res.n}` : res.n}${res.add ? ` ${res.add > 0 ? "+" : ""}${res.add} = ${res.value}` : ""}`),
+        gameBtn("Tiếp tục", () => (res.end || !res.to ? render() : void goTo(res.to)), { kind: "gold", cls: "block big" }));
     }
 
     function offersBox() {

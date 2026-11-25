@@ -49,13 +49,21 @@ type EffectBase =
   | { epMax: number }
   | { csBase: number }
   | { gain: string; type: ItemType; n?: number; optional?: boolean; desc?: string }
-  | { lose: string }
-  | { loseAll: "weapons" | "backpack" | "special" | "gold" | "everything" }
+  /** Loses an item; `n` copies of it (Meals: n Meals). */
+  | { lose: string; n?: number }
+  | { loseAll: "weapons" | "backpack" | "special" | "gold" | "meals" | "everything" }
   | { eat: true; noHunt?: boolean }
   | { flag: string }
   | { unflag: string }
-  | { stash: string }
+  /**
+   * Gear taken away under a name, to be given back by `unstash`. `only`: just those parts
+   * (default everything); `weaponLike`: also the Special Items that count as weapons
+   * (Sommerswerd, items with `weapon` or `as`).
+   */
+  | { stash: string; only?: StashPart[]; weaponLike?: boolean }
   | { unstash: string };
+
+export type StashPart = "weapons" | "backpack" | "special" | "gold" | "meals" | "arrows";
 
 export interface FoeDef {
   name: string;
@@ -63,6 +71,10 @@ export interface FoeDef {
   actor?: string;
   cs: number;
   ep: number;
+  /**
+   * Attacks the foe is immune to: "mindblast" (Mindblast, and the weak form of Psi-surge / Kai-surge),
+   * "psisurge" (Psi-surge), "kaisurge" (Kai-surge), "mind" (every mind attack); other words are ignored.
+   */
   immune?: string[];
   /** Undead: the Sommerswerd doubles the damage they take. */
   undead?: boolean;
@@ -77,7 +89,11 @@ export interface Combat {
   together?: boolean;
   mods?: { cs?: number };
   /** Evading: after `after` rounds have been fought; with `until`, only while fewer than `until` rounds have been (until 1 = the first round only). */
-  evade?: { after: number; until?: number; to: string; alt?: { text: string; to: string }[] };
+  /**
+   * Evading: after `after` rounds have been fought; with `until`, only while fewer than `until` rounds have been (until 1 = the first round only).
+   * `if`: evading is possible only when it holds. `any: true`, or `anyIf` holding: at any round (after / until do not count).
+   */
+  evade?: { after?: number; until?: number; if?: Cond; any?: boolean; anyIf?: Cond; to: string; alt?: { text: string; to: string }[] };
   /** The fight stops as soon as the foe's ENDURANCE is n or less: go to `to`. */
   stopAt?: { foeEp: number; to: string };
   win?: string;
@@ -102,6 +118,12 @@ export interface Combat {
   forbid?: string[];
   /** The foe attacks with Mindforce: ENDURANCE lost every round unless shielded (Mindshield / Psi-screen / Kai-screen). */
   mindforce?: number;
+  /** ENDURANCE the hero loses from the Combat Results Table is multiplied by n while `if` holds (wounded, poisoned…). */
+  heroLossMul?: { n: number; if?: Cond };
+  /** ENDURANCE the foe loses is multiplied by n in rounds the hero fights with a mind attack. */
+  mindMul?: number;
+  /** Choices offered on the fight-start screen instead of fighting ("use the Fireseed instead"). */
+  instead?: Choice[];
 }
 
 export interface Choice {
@@ -114,8 +136,21 @@ export interface Choice {
   force?: boolean;
   /** Buying more: applies its fx and stays in the section. */
   repeat?: boolean;
+  /**
+   * A game of chance played on the spot (Cartwheel, Portholes): after its fx (the stake) a random
+   * number is picked and the matching out's fx applied; an out with `to` (or `end`) leaves the
+   * section, one without stays (use with `repeat` to play round after round).
+   */
+  roll?: RandomPick;
   /** Where the choice sits in the explore view (an exit, a door, a person or an object). */
   via?: { exit?: "north" | "south" | "east" | "west"; door?: string; npc?: string; object?: string };
+  /**
+   * A riddle: the player types a number; the right answer is `to` (never shown). A wrong one leads
+   * to `fail`, or stays in the section. `hint`: a line shown above the number pad.
+   */
+  riddle?: boolean;
+  fail?: string;
+  hint?: string;
 }
 
 export interface RandomPick {
@@ -211,6 +246,12 @@ export interface ItemDef {
   cs?: number;
   /** Usable item: restores ENDURANCE when used outside combat (Healing Potion: 4). */
   heal?: number;
+  /**
+   * Usable before a fight (a drug such as Adgana): +cs COMBAT SKILL in the next fight. With `addict`,
+   * each dose taken while not addicted picks a number 0-9: in [min, max] the hero becomes addicted,
+   * losing `epBase` basic ENDURANCE for good; doses taken once addicted give `cs` instead.
+   */
+  use?: { cs: number; addict?: { roll: [number, number]; epBase: number; cs: number } };
 }
 
 export interface StartPick {
@@ -257,6 +298,8 @@ export type Offer =
   | { gold: number }
   | { loseChoice: "weapon" | "backpack" | "any"; n: number };
 
+export interface Stash { weapons: string[]; backpack: string[]; special: string[]; meals: number; gold: number; arrows: number }
+
 /** Progress of one play-through (what a save slot holds). */
 export interface AdvState {
   v: 2;
@@ -281,7 +324,7 @@ export interface AdvState {
   /** ENDURANCE lost in the current section's combat (for "onHurt"). */
   hurt?: boolean;
   /** Gear taken away (confiscated) by name, to be given back later. */
-  stashes?: Record<string, { weapons: string[]; backpack: string[]; special: string[]; meals: number; gold: number; arrows: number }>;
+  stashes?: Record<string, Stash>;
   flags: Record<string, boolean>;
   /** COMBAT SKILL changes: for the next combat only, and for the rest of the book. */
   csNext: number;

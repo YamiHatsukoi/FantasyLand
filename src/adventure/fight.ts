@@ -23,14 +23,13 @@ import { creatureFrame, creatureKey, creatureSize, type CPose } from "./art/crea
 import { arrowHead, darkOrbHead, digitsSprite, disc, ease, FxLayer, ring, type Ease } from "./art/fx";
 import { iconEl, uiIcon } from "./art/icons";
 import { lookFor, personFrame, portrait, withWeapon, type Look, type Pose, type WeaponKind } from "./art/people";
-import { activeMind, battleExit, canEvade, epMax, fightWeapons, heroCs, itemName, mindChoices, mindName, playRound, startBattle, unarmedPenalty, type Battle, type RoundResult } from "./engine";
+import { activeMind, battleExit, canEvade, check, epMax, fightWeapons, heroCs, heroLossMul, itemName, mindBlocked, mindChoices, mindName, mindUsed, playRound, startBattle, unarmedPenalty, type Battle, type RoundResult } from "./engine";
 import { isMonster, OUT, Stage, H as SH, W as SW } from "./stage";
 import type { AdvState, Book, FoeDef } from "./types";
 import { bump, calmMotion, gameBtn, StageFit } from "./ui";
 
 const HERO_X = 96;
 const FOE_X = 224;
-const MIND_IMMUNE = ["mindblast", "psisurge", "kaisurge"];
 const SPEED_KEY = "adv-fight-speed";
 
 // ------------------------------------------------------------------ fighters' styles
@@ -1335,8 +1334,11 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       const cs = heroCs(book, s, c, foe.def, b.mind, b.round);
       const ratio = cs.total - foe.def.cs;
       ratioEl.replaceChildren(h("span", null, "Tỉ lệ"), h("b", { class: ratio >= 0 ? "good" : "bad" }, `${ratio > 0 ? "+" : ""}${ratio}`));
-      csList.replaceChildren(h("span", null, iconEl(uiIcon("cs"), 1), ` KNCĐ ${cs.total}`),
-        ...cs.parts.slice(1).map((p) => h("span", { class: p.v >= 0 ? "good" : "bad" }, `${p.label} ${p.v > 0 ? "+" : ""}${p.v}`)));
+      csList.replaceChildren(...nn(h("span", null, iconEl(uiIcon("cs"), 1), ` KNCĐ ${cs.total}`),
+        ...cs.parts.slice(1).map((p) => h("span", { class: p.v >= 0 ? "good" : "bad" }, `${p.label} ${p.v > 0 ? "+" : ""}${p.v}`)),
+        // ENDURANCE the hero loses counts n times in this fight (wounds, poison…)
+        heroLossMul(s, c) > 1 ? h("span", { class: "bad adv-lossmul" }, `Sức Bền mất ×${heroLossMul(s, c)}`) : null,
+        c.mindMul && mindUsed(book, s, c, foe.def, b.mind) ? h("span", { class: "good" }, `Tâm lực: địch mất ×${c.mindMul}`) : null));
       const minds = mindChoices(book, s);
       const cur = activeMind(book, s, b.mind);
       const evadeOk = c.evade ? canEvade(book, s, b) : false;
@@ -1348,7 +1350,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
             b.mind = order[(order.indexOf(b.mind) + 1) % order.length];
             render();
           }, { kind: cur ? "mind" : "btn", icon: "mind", cls: `adv-mind ${cur ? "on" : ""}`, disabled: busy }) : null,
-          c.evade ? gameBtn(evadeOk ? "Chạy trốn" : c.evade.until !== undefined && b.round >= c.evade.until ? "Hết lúc chạy trốn" : `Chạy trốn (sau ${c.evade.after - b.round} hiệp)`, () => void round(true), { icon: "flee", disabled: busy || !evadeOk }) : null)) : null,
+          c.evade ? gameBtn(evadeOk ? "Chạy trốn" : !check(s, c.evade.if) ? "Không chạy trốn được" : c.evade.until !== undefined && b.round >= c.evade.until ? "Hết lúc chạy trốn" : `Chạy trốn (sau ${(c.evade.after ?? 0) - b.round} hiệp)`, () => void round(true), { icon: "flee", disabled: busy || !evadeOk }) : null)) : null,
         gameBtn(auto && !b.over ? "Đang tự đánh…" : "Tấn công", () => void round(false), { kind: "red", icon: "cs", cls: "adv-attack block big", disabled: busy || auto }),
       ));
     }
@@ -1360,7 +1362,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       const p = foes[b.idx];
       const foe = b.foes[b.idx];
       const m = mindSpec();
-      const immune = (foe.def.immune ?? []).some((x) => MIND_IMMUNE.includes(x));
+      const immune = !!m && mindBlocked(foe.def, m);
       const heroBefore = s.ep, foeBefore = foe.ep;
       const r: RoundResult = playRound(book, s, b, evade);
       onChange();

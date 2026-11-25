@@ -1,5 +1,5 @@
 /** Lone Wolf rules of Adventure (Kai, Magnakai, Grand Master, New Order). Pure functions: no DOM. */
-import type { AdvState, Book, Combat, Cond, Disc, Effect, FoeDef, ItemDef, ItemType, Offer, Section } from "./types";
+import type { AdvState, Book, Choice, Combat, Cond, Disc, Effect, FoeDef, ItemDef, ItemType, Offer, RandomPick, Section, Stash, StashPart } from "./types";
 import { DISCS_BY_RULES } from "./types";
 
 export type Rng = () => number;
@@ -307,6 +307,16 @@ export function give(book: Book, s: AdvState, id: string, type: ItemType, n = 1)
   return left;
 }
 
+/** Special Items that count as weapons: the Sommerswerd, items with `weapon` or `as`. */
+export const weaponLike = (book: Book, s: AdvState, id: string) => { const d = itemDef(book, s, id); return id === "Sommerswerd" || !!d?.weapon || !!d?.as; };
+
+/** Drops up to n of an item (Meals: n Meals); returns how many were dropped. */
+export function dropN(book: Book, s: AdvState, id: string, n = 1): number {
+  let k = 0;
+  while (k < n && drop(book, s, id)) k++;
+  return k;
+}
+
 export function drop(book: Book, s: AdvState, id: string): boolean {
   if (id === "Meal") { if (s.meals <= 0) return false; s.meals--; return true; }
   for (const list of [s.weapons, s.backpack, s.special]) {
@@ -418,25 +428,29 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined): Change
       if (n - left > 0) out.push({ kind: e.type === "meal" ? "meal" : "item", label: `Nhận ${itemName(book, e.gain)}${n - left > 1 ? ` ×${n - left}` : ""}`, good: true, item: e.gain });
       if (left > 0) s.offers.push({ gain: e.gain, type: e.type, n: left, desc: e.desc });
     } else if ("lose" in e) {
-      if (drop(book, s, e.lose)) out.push({ kind: "item", label: `Mất ${itemName(book, e.lose)}`, good: false, item: e.lose });
+      const k = dropN(book, s, e.lose, e.n ?? 1);
+      if (k) out.push({ kind: e.lose === "Meal" ? "meal" : "item", label: `Mất ${itemName(book, e.lose)}${k > 1 ? ` ×${k}` : ""}`, good: false, item: e.lose });
     } else if ("loseAll" in e) {
       const k = e.loseAll;
       if (k === "weapons" || k === "everything") s.weapons = [];
       if (k === "backpack" || k === "everything") { s.backpack = []; s.meals = 0; }
+      if (k === "meals") s.meals = 0;
       if (k === "special" || k === "everything") { s.special = []; s.arrows = 0; }
       if (k === "gold" || k === "everything") s.gold = 0;
       s.ep = Math.min(s.ep, epMax(book, s));
-      out.push({ kind: "item", label: k === "gold" ? "Mất hết Vương Miện Vàng" : k === "everything" ? "Mất toàn bộ hành trang" : k === "weapons" ? "Mất hết vũ khí" : k === "backpack" ? "Mất Ba Lô và mọi thứ trong đó" : "Mất các Vật Phẩm Đặc Biệt", good: false });
+      out.push({ kind: "item", label: k === "gold" ? "Mất hết Vương Miện Vàng" : k === "everything" ? "Mất toàn bộ hành trang" : k === "weapons" ? "Mất hết vũ khí" : k === "backpack" ? "Mất Ba Lô và mọi thứ trong đó" : k === "meals" ? "Mất hết Phần Ăn" : "Mất các Vật Phẩm Đặc Biệt", good: false });
     } else if ("eat" in e) {
       if (!e.noHunt && !s.flags.nohunt && s.disciplines.includes(profile(book).hunt)) out.push({ kind: "meal", label: `${book.names.disc[profile(book).hunt]}: tự kiếm được cái ăn`, good: true });
       else if (s.meals > 0) { s.meals--; out.push({ kind: "meal", label: "Ăn 1 Phần Ăn", good: true, item: "Meal" }); }
       else out.push({ kind: "meal", label: "Không có gì ăn", good: false }, ...changeEp(book, s, -3));
     } else if ("stash" in e) {
+      const took = confiscate(book, s, e.only, !!e.weaponLike);
       s.stashes ??= {};
-      s.stashes[e.stash] = { weapons: s.weapons, backpack: s.backpack, special: s.special, meals: s.meals, gold: s.gold, arrows: s.arrows };
-      s.weapons = []; s.backpack = []; s.special = []; s.meals = 0; s.gold = 0; s.arrows = 0;
-      s.ep = Math.min(s.ep, epMax(book, s));
-      out.push({ kind: "item", label: "Bị tịch thu toàn bộ hành trang", good: false });
+      const old = s.stashes[e.stash];
+      // taking more under the same name adds to what is held there
+      s.stashes[e.stash] = old ? { weapons: [...old.weapons, ...took.weapons], backpack: [...old.backpack, ...took.backpack], special: [...old.special, ...took.special],
+        meals: old.meals + took.meals, gold: old.gold + took.gold, arrows: old.arrows + took.arrows } : took;
+      out.push({ kind: "item", label: e.only || e.weaponLike ? "Bị tịch thu một phần hành trang" : "Bị tịch thu toàn bộ hành trang", good: false });
     } else if ("unstash" in e) {
       const st = s.stashes?.[e.unstash];
       if (st) {
@@ -456,6 +470,24 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined): Change
     }
   }
   return out;
+}
+
+/**
+ * Takes away the parts of the gear asked for (all of it by default) and returns exactly what was
+ * taken. Meals go with the Backpack; Arrows go with the Quiver they are kept in.
+ */
+export function confiscate(book: Book, s: AdvState, only: StashPart[] | undefined, weaponLikeToo: boolean): Stash {
+  const part = (p: StashPart) => !only || only.includes(p);
+  const took: Stash = { weapons: [], backpack: [], special: [], meals: 0, gold: 0, arrows: 0 };
+  if (part("weapons")) { took.weapons = s.weapons; s.weapons = []; }
+  if (part("backpack")) { took.backpack = s.backpack; s.backpack = []; }
+  if (part("backpack") || part("meals")) { took.meals = s.meals; s.meals = 0; }
+  if (part("special")) { took.special = s.special; s.special = []; }
+  else if (weaponLikeToo) { took.special = s.special.filter((id) => weaponLike(book, s, id)); s.special = s.special.filter((id) => !took.special.includes(id)); }
+  if (part("gold")) { took.gold = s.gold; s.gold = 0; }
+  if (part("arrows") || (took.special.includes("Quiver") && !s.special.includes("Quiver"))) { took.arrows = s.arrows; s.arrows = 0; }
+  s.ep = Math.min(s.ep, epMax(book, s));
+  return took;
 }
 
 function changeGold(s: AdvState, d: number): Change[] {
@@ -519,15 +551,29 @@ export function visibleChoices(sec: Section, s: AdvState) {
   return (sec.choices ?? []).filter((c) => !c.force);
 }
 
-/** How many random numbers the section's table adds together. */
-export const randomPicks = (sec: Section) => Math.max(1, sec.random?.picks ?? 1);
+/**
+ * The player's answer to a riddle choice: the section to go to (the right answer is the choice's
+ * own `to`), or null to stay in the section (wrong, and no `fail`).
+ */
+export function answerRiddle(c: Choice, answer: string | number): string | null {
+  const a = String(answer).trim();
+  if (/^\d+$/.test(a) && Number(a) === Number(c.to)) return c.to;
+  return c.fail ?? null;
+}
 
-/** Picks the section's random number(s) 0-9 (random.picks of them). */
-export const rollRandom = (sec: Section, rng: Rng = Math.random) => Array.from({ length: randomPicks(sec) }, () => pick10(rng));
+/** How many random numbers a table adds together (a section's, or a choice's game of chance). */
+export const randomPicks = (x: Section | RandomPick) => Math.max(1, ("out" in x ? x : x.random)?.picks ?? 1);
+
+/** Picks the random number(s) 0-9 of a section's table or of a game of chance (picks of them). */
+export const rollRandom = (x: Section | RandomPick, rng: Rng = Math.random) => Array.from({ length: randomPicks(x) }, () => pick10(rng));
 
 /** The random number(s) picked for the section's table (summed), with modifiers, and where it leads. */
 export function randomResult(book: Book, sec: Section, s: AdvState, nums: number | number[]) {
-  const r = sec.random!;
+  return tableResult(book, sec.random!, s, nums);
+}
+
+/** The outcome of a random number table for the number(s) picked. */
+export function tableResult(book: Book, r: RandomPick, s: AdvState, nums: number | number[]) {
   const n = typeof nums === "number" ? nums : nums.reduce((a, x) => a + x, 0);
   let add = (r.mods ?? []).reduce((a, m) => a + (check(s, m.if) ? m.add : 0), 0);
   if (r.bow && s.weapons.some((w) => weaponKind(book, s, w) === "Bow")) {
@@ -541,6 +587,18 @@ export function randomResult(book: Book, sec: Section, s: AdvState, nums: number
   return { n, add, value: v, to: out.to ?? "", end: out.end, fx: out.fx };
 }
 
+/**
+ * Plays a choice's game of chance (Cartwheel, Portholes...): pays its fx (the stake), then applies
+ * the outcome of the number(s) picked. `to` is where the outcome leads ("" = stay in the section).
+ */
+export function playChoice(book: Book, s: AdvState, c: Choice, nums: number | number[]) {
+  const changes = c.fx ? apply(book, s, c.fx) : [];
+  const res = tableResult(book, c.roll!, s, nums);
+  if (res.fx) changes.push(...apply(book, s, res.fx));
+  if (res.end) s.ended = res.end;
+  return { ...res, changes };
+}
+
 export function eatMeal(book: Book, s: AdvState): Change[] {
   if (s.meals <= 0 || s.ep >= epMax(book, s)) return [];
   s.meals--;
@@ -548,12 +606,44 @@ export function eatMeal(book: Book, s: AdvState): Change[] {
 }
 
 /** Healing Potion and the like: usable outside combat. */
-export function useItem(book: Book, s: AdvState, id: string): Change[] {
+export function useItem(book: Book, s: AdvState, id: string, rng: Rng = Math.random): Change[] {
   const it = itemDef(book, s, id);
+  if (it?.use && has(s, id)) return useDose(book, s, id, it, rng);
   if (!it?.heal || !has(s, id) || s.ep >= epMax(book, s)) return [];
   drop(book, s, id);
   if (/laumspur/i.test(id)) delete s.flags.bleeding;
   return [{ kind: "item", label: `Dùng ${it.name}`, good: true, item: id }, ...changeEp(book, s, it.heal)];
+}
+
+/** Can the item be used now (a potion when hurt, a fight drug at any time)? */
+export function usable(book: Book, s: AdvState, id: string): boolean {
+  const it = itemDef(book, s, id);
+  if (!it || !has(s, id) || s.ended) return false;
+  return !!it.use || (!!it.heal && s.ep < epMax(book, s));
+}
+
+/** Flag set once the hero is addicted to an item (Adgana). */
+export const addictFlag = (id: string) => `addict:${id}`;
+
+/** A fight drug: COMBAT SKILL for the next fight; the first doses may make the hero addicted. */
+function useDose(book: Book, s: AdvState, id: string, it: ItemDef, rng: Rng): Change[] {
+  const u = it.use!;
+  const hooked = !!s.flags[addictFlag(id)];
+  drop(book, s, id);
+  const cs = hooked && u.addict ? u.addict.cs : u.cs;
+  s.csNext += cs;
+  const out: Change[] = [{ kind: "item", label: `Dùng ${it.name}`, good: true, item: id }, { kind: "cs", label: `Kỹ Năng Chiến Đấu +${cs} (trận tới)`, good: true }];
+  if (u.addict && !hooked) {
+    const n = pick10(rng);
+    if (n >= u.addict.roll[0] && n <= u.addict.roll[1]) {
+      s.flags[addictFlag(id)] = true;
+      s.epBase += u.addict.epBase;
+      s.ep = Math.max(0, Math.min(s.ep, epMax(book, s)));
+      out.push({ kind: "ep", label: `Nghiện ${it.name}: Sức Bền tối đa ${u.addict.epBase}`, good: false });
+      if (s.ep <= 0) s.ended = "death";
+    }
+  }
+  return out;
 }
 
 /** Takes up an offer of the section: an item, some gold, or picks what to give up. */
@@ -606,7 +696,20 @@ export interface CsBreakdown {
   parts: { label: string; v: number }[];
 }
 
-const mindImmune = (foe: FoeDef) => (foe.immune ?? []).some((x) => ["mindblast", "psisurge", "kaisurge"].includes(x));
+/**
+ * Is the foe immune to this mind attack? "mind" blocks them all; otherwise the attack's own name:
+ * "mindblast" (Mindblast and the weak form of Psi-surge / Kai-surge), "psisurge", "kaisurge".
+ */
+export const mindBlocked = (foe: FoeDef, m: MindOpt) => (foe.immune ?? []).some((x) => x === "mind" || x === (m.as ?? m.disc));
+
+/** The mind attack that works this round against the foe (none when immune or not allowed). */
+export function mindUsed(book: Book, s: AdvState, c: Combat, foe: FoeDef, idx: number) {
+  const m = activeMind(book, s, idx);
+  return m && !c.noMindblast && !mindBlocked(foe, m) ? m : null;
+}
+
+/** How many times the ENDURANCE the hero loses counts in this fight right now (combat.heroLossMul). */
+export const heroLossMul = (s: AdvState, c: Combat) => (c.heroLossMul && check(s, c.heroLossMul.if) ? c.heroLossMul.n : 1);
 
 /** Mind attacks as the hero's rank has them (Archmaster: Psi-surge +6 for 1 ENDURANCE, down to 5; Mindblast +3). */
 export function mindOpts(book: Book, s: AdvState): MindOpt[] {
@@ -667,8 +770,8 @@ export function heroCs(book: Book, s: AdvState, c: Combat, foe: FoeDef, mind = -
   if (c.firstRound && round < (c.firstRound.rounds ?? 1) && check(s, c.firstRound.if)) parts.push({ label: round ? `Hiệp ${round + 1}` : "Hiệp đầu", v: c.firstRound.cs });
   const amb = profile(book).ambush;
   if (c.ambush && !(amb && s.disciplines.includes(amb))) parts.push({ label: "Bị đánh úp", v: c.ambush });
-  const m = activeMind(book, s, mind);
-  if (m && !c.noMindblast && !mindImmune(foe)) parts.push({ label: `${mindName(book, m)}${m.cost ? ` (−${m.cost} Sức Bền/hiệp)` : ""}`, v: m.cs });
+  const m = mindUsed(book, s, c, foe, mind);
+  if (m) parts.push({ label: `${mindName(book, m)}${m.cost ? ` (−${m.cost} Sức Bền/hiệp)` : ""}`, v: m.cs });
   for (const id of s.special) {
     const cs = itemDef(book, s, id)?.cs;
     if (cs && !forbidden(book, s, c, id)) parts.push({ label: itemName(book, id, s), v: cs });
@@ -707,18 +810,18 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
   const foeIdx = b.idx;
   const foe = b.foes[foeIdx];
   // the mind attack in use this round (Psi-surge turns to Mindblast when ENDURANCE is too low)
-  const am = activeMind(book, s, b.mind);
+  const am = mindUsed(book, s, c, foe.def, b.mind);
   const ratio = heroCs(book, s, c, foe.def, b.mind, b.round).total - foe.def.cs;
   const n = pick10(rng);
   const [fl, hl] = book.crt[n][crtColumnOf(ratio)];
   b.round++;
-  const mindCost = am && !c.noMindblast && !mindImmune(foe.def) ? am.cost : 0;
+  const mindCost = am ? am.cost : 0;
   const sommer = fightWeapons(book, s, c).includes("Sommerswerd") && foe.def.undead;
-  const hit = fl === KILL ? foe.ep : (fl + (c.foeExtraLoss ?? 0)) * (sommer ? 2 : 1) * (foe.def.double ? 2 : 1);
+  const hit = fl === KILL ? foe.ep : (fl + (c.foeExtraLoss ?? 0)) * (sommer ? 2 : 1) * (foe.def.double ? 2 : 1) * (am && c.mindMul ? c.mindMul : 1);
   const foeLoss = evade || (c.foeHoldLoss ?? 0) >= b.round ? 0 : hit;
   const held = (foe.def.holdRounds ?? 0) >= b.round;
   const drain = (c.heroDrain && check(s, c.heroDrain.if) ? c.heroDrain.ep : 0) + (c.mindforce && !knows(s, profile(book).shield) ? c.mindforce : 0);
-  const heroLoss = (held ? 0 : hl === KILL ? s.ep : hl) + mindCost + drain;
+  const heroLoss = (held ? 0 : hl === KILL ? s.ep : hl * heroLossMul(s, c)) + mindCost + drain;
   if (!evade) foe.ep = Math.max(0, foe.ep - foeLoss);
   s.ep = Math.max(0, s.ep - heroLoss);
   if (heroLoss > 0) s.hurt = true;
@@ -744,7 +847,9 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
 
 export function canEvade(book: Book, s: AdvState, b: Battle) {
   const e = book.sections[s.section].combat?.evade;
-  return !!e && b.round >= e.after && (e.until === undefined || b.round < e.until) && !b.over;
+  if (!e || b.over || !check(s, e.if)) return false;
+  if (e.any || (e.anyIf && check(s, e.anyIf))) return true;
+  return b.round >= (e.after ?? 0) && (e.until === undefined || b.round < e.until);
 }
 
 /** Where to go after the battle: a section id, "" to stay (choices/random follow), null = death. */
@@ -772,7 +877,7 @@ export function validateBook(book: Book): string[] {
   if (!Array.isArray(book.crt) || book.crt.length !== 10 || book.crt.some((r) => r.length !== 13)) errs.push("Bảng Kết Quả Chiến Đấu không hợp lệ (cần 10 × 13 ô)");
   for (const [id, sec] of Object.entries(book.sections ?? {})) {
     const c = sec.combat;
-    const links = [...(sec.choices ?? []).map((x) => x.to), ...(sec.random?.out ?? []).map((o) => o.to),
+    const links = [...[...(sec.choices ?? []), ...(c?.instead ?? [])].flatMap((x) => [x.to, x.fail]), ...(sec.random?.out ?? []).map((o) => o.to),
       c?.win, c?.lose, c?.winBy?.fast, c?.winBy?.slow, c?.evade?.to, ...(c?.evade?.alt ?? []).map((a) => a.to), c?.maxRounds?.to, c?.stopAt?.to, c?.onHurt, c?.compare?.more, c?.compare?.less, c?.compare?.equal].filter((x): x is string => !!x);
     for (const t of links) if (!book.sections[t]) errs.push(`§${id} → §${t}: không có đoạn này`);
     if (!links.length && !sec.end && !(sec.random?.out ?? []).some((o) => o.end)) errs.push(`§${id}: ngõ cụt`);
