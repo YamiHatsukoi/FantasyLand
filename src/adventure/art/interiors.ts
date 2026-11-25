@@ -503,6 +503,26 @@ export const furniture = memo((key: string): HTMLCanvasElement => {
       p.rect(2, 18, 16, 2, "#8a6a40"); p.rect(2, 18, 16, 1, "#b08a58");
       return c;
     }
+    // ---- yards
+    case "garden": {
+      // a little fenced bed of cabbages / flowers / herbs (16 x 20)
+      const [c, p] = mk(16, 20);
+      p.rect(1, 6, 14, 12, "#6a4a2e");
+      for (let y = 7; y < 18; y += 3) { p.rect(1, y, 14, 1, "#4e3420"); p.rect(1, y - 1, 14, 1, "#86603c"); }
+      for (let k = 0; k < 6; k++) {
+        const x = 3 + (k % 3) * 4, y = 9 + Math.floor(k / 3) * 5;
+        if (v % 3 === 0) { p.blob(x + 1, y, 2, 1.6, "#6ab04a", { hi: 0.4 }); }
+        else if (v % 3 === 1) { p.line(x + 1, y + 2, x + 1, y - 1, "#3f8a3a"); p.px(x + 1, y - 2, ["#e84a6a", "#f7d44c", "#ffffff"][k % 3]); p.px(x, y - 1, ["#e84a6a", "#f7d44c", "#ffffff"][k % 3]); }
+        else { p.rect(x, y - 1, 3, 2, "#4f9a35"); p.px(x + 1, y - 2, "#7ac050"); p.px(x + 1, y + 1, "#e8803a"); }
+      }
+      const wd = "#e8dcc4";
+      for (let x = 0; x < 16; x += 3) { p.rect(x, 14, 1, 6, wd); p.px(x, 13, hs(wd, 0.2)); }
+      p.rect(0, 16, 16, 1, wd); p.rect(0, 18, 16, 1, hs(wd, -0.2));
+      for (const x of [0, 15]) { p.rect(x, 4, 1, 14, hs(wd, -0.1)); }
+      p.rect(0, 4, 16, 1, hs(wd, -0.15));
+      p.rect(0, 19, 16, 1, "rgba(24,12,40,.2)");
+      return c;
+    }
     // ---- woodland undergrowth
     case "fern": {
       const [c, p] = mk(18, 14);

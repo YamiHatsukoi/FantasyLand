@@ -169,6 +169,10 @@ const HOUSE_LOOKS: { wall: string; roof: string; wk: WallKind; rk: RoofKind; tri
   { wall: "#c87a5a", roof: "#3a3a4a", wk: "brick", rk: "slate", trim: "#f0e8d8" },
   { wall: "#a8a098", roof: "#7a2a2a", wk: "stone", rk: "shingle" },
   { wall: "#d8c8a8", roof: "#3a6a4a", wk: "plank", rk: "shingle", door: "#6a4a2a" },
+  { wall: "#ece2cc", roof: "#b8903e", wk: "timber", rk: "thatch", shutters: "#8a3a2a" },
+  { wall: "#7a9ab4", roof: "#6a3a2a", wk: "siding", rk: "shingle", trim: "#f4ecdc", shutters: "#f0e8d8", door: "#8a3a2a" },
+  { wall: "#c4bcac", roof: "#a85a3a", wk: "stone", rk: "tile", shutters: "#3a5a7a" },
+  { wall: "#d8b888", roof: "#4a5a3a", wk: "plank", rk: "slate", shutters: "#7a4a2a", door: "#3a5a4a" },
 ];
 
 /**
@@ -187,7 +191,7 @@ const buildingArt = memo((key: string) => {
     if (!o.snow) return;
     for (let y = top; y < bottom; y += 1) for (let x = x0; x <= x1; x++) if (cell(x, y, o.seed) > 0.42 + (y - top) / (bottom - top) * 0.5) p.px(x, y, cell(x, y, 3) > 0.5 ? "#f4f8fc" : "#dce8f4");
   };
-  const std = (wall: string, roof: string, wk: WallKind, rk: RoofKind, extra: { floors?: number; chimney?: boolean; emblem?: string; trim?: string; door?: string; shutters?: string; gable?: boolean; props?: boolean; doorH?: number; dormer?: boolean } = {}) => {
+  const std = (wall: string, roof: string, wk: WallKind, rk: RoofKind, extra: { floors?: number; chimney?: boolean; emblem?: string; trim?: string; door?: string; shutters?: string; gable?: boolean; props?: boolean; doorH?: number; dormer?: boolean; porch?: boolean; ivy?: boolean; bench?: boolean } = {}) => {
     const floors = extra.floors ?? 1;
     const foundTop = H - 4;
     const wallH = 24 + (floors - 1) * 12;
@@ -225,6 +229,20 @@ const buildingArt = memo((key: string) => {
     }
     if (o.closed) { p.rect(doorX - 1, doorY - 1, doorW + 2, doorH + 1, "#3a2a1e"); p.rect(doorX, doorY, doorW, doorH, "#5a3a22"); for (let x = doorX + 1; x < doorX + doorW; x += 2) p.rect(x, doorY, 1, doorH, "#4a2e1a"); }
     else doorAt(p, doorX, doorY, { w: doorW, h: doorH, col: extra.door ?? look.door, double: doorW >= 10, arch: extra.gable });
+    if (extra.porch && W >= 48) {
+      // a little gabled porch roof on two posts over the door
+      const px0 = doorX - 4, px1 = doorX + doorW + 3, py = doorY - 5;
+      for (const x of [px0 + 1, px1 - 2]) { p.rect(x, py + 3, 2, foundTop - py - 3, "#7a5030"); p.rect(x, py + 3, 1, foundTop - py - 3, "#a87444"); }
+      for (let i = 0; i < 6; i++) { const ins = 5 - i; p.rect(px0 + ins, py + i, px1 - px0 - ins * 2, 1, hs(roof, 0.14 - i * 0.06)); p.px(px0 + ins, py + i, outline(roof)); p.px(px1 - ins - 1, py + i, outline(roof)); }
+      p.rect(px0, py + 6, px1 - px0, 1, outline(roof)); p.rect(px0 + 5, py - 1, px1 - px0 - 10, 1, outline(roof));
+      p.g.fillStyle = "rgba(24,12,40,0.25)"; p.g.fillRect(px0 + 2, py + 6, px1 - px0 - 4, 2);
+    }
+    if (extra.ivy) for (let k = 0; k < 40; k++) {
+      const x = 2 + Math.floor(cell(k, 1, o.seed) * 9) + (k % 2 ? W - 13 : 0), y = wallTop + Math.floor(cell(k, 2, o.seed) * (foundTop - wallTop));
+      if (x >= doorX - 1 && x <= doorX + doorW) continue;
+      p.px(x, y, cell(k, 3, o.seed) > 0.5 ? "#3f7a30" : "#5a9a3a"); p.px(x + 1, y + 1, "#2f6a2a");
+    }
+    if (extra.bench && W >= 48) { const bx = doorX + doorW + 3; p.rect(bx, foundTop - 5, 8, 2, "#8a5a32"); p.rect(bx, foundTop - 5, 8, 1, "#b07a48"); p.rect(bx, foundTop - 3, 1, 3, "#5a3a22"); p.rect(bx + 7, foundTop - 3, 1, 3, "#5a3a22"); }
     if (W >= 48) lantern(p, doorX + doorW + 2, doorY + 2);
     if (extra.props && W >= 48) { barrel(p, W - 7, H - 10); crate(p, 2, H - 9); }
     if (extra.dormer && W >= 64) for (const dx of [Math.round(W * 0.22), Math.round(W * 0.78) - 6]) {
@@ -238,7 +256,11 @@ const buildingArt = memo((key: string) => {
   switch (o.style) {
     case "house": case "cottage": case "manor": {
       const L = o.style === "manor" ? HOUSE_LOOKS[4] : look;
-      std(L.wall, L.roof, L.wk, L.rk, { chimney: o.style !== "manor" || true, floors: o.style === "manor" ? 2 : o.th >= 3 && r.chance(0.5) ? 2 : 1, trim: L.trim, door: L.door, shutters: L.shutters, dormer: o.style === "manor", gable: o.style === "manor" });
+      const fl = o.style === "manor" ? 2 : o.th >= 3 && r.chance(0.6) ? 2 : 1;
+      std(L.wall, L.roof, L.wk, L.rk, {
+        chimney: true, floors: fl, trim: L.trim, door: L.door, shutters: L.shutters, dormer: o.style === "manor" || (fl === 1 && o.th >= 3 && r.chance(0.5)), gable: o.style === "manor" || (W >= 64 && r.chance(0.4)),
+        porch: o.style !== "manor" && r.chance(0.45), ivy: L.wk === "stone" && r.chance(0.6), bench: r.chance(0.3),
+      });
       break;
     }
     case "inn":
@@ -1633,7 +1655,7 @@ function settleBase(g: Gen) {
 function interiorBase(g: Gen) {
   const v = g.ivar;
   g.gnd.fill(G.WALL);
-  const floor = ({ tavern: G.PLANK, shop: G.PLANK, house: G.PARQ, throne: G.FLAG, guild: G.PARQ, temple: G.MARBLE } as const)[v];
+  const floor = ({ tavern: G.PLANK, shop: G.PLANK, house: G.PLANK, throne: G.FLAG, guild: G.PARQ, temple: G.MARBLE } as const)[v];
   g.rect(1, 3, g.w - 2, g.h - 4, floor);
   const cx = g.w >> 1, cy = 3 + ((g.h - 4) >> 1);
   g.hub = { x: cx, y: cy };
@@ -2270,7 +2292,7 @@ function decorateWild(g: Gen) {
     else if (h2 < 0.15 && wildish) g.sprite(fur(bg === "swamp" ? "cattail" : "fern", x + y), x, y, 1, 1, { soft: true, walkable: true, dy: 3 });
     else if (h2 < 0.2 && wildish && !snow) g.sprite(fur("tallgrass", x * 5 + y, bg === "swamp" ? "#6a8a3a" : ""), x, y, 1, 1, { soft: true, walkable: true, dy: 2 });
     else if (h2 < 0.215 && wildish && bg !== "swamp") g.sprite(fur("mossrock", x), x, y, 1, 1, { soft: true, dy: 2 });
-    else if (h2 < 0.228 && wildish && g.free(x + 1, y, 1, 1)) { g.sprite(prop("log"), x, y, 2, 1, { soft: true, dy: 3 }); }
+    else if (h2 < (bg === "swamp" ? 0.205 : 0.228) && wildish && g.free(x + 1, y, 1, 1)) { g.sprite(prop("log"), x, y, 2, 1, { soft: true, dy: 3 }); }
     else if (h2 < 0.3 && gg === G.GRASS && bg !== "desert" && !snow && (!glades || glade < 0.5)) g.set(x, y, G.FLOWER);
     else if (h2 < 0.33 && glades && glade < 0.4 && !snow && bg !== "swamp") g.sprite(fur("flowerpatch", x + y * 3), x, y, 1, 1, { walkable: true, flat: true, dy: 4 });
   }
@@ -2332,6 +2354,18 @@ function decorateSettle(g: Gen) {
       if (h < d && !nearRoad) { if (bg === "city" || bg === "castle") g.sprite(prop("bush", "#3f8a3a", x), x, y, 1, 1, { soft: true }); else g.tree(x, y, cell(x, y, 3) > 0.8 ? "pine" : "tree", (x + y) % 3, cell(x, y, 3) > 0.8 ? PINE : undefined); continue; }
       if (h < d + 0.04 && !nearRoad) { g.sprite(prop("bush", "#3f8a3a", x + y), x, y, 1, 1, { soft: true }); continue; }
       if (cell(x, y, s + 5) < 0.18 && g.scene.weather !== "snow") g.set(x, y, G.FLOWER);
+    }
+  }
+  // yards: a fenced garden or a woodpile beside the houses, flower pots in town
+  if (bg === "village" || bg === "town") for (const ob of [...g.objs]) {
+    if (!ob.fade || !ob.img || ob.tiles.length < 6 || ob.s !== 2) continue;
+    const xs = ob.tiles.map((k) => k % g.w), ys = ob.tiles.map((k) => (k / g.w) | 0);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y1 = Math.max(...ys);
+    for (const [x, side] of [[x0 - 1, 0], [x1 + 1, 1]] as const) {
+      const h = cell(x, y1, s + 77);
+      if (!g.free(x, y1, 1, 1)) continue;
+      if (bg === "village" && h < 0.45) g.sprite(fur("garden", x + y1), x, y1, 1, 1, { dy: 1 });
+      else if (h < 0.65) g.sprite(prop(bg === "village" ? (side ? "woodpile" : "hay") : "pot"), x, y1);
     }
   }
   if (bg === "village") farmPlots(g, 2);
@@ -2480,6 +2514,10 @@ function decorateInterior(g: Gen) {
       if (wallFree(7)) onWall(fur("window", g.lit ? 1 : 0, "#3a6a4a"), 7 * TW + TW / 2, 2 * TW + 26, { live: windowLive(g) });
       if (wallFree(9)) onWall(fur("window", g.lit ? 1 : 0, "#3a6a4a"), 9 * TW + TW / 2, 2 * TW + 26, { live: windowLive(g) });
       if (wallFree(6)) onWall(fur("painting", s % 3), 6 * TW, 2 * TW + 22);
+      g.sprite(fur("rug", 3, 2), cx - 1, cy - 2, 3, 2, { flat: true, walkable: true, dy: 2 });
+      put(fur("roundtable", s), cx + 3, 5, 1, 1, { dy: 4, live: flamesLive("roundtable") });
+      put(fur("chair", "l"), cx + 4, 5, 1, 1, { dy: 8 }); put(fur("chair", "d"), cx + 3, 4, 1, 1, { dy: 8 });
+      put(fur("bookcase", s), 9, 3, 1, 1, { dy: 2 });
       overhead(fur("hanglantern"), 3, 8, "none");
       break;
     }
