@@ -255,7 +255,7 @@ class Grid {
       const lit = below ?? right;
       const dark = above ?? left;
       if (dark) out.push([x, y, hueOutline(hexRGB(dark))]);
-      else if (lit) out.push([x, y, below ? sh(lit, -0.55) : sh(lit, -0.6)]);
+      else if (lit) out.push([x, y, litLine(lit)]);
     }
     for (const [x, y, c] of out) this.px(x, y, c);
   }
@@ -286,6 +286,13 @@ class Grid {
   }
 }
 
+const LIT = new Map<string, string>();
+/** Outline on the lit side: the local hue, darkened and slightly desaturated. */
+function litLine(c: string) {
+  let v = LIT.get(c);
+  if (!v) { v = mix(sh(c, -0.5), "#2a1c2c", 0.45); LIT.set(c, v); }
+  return v;
+}
 const RGB = new Map<string, [number, number, number]>();
 function hexRGB(c: string): [number, number, number] {
   let v = RGB.get(c);
@@ -707,7 +714,7 @@ function faceSide(g: Grid, L: Look, h: Head) {
   }
   // nose
   if (L.fem || L.build === "child") { g.px(x0 + 12, T + 11, null); g.px(x0 + 11, T + 12, sk.d); }
-  else { g.px(x0 + 12, T + 11, sk.b); g.px(x0 + 11, T + 12, sk.d); g.px(x0 + 12, T + 12, sk.d); }
+  else { g.px(x0 + 12, T + 11, sk.b); g.px(x0 + 11, T + 12, sk.d); }
   g.px(x0 + 11, T + 10, sk.l);
   // mouth
   const lip = lipOf(L);
@@ -1671,7 +1678,7 @@ function drawWeapon(g: Grid, L: Look, kind: WeaponKind, hand: V, ang: number, op
   }
   switch (kind) {
     case "axe": {
-      seg(-3, 12, 0.6, WOOD);
+      seg(-1.6, 12, 0.6, WOOD);
       const head: V[] = [P(8.3, 0.4), P(7, 4.3), P(9.5, 5), P(12.6, 4.4), P(11.6, 0.4)];
       g.poly(head, st.b);
       g.line(...P(7.2, 4.2), ...P(12.4, 4.3), st.l2);
@@ -1682,8 +1689,8 @@ function drawWeapon(g: Grid, L: Look, kind: WeaponKind, hand: V, ang: number, op
       return;
     }
     case "mace": {
-      seg(-2.5, 8.5, 0.6, WOOD);
-      seg(-2.8, -2.2, 0.8, L.buckle);
+      seg(-1.6, 8.5, 0.6, WOOD);
+      seg(-2, -1.4, 0.8, L.buckle);
       const c = P(10.3);
       g.ellipse(c[0], c[1], 1.9, 1.9, st.b);
       g.px(c[0] - 1, c[1] - 1, st.l2); g.px(c[0], c[1] - 1, st.l); g.px(c[0] + 1, c[1] + 1, st.d);
