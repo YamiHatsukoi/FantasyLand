@@ -50,6 +50,8 @@ export interface Actor {
   run?: boolean;
   /** Lunge offset (attacks), eased back to 0. */
   lunge?: number;
+  /** Lead of a group bigger than the members shown: how many there are ("×N" hint). */
+  crowd?: number;
 }
 
 export const isMonster = (id: string) => !isPersonActor(id) && isCreature(id);
@@ -224,6 +226,55 @@ export class Stage {
     this.spec = spec;
   }
 
+  /**
+   * Time of day changing: a band of light sweeps over the view while the sky crossfades, the
+   * sun (or moon) moves across it and the whole picture ramps warm, bright or blue.
+   */
+  timeSweep(to: string, ms = 3200) {
+    const t0 = this.now;
+    const pal: Record<string, { band: string; tint: string; op: GlobalCompositeOperation; a: number; disc: string; rise: boolean }> = {
+      dawn: { band: "255,190,110", tint: "255,170,90", op: "lighter", a: 0.3, disc: "#ffd890", rise: true },
+      day: { band: "255,240,200", tint: "255,236,190", op: "lighter", a: 0.26, disc: "#fff6d0", rise: true },
+      dusk: { band: "255,120,60", tint: "200,80,60", op: "source-over", a: 0.3, disc: "#ff9a50", rise: false },
+      night: { band: "90,110,200", tint: "10,16,50", op: "source-over", a: 0.42, disc: "#dfe8ff", rise: true },
+    };
+    const P = pal[to] ?? pal.day;
+    const night = to === "night";
+    this.screenFx.push((c, t) => {
+      const k = (t - t0) / ms;
+      if (k >= 1) return false;
+      const WW = W * OUT, HH = H * OUT;
+      const bell = Math.sin(Math.PI * k);
+      c.save();
+      // the light ramp over everything
+      c.globalCompositeOperation = P.op;
+      c.fillStyle = `rgba(${P.tint},${P.a * bell})`;
+      c.fillRect(0, 0, WW, HH);
+      // a soft band crossing the view (east to west at dusk, west to east otherwise)
+      const e = easeInOut(k), bx = (to === "dusk" ? 1 - e : e) * (WW + 400) - 200;
+      const gr = c.createLinearGradient(bx - 200, 0, bx + 200, 0);
+      gr.addColorStop(0, `rgba(${P.band},0)`); gr.addColorStop(0.5, `rgba(${P.band},${0.45 * bell})`); gr.addColorStop(1, `rgba(${P.band},0)`);
+      c.globalCompositeOperation = "lighter";
+      c.fillStyle = gr;
+      c.fillRect(0, 0, WW, HH * 0.75);
+      // the sun / moon on its arc, in the sky only
+      c.beginPath(); c.rect(0, 0, WW, HH * 0.56); c.clip();
+      const sxp = (P.rise ? 0.18 + 0.3 * e : 0.55 + 0.3 * e) * WW;
+      const syp = (P.rise ? 0.6 - 0.4 * e : 0.18 + 0.4 * e) * HH;
+      const r = 9 * OUT;
+      const halo = c.createRadialGradient(sxp, syp, r * 0.4, sxp, syp, r * 4);
+      halo.addColorStop(0, `rgba(${P.band},${0.6 * bell})`); halo.addColorStop(1, `rgba(${P.band},0)`);
+      c.fillStyle = halo; c.fillRect(sxp - r * 4, syp - r * 4, r * 8, r * 8);
+      c.globalCompositeOperation = "source-over";
+      c.globalAlpha = bell * 0.9;
+      c.fillStyle = P.disc;
+      c.beginPath(); c.arc(sxp, syp, r, 0, Math.PI * 2); c.fill();
+      if (night) { c.fillStyle = "rgba(10,16,50,.9)"; c.beginPath(); c.arc(sxp + r * 0.45, syp - r * 0.2, r * 0.85, 0, Math.PI * 2); c.fill(); }
+      c.restore();
+      return true;
+    });
+  }
+
   /** Places the section's actors on the scene's standing spots (hero first). */
   cast(ids: string[], heroLook?: Look) {
     const slots = this.scene.slots;
@@ -341,8 +392,8 @@ export class Stage {
     let top: number;
     if (isMonster(id)) {
       const s = creatureSize(id);
-      top = a.y - s.h * 0.86 - (s.flying ? 18 : 0);
-    } else top = a.y - (a.pose === "kneel" ? 36 : a.pose === "dead" ? 14 : 44);
+      top = a.y - s.h * 0.86 * (a.scale ?? 1) - (s.flying ? 18 : 0);
+    } else top = a.y - (a.pose === "kneel" ? 36 : a.pose === "dead" ? 14 : 44) * (a.scale ?? 1);
     return top - (a.z ?? 0);
   }
 
@@ -532,7 +583,19 @@ export class Stage {
         const r = Math.round(p.size);
         g.fillStyle = "#2a2622"; g.fillRect(Math.round(p.x) - 1, Math.round(p.y) - r - 1, r + 2, r + 2);
         g.fillStyle = p.col; g.fillRect(Math.round(p.x), Math.round(p.y) - r, r, r);
-      } else g.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size);
+      } else {
+        if (p.glow && p.size >= 2) {
+          // a soft halo so sparks of light still read on a phone
+          const al = g.globalAlpha;
+          g.globalAlpha = al * 0.3;
+          g.fillRect(Math.round(p.x) - 1, Math.round(p.y) - 1, p.size + 2, p.size + 2);
+          g.globalAlpha = al;
+          g.fillStyle = "#ffffff";
+          g.fillRect(Math.round(p.x + p.size / 2 - 0.5), Math.round(p.y + p.size / 2 - 0.5), 1, 1);
+          g.fillStyle = p.col;
+        }
+        g.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size);
+      }
       g.globalCompositeOperation = "source-over";
     }
     g.globalAlpha = 1;
@@ -586,6 +649,23 @@ export class Stage {
     }
     c.globalAlpha = 1;
     this.floaters = this.floaters.filter((f) => t - f.born < 1100);
+    // "×N" on the lead of a group bigger than what is shown
+    c.font = `${10 * OUT}px VT323, monospace`;
+    c.textAlign = "left";
+    for (const a of this.actors) {
+      if (!a.crowd || a.hidden || a.pose === "dead" || (a.alpha ?? 1) < 0.5 || (a.bubble && t < a.bubble.until) || a.x < 4 || a.x > W - 4) continue;
+      const label = `×${a.crowd}`;
+      const w = c.measureText(label).width + 4 * OUT;
+      // on the side away from the hero (his bubbles and emotes stay clear)
+      const hero = this.actors.find((o) => o.id === "lonewolf" || o.id === "hero");
+      const away = hero && !hero.hidden && hero.x > a.x ? sx(a.x) - w - 4 * OUT : sx(a.x) + 6 * OUT;
+      const x = Math.max(this.visibleX[0] * OUT + 2 * OUT, Math.min(this.visibleX[1] * OUT - w, away)), y = Math.max(10 * OUT, sy(this.headY(a)) - 2 * OUT);
+      c.fillStyle = "rgba(20,12,8,.72)";
+      c.fillRect(x - 2 * OUT, y - 8 * OUT, w, 10 * OUT);
+      c.fillStyle = "#ffd76a";
+      c.fillText(label, x, y);
+    }
+    c.textAlign = "center";
     // speech bubbles
     for (const a of this.actors) if (a.bubble && t < a.bubble.until && !a.hidden) speech(c, a.bubble, sx(a.x), sy(this.headY(a)), t, this.visibleX);
     if (t < this.flashUntil) {

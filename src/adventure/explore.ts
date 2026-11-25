@@ -1274,10 +1274,12 @@ function doorStyle(label: string, kind: Kind, bg: Scene["bg"]): BStyle {
   return "house";
 }
 
-type ObjectKind = "well" | "chest" | "corpse" | "stone" | "boat" | "fire" | "altar" | "statue" | "grave" | "tree" | "sign" | "book" | "table" | "cart" | "horse" | "bones" | "lever" | "rack" | "herbs" | "pool" | "bag" | "fountain" | "anvil" | "barrel" | "crates" | "marker";
+type ObjectKind = "well" | "chest" | "corpse" | "stone" | "boat" | "fire" | "altar" | "statue" | "grave" | "tree" | "sign" | "book" | "table" | "cart" | "horse" | "bones" | "lever" | "rack" | "herbs" | "pool" | "bag" | "fountain" | "anvil" | "barrel" | "crates" | "throne" | "sarcophagus" | "marker";
 function objectKind(label: string): ObjectKind {
   const L = label;
   if (hasWord(L, ["giếng", "well"])) return "well";
+  if (hasWord(L, ["ngai", "ngai vàng", "ngôi báu", "bảo tọa", "throne"])) return "throne";
+  if (hasWord(L, ["quan tài", "quách", "hòm đá", "sarcophagus", "coffin", "linh cữu"])) return "sarcophagus";
   if (hasWord(L, ["rương", "hòm", "chest", "hộp", "box", "két"])) return "chest";
   if (hasWord(L, ["xác", "thi thể", "tử thi", "corpse", "body", "người chết", "xác chết"])) return "corpse";
   if (hasWord(L, ["hài cốt", "xương", "bộ xương", "bones", "skeleton"])) return "bones";
@@ -1769,13 +1771,15 @@ function interiorBase(g: Gen) {
   } else if (v === "throne") {
     const tx = north ? cx - 4 : cx;
     fix(fur("dais", 9), cx - 4, 3, 9, 2, { flat: true, walkable: true, dy: -6 });
-    fix(fur("throne"), tx, 3, 1, 1, { dy: 9 });
+    const th = fix(fur("throne"), tx, 3, 1, 1, { dy: 9 });
+    g.marks.push({ kind: "throne", x: tx, y: 3, top: th.y - fur("throne").height * th.s - 3 });
     g.block[g.i(tx, 3)] = 0;
     g.host = { at: { x: tx, y: 3 }, stand: { x: tx, y: 5 }, face: "down", sitDy: -27, re: /king|queen|lord|lady|duke|prince|princess|emperor|baron|regent|vua|hoàng|chúa|quân|công|lãnh|vương|tước|quan|ruler/i };
   } else if (v === "temple") {
     const ax = north ? cx - 5 : cx;
     fix(fur("dais", 9, "#e8e2d4"), cx - 4, 3, 9, 2, { flat: true, walkable: true, dy: -6 });
     const alt = fix(fur("altar"), ax - 1, 4, 3, 1, { dy: 4, live: flamesLive("altar") });
+    g.marks.push({ kind: "altar", x: ax, y: 4, top: alt.y - fur("altar").height * alt.s - 3 });
     g.lights.push({ x: alt.x, y: alt.y - 50, r: 120, col: "#ffe0a0", flick: 0.4, on: "always", glow: 0.45 });
     g.emit.push({ x: alt.x + 16, y: alt.y - 56, kind: "incense", acc: 0 });
     g.host = { at: { x: ax, y: 3 }, stand: { x: ax, y: 5 }, face: "down", re: /priest|monk|abbot|nun|cleric|sage|hermit|sư|thầy|tu|đạo|tế|giáo|trụ trì|shaman|oracle/i };
@@ -2227,7 +2231,7 @@ function placeObject(g: Gen, kind: ObjectKind, s: ExploreOpts["spots"][0], zoneO
     if (!at) kind = "marker";
   }
   if (!at && kind === "fire" && bg === "camp") at = { ...g.hub };
-  if (!at && (kind === "altar" || kind === "statue") && g.kind === "interior" && g.walk(g.hub.x, 3)) at = { x: g.hub.x, y: 3 };
+  if (!at && (kind === "altar" || kind === "statue" || kind === "throne") && g.kind === "interior" && g.walk(g.hub.x, 3)) at = { x: g.hub.x, y: 3 };
   if (!at && kind === "well" && g.kind === "settle" && g.free(g.hub.x, g.hub.y, 1, 1)) at = { ...g.hub };
   if (!at) {
     const slots = g.objSlots.filter((p) => g.free(p.x, p.y, 1, 1, (gg) => !UNWALK.has(gg) && gg !== G.BRIDGE) || (g.walk(p.x, p.y) && !g.block[g.i(p.x, p.y)]));
@@ -2296,6 +2300,8 @@ function placeObject(g: Gen, kind: ObjectKind, s: ExploreOpts["spots"][0], zoneO
     case "anvil": put(prop("anvil")); break;
     case "barrel": put(prop("barrel")); break;
     case "crates": put(prop("crates")); break;
+    case "throne": put(fur("throne"), { dy: 9 }); g.lights.push({ x: cx, y: foot - 40, r: 60, col: "#ffd890", on: "always", glow: 0.3, flick: 0.2 }); break;
+    case "sarcophagus": put(fur("sarcophagus"), { dy: 3 }); break;
     default: {
       // a glowing marker on the ground
       g.put({ x: cx, y: foot - 12, s: 1, flat: true, live: markerLive }, x, y, 1, 1, true);
@@ -3115,6 +3121,8 @@ function landmarksOut(g: Gen) {
     if (c) for (let k = 0; k < 6; k++) { const x = c.x + (k % 3) * 2, y = c.y + Math.floor(k / 3) * 2; if (fits(x, y, 1, 1)) put(k === 0 ? "grave" : null, k === 4 ? prop("cross") : prop("tomb", k), { x, y }); }
   }
   if (F("cart")) putAt("cart", prop("cart"), near(ring(2, 5)));
+  if (F("throne")) putAt("throne", fur("throne"), near(ring(2, 5)), 1, 1, { dy: 9 });
+  if (F("sarcophagus", "crypt", "tomb", "coffin")) putAt("sarcophagus", fur("sarcophagus"), near(ring(3, 6), 2), 2, 1, { dy: 3 });
   if (F("wreckage")) { const p = near(ring(3, 7)); if (p) { put(F("cart") ? null : "cart", prop("cart"), p); putAt("crates", prop("crates"), near({ x: p.x + 1, y: p.y + 1 })); putAt(null, prop("barrel"), near({ x: p.x - 1, y: p.y })); g.emit.push({ x: p.x * TW + 16, y: p.y * TW, kind: "smoke", acc: 0 }); } }
   if (F("dock") || F("boat")) {
     // a jetty from the nearest shore and a boat beside it
@@ -3310,6 +3318,8 @@ function landmarksIn(g: Gen) {
   }
   if (F("altar") && g.ivar !== "temple") { const ob = put("altar", prop("altar"), spotNear({ x: hub.x, y: 4 })); if (ob) g.lights.push({ x: ob.x, y: ob.y - 40, r: 60, col: "#ffd890", on: "always", glow: 0.4, flick: 0.5 }); }
   if (F("statue")) put("statue", prop("statue", g.kind === "under" ? "#7a7a80" : "#b0aca0"), anywhere());
+  if (F("throne") && g.ivar !== "throne") { const ob = put("throne", fur("throne"), spotNear({ x: hub.x, y: 3 }), 1, { dy: 9 }); if (ob) g.lights.push({ x: ob.x, y: ob.y - 40, r: 60, col: "#ffd890", on: "always", glow: 0.3, flick: 0.2 }); }
+  if (F("sarcophagus", "crypt", "tomb", "coffin")) put("sarcophagus", fur("sarcophagus"), anywhere(2), 2, { dy: 3 });
   if (F("graves")) { put("grave", fur("sarcophagus"), anywhere(2), 2, { dy: 3 }); }
   if (F("banners")) for (const x of [hub.x - 3, hub.x + 3]) put(null, fur("banner", 1, x < hub.x ? "#8a1e2a" : "#2a4a8a"), spotNear({ x, y: 3 }), 1, { dy: 10, walkable: true });
   if (F("trapdoor")) put(null, prop("hatch"), anywhere(), 1, { flat: true, walkable: true, dy: -6 });

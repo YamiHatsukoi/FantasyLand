@@ -752,7 +752,8 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       perf = p;
       void p.done.then(async () => {
         if (perf !== p || s.section !== sid || s.steps !== steps || !view.isConnected) return;
-        p.director.rest(!!s.ended);
+        await p.director.rest(!!s.ended);
+        if (perf !== p || s.section !== sid || s.steps !== steps || !view.isConnected) return;
         if (cinematic && cine) {
           // the film ends: the same stage, as it stands now, becomes the scene of the screen
           const c = cine;
@@ -780,7 +781,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       const st = new Stage(specOf(s.section));
       const p = new Performance({ stage: st, book, sid: s.section, heroLook: heroLook(), captionHost: h("div"), auto: () => false });
       p.skip();
-      p.director.rest(!!s.ended);
+      void p.director.rest(!!s.ended, true);
       p.destroy();
       stage = st;
       sceneBox.replaceChildren();

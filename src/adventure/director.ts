@@ -15,7 +15,7 @@ import { sfx } from "../audio/sfx";
 import { h } from "../ui/dom";
 import { creatureFrame, creatureSize } from "./art/creatures";
 import { isPersonActor, portrait, type Look } from "./art/people";
-import { isKnownProp, isLitProp, propArt, propKind } from "./art/props";
+import { isKnownProp, isLitProp, isLivingProp, propArt, propKind } from "./art/props";
 import { easeInOut, easeOut, H, isMonster, Stage, W, type Actor, type Particle, type StageProp } from "./stage";
 import type { Beat, Book, Section, StageAction } from "./types";
 
@@ -25,6 +25,11 @@ const base = (id: string) => id.split("#")[0];
 const isHero = (id: string) => base(id) === HERO || base(id) === "hero";
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
+/** "#rrggbb" at an opacity. */
+const hexA = (hex: string, a: number) => {
+  const n = parseInt(hex.slice(1, 7), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${Math.max(0, Math.min(1, a)).toFixed(3)})`;
+};
 const str = (v: unknown) => (v === undefined || v === null ? "" : String(v));
 
 /** Short display name of an actor id ("Giak", "Banedon", "Quan triều đình"). */
@@ -290,6 +295,8 @@ export class Director {
   private instant = false;
   /** Movements of this beat per actor: later actions on the same actor wait for them. */
   private pending = new Map<Actor, Promise<void>>();
+  /** Spots handed out in this beat to actors still on their way (they walk in after a delay). */
+  private claimed = new Map<Actor, { x: number; y: number }>();
   /** Ids that enter and die in the same beat: they are found lying there. */
   private doa = new Set<string>();
 
@@ -369,6 +376,47 @@ export class Director {
     }
     return s.x;
   }
+  /** Smaller and higher when standing further back (crowd rows). */
+  private depthScale(y: number) {
+    return clamp(1 - (this.slot(2).y - y) / 62, 0.78, 1);
+  }
+  /**
+   * Standing spots for n members of a group around (tx, ty): staggered depth rows (front row
+   * first), never inside the hero or another actor, preferring the given side of the hero.
+   */
+  private crowdSpots(tx: number, ty: number, n: number, sprite: string, side: number, skip: Set<Actor>) {
+    const st = this.stage, hero = this.hero();
+    const wOf = (id: string) => (isMonster(id) ? creatureSize(id).w * 0.5 : 13);
+    const goal = (a: Actor) => this.claimed.get(a) ?? a.to ?? a;
+    const taken = st.actors
+      .filter((a) => !a.hidden && !skip.has(a) && a.pose !== "dead" && goal(a).x > -8 && goal(a).x < W + 8)
+      .map((a) => ({ x: goal(a).x, y: goal(a).y, w: wOf(a.sprite ?? a.id), hero: isHero(a.id) }));
+    const me = Math.max(12, wOf(sprite));
+    const rows = [0, -7, -13];
+    const out: { x: number; y: number }[] = [];
+    const hx = hero && !hero.hidden && !skip.has(hero) ? hero.to?.x ?? hero.x : NaN;
+    // a phone shows only part of the stage around the cast: stay within a view's width of the hero
+    const vw = Math.max(150, st.visibleX[1] - st.visibleX[0]);
+    const mid = Number.isFinite(hx) ? clamp(hx, vw / 2, W - vw / 2) : clamp(tx, vw / 2, W - vw / 2);
+    for (let k = 0; k < n; k++) {
+      let best: { x: number; y: number } | null = null, bc = Infinity;
+      for (let r = 0; r < rows.length; r++) {
+        const y = ty + rows[r];
+        for (let x = 10 + (r % 2) * 2; x <= W - 10; x += 4) {
+          if (Number.isFinite(hx) && Math.abs(x - hx) < (r ? 22 : 26)) continue;
+          // same row: a full body apart; rows behind: staggered, peeking between the ones in front
+          if (taken.some((o) => Math.abs(o.x - x) < ((me + o.w) / 2) * (o.hero ? 0.9 : Math.abs(o.y - y) < 5 ? 0.8 : 0.3))) continue;
+          const cross = Number.isFinite(hx) && side && Math.sign(x - hx) !== side && Math.sign(tx - hx) === side ? 110 : 0;
+          const c = Math.abs(x - tx) + r * 16 + cross + Math.max(0, Math.abs(x - mid) - (vw / 2 - 12)) * 5;
+          if (c < bc) { bc = c; best = { x, y }; }
+        }
+      }
+      const pick = best ?? { x: clamp(tx + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 13, 8, W - 8), y: ty };
+      out.push(pick);
+      taken.push({ ...pick, w: me, hero: false });
+    }
+    return out;
+  }
   /** Where a position word / number lands (x, ground y). */
   private place(to: unknown, who?: Actor): { x: number; y: number; off?: "left" | "right" | "top" } {
     const s = str(to);
@@ -440,6 +488,7 @@ export class Director {
     const facedInBeat = new Set<string>();
     this.pending.clear();
     this.doa.clear();
+    this.claimed.clear();
     const entering = new Set(list.filter((a) => "enter" in a && a.enter).map((a) => base(str((a as Record<string, unknown>).enter))));
     for (const a of list) {
       const R = a as Record<string, unknown>;
@@ -527,7 +576,10 @@ export class Director {
     }
     if ("time" in a && a.time) {
       const tm = str(a.time) as Stage["spec"]["time"];
-      if (["dawn", "day", "dusk", "night"].includes(tm) && tm !== st.spec.time) st.setScene({ ...st.spec, time: tm }, this.instant ? 0 : 2200);
+      if (["dawn", "day", "dusk", "night"].includes(tm) && tm !== st.spec.time) {
+        st.setScene({ ...st.spec, time: tm }, this.instant ? 0 : 3200);
+        if (!this.instant) st.timeSweep(tm, 3200);
+      }
       return {};
     }
     if ("sfx" in a && a.sfx) { if (!this.instant) playSound(str(a.sfx)); return {}; }
@@ -540,7 +592,9 @@ export class Director {
     const sprite = b;
     const flying = isMonster(sprite) && creatureSize(sprite).flying;
     const waits: Promise<unknown>[] = [];
-    const n0 = clamp(n, 1, 4);
+    // a big group shows a few of its members (and a "×N" hint), the more crowded the fewer
+    const others = st.actors.filter((a) => !a.hidden && !isHero(a.id) && a.pose !== "dead" && base(a.id) !== b).length;
+    const n0 = clamp(n, 1, others >= 6 ? 2 : others >= 3 ? 3 : 4);
     let subject: { x: number; y: number } | undefined;
     const existing = this.group(id);
     const onStage = (a: Actor) => !a.hidden && a.x > -8 && a.x < W + 8 && a.pose !== "dead" && (a.alpha ?? 1) > 0.5;
@@ -564,10 +618,10 @@ export class Director {
       const side = from === "left" ? -1 : from === "right" ? 1 : target.x < W / 2 ? -1 : 1;
       target.x = clamp(hero.x + side * (n0 > 1 ? 40 : 30), 14, W - 14);
     }
+    const side = hero && !isHero(b) ? (target.x < hero.x ? -1 : 1) : 0;
+    const spots = n0 > 1 || standing.length ? this.crowdSpots(target.x, target.y, n0, sprite, side, new Set()) : [{ x: target.x, y: target.y }];
     for (let k = 0; k < n0; k++) {
-      let tx = target.x, ty = target.y;
-      const kk = k + (standing.length ? standing.length : 0);
-      if (kk) { tx = clamp(target.x + (kk % 2 ? 1 : -1) * Math.ceil(kk / 2) * 13, 8, W - 8); ty = target.y + [0, -5, 4][kk % 3]; }
+      const tx = spots[k].x, ty = spots[k].y;
       let a = reuse[k];
       if (!a) {
         a = { id: made ? `${b}#${made + 1}` : b, sprite, x: tx, y: ty, facing: "left", pose: "idle", phase: Math.floor(Math.random() * 900), look: isHero(b) ? this.heroLook : undefined };
@@ -575,6 +629,9 @@ export class Director {
         st.actors.push(a);
       }
       a.hidden = false; a.pose = "idle"; a.alpha = 1; a.z = 0;
+      a.scale = this.depthScale(ty);
+      this.claimed.set(a, { x: tx, y: ty });
+      if (k === 0) a.crowd = n > n0 ? n + standing.length : undefined;
       entered.push(a);
       if (!subject) subject = { x: tx, y: ty };
       const delay = k * 160;
@@ -624,11 +681,15 @@ export class Director {
     const members = this.group(id).filter((a) => a.pose !== "dead" || run);
     const list = members.length ? members : [this.ensure(id)];
     let subject: { x: number; y: number } | undefined;
+    const p0 = this.place(to, list[0]);
+    const hero = this.hero();
+    const spots = list.length > 1 && !p0.off ? this.crowdSpots(p0.x, p0.y, list.length, list[0].sprite ?? list[0].id, hero ? Math.sign(p0.x - hero.x) : 0, new Set(list)) : null;
     list.forEach((a, k) => {
       if (a.hidden) this.bringBack(a);
-      const p = this.place(to, a);
+      const p = k && spots ? { ...p0, x: spots[k].x, y: spots[k].y } : this.place(to, a);
+      if (spots && !k) { p.x = spots[0].x; p.y = spots[0].y; }
       let x = p.x;
-      if (k && !p.off) x = clamp(p.x + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 17, 8, W - 8);
+      if (!p.off) { const sc = spots ? this.depthScale(p.y) : 1; a.scale = a.scale ?? 1; if (this.instant) a.scale = sc; else void this.stage.tween(a as unknown as Record<string, number>, "scale", sc, 600); }
       if (p.off === "top") {
         // flies away upwards
         if (this.instant) { a.hidden = true; return; }
@@ -638,7 +699,7 @@ export class Director {
       if (p.off) x += (p.off === "right" ? 1 : -1) * k * 14;
       if (!subject) subject = { x, y: p.y };
       if (this.instant) { a.x = x; a.y = p.y; if (p.off) a.hidden = true; return; }
-      waits.push(this.after(a, () => this.walk(a, x, p.y + (k ? (k % 2 ? 3 : -2) : 0), run).then(() => { if (p.off) a.hidden = true; })));
+      waits.push(this.after(a, () => this.walk(a, x, p.y, run).then(() => { if (p.off) a.hidden = true; })));
     });
     return { wait: Promise.all(waits), subject };
   }
@@ -742,18 +803,14 @@ export class Director {
     let p = st.props.find((q) => q.word === word) ?? st.props.find((q) => propKind(q.word) === kind);
     const small = art.c.height <= 12;
     let x: number, y: number;
+    const fresh = !p || Number.isFinite(n);
     if (Number.isFinite(n)) {
       const s = this.slot(n);
       x = s.x; y = s.y + (small ? 3 : art.flat ? 2 : -5);
-      // don't hide a prop inside a person standing there (or a person inside it)
-      if (!small && !art.flat) {
-        const half = art.c.width / 2;
-        const busy = (cx: number) => st.actors.some((a) => !a.hidden && a.x > -8 && a.x < W + 8 && Math.abs((a.to?.x ?? a.x) - cx) < half + 6);
-        const base0 = x;
-        for (const d of [0, 20, -20, 38, -38, 56, -56]) { if (!busy(base0 + d)) { x = base0 + d; break; } }
-      }
     } else if (p) { x = p.x; y = p.y; }
     else { const s = this.slot(4); x = s.x + 14; y = s.y - 5; }
+    // slot allocation: the asked spot when it is free, else the nearest free one
+    if (fresh && !art.flat) x = this.freePropX(x, y, isLivingProp(word) ? creatureSize("horse").w * 0.7 : art.c.width, small, p);
     x = clamp(x, art.c.width / 2 + 2, W - art.c.width / 2 - 2);
     if (p) {
       const changed = p.state !== state;
@@ -771,6 +828,28 @@ export class Director {
     }
     this.propFire(p);
     return { subject: { x: p.x, y: p.y } };
+  }
+
+  /** Nearest x to `x0` where a prop of width w stands clear of people and of the other props. */
+  private freePropX(x0: number, y: number, w: number, small: boolean, self?: StageProp) {
+    const st = this.stage, half = w / 2;
+    const lo = half + 2, hi = W - half - 2;
+    const props = st.props.filter((q) => q !== self).map((q) => { const a = propArt(q.word, q.state); return { x: q.to?.x ?? q.x, y: q.y, half: (isLivingProp(q.word) ? creatureSize("horse").w * 0.7 : a.c.width) / 2, flat: a.flat }; }).filter((q) => !q.flat);
+    const busy = (cx: number) =>
+      cx < lo || cx > hi ||
+      (!small && st.actors.some((a) => { const ax = (this.claimed.get(a) ?? a.to ?? a).x; return !a.hidden && a.pose !== "dead" && ax > -8 && ax < W + 8 && Math.abs(ax - cx) < half + 6; })) ||
+      props.some((q) => Math.abs(q.x - cx) < half + q.half + 3 && Math.abs(q.y - y) < 16);
+    for (let d = 0; d <= W; d += 6) {
+      if (!busy(x0 + d)) return x0 + d;
+      if (d && !busy(x0 - d)) return x0 - d;
+    }
+    // nothing free for people too: at least keep clear of the other props
+    for (let d = 0; d <= W; d += 6) {
+      const ok = (cx: number) => cx >= lo && cx <= hi && !props.some((q) => Math.abs(q.x - cx) < half + q.half + 3 && Math.abs(q.y - y) < 16);
+      if (ok(x0 + d)) return x0 + d;
+      if (ok(x0 - d)) return x0 - d;
+    }
+    return x0;
   }
 
   /** Flames of a burning prop, or the small flame of a campfire / candle / torch. */
@@ -916,24 +995,28 @@ export class Director {
         break;
       case "glow": {
         const q = P.sky ? { x: P.x, y: 40 } : { x: P.x, y: (P.who ? P.y - 26 : P.y - 18) };
-        const until = st.now + 4200;
+        const until = st.now + 5200;
         st.emit({
           id, until,
           tick: (dt) => {
-            if (Math.random() < dt / 70) st.particles.push({ x: q.x + rnd(-14, 14), y: q.y + rnd(-6, 14), vx: rnd(-0.1, 0.1), vy: rnd(-0.5, -0.15), life: 0, max: rnd(900, 1500), col: Math.random() < 0.5 ? "#fff0b0" : "#ffd070", size: 1, glow: true });
+            for (let i = 0; i < dt / 30; i++) if (Math.random() < 0.8) st.particles.push({ x: q.x + rnd(-18, 18), y: q.y + rnd(-8, 16), vx: rnd(-0.12, 0.12), vy: rnd(-0.55, -0.18), life: 0, max: rnd(1300, 2100), col: Math.random() < 0.35 ? "#ffffff" : Math.random() < 0.6 ? "#fff0b0" : "#ffd070", size: Math.random() < 0.55 ? 2 : 3, glow: true });
           },
         });
         st.overlays.push((g, t) => {
-          const k = (t - (until - 4200)) / 4200;
+          const k = (t - (until - 5200)) / 5200;
           if (k >= 1) return false;
-          const a = Math.sin(Math.min(1, k * 1.4) * Math.PI) * (0.75 + 0.25 * Math.sin(t / 160));
+          const a = Math.sin(Math.min(1, k * 1.3) * Math.PI) * (0.8 + 0.2 * Math.sin(t / 160));
           g.globalCompositeOperation = "lighter";
-          const gr = g.createRadialGradient(q.x, q.y, 1, q.x, q.y, 34);
-          gr.addColorStop(0, `rgba(255,236,170,${0.55 * a})`); gr.addColorStop(1, "rgba(255,200,100,0)");
-          g.fillStyle = gr; g.fillRect(q.x - 36, q.y - 36, 72, 72);
+          const gr = g.createRadialGradient(q.x, q.y, 1, q.x, q.y, 54);
+          gr.addColorStop(0, `rgba(255,255,236,${0.9 * a})`); gr.addColorStop(0.3, `rgba(255,226,150,${0.55 * a})`); gr.addColorStop(1, "rgba(255,200,100,0)");
+          g.fillStyle = gr; g.fillRect(q.x - 56, q.y - 56, 112, 112);
+          // rays turning slowly
+          g.strokeStyle = `rgba(255,240,190,${0.35 * a})`; g.lineWidth = 2;
+          for (let i = 0; i < 6; i++) { const an = t / 1400 + (i * Math.PI) / 3; g.beginPath(); g.moveTo(q.x + Math.cos(an) * 8, q.y + Math.sin(an) * 8); g.lineTo(q.x + Math.cos(an) * 40, q.y + Math.sin(an) * 40); g.stroke(); }
           g.globalCompositeOperation = "source-over";
           return true;
         });
+        if (!this.instant) void st.tween(st.look, "glow", 0.7, 700).then(() => st.tween(st.look, "glow", 0, 2600));
         if (st.look.dark > 0.1) void st.tween(st.look, "dark", 0, 1200);
         break;
       }
@@ -1024,13 +1107,29 @@ export class Director {
       id: `magic${++this.uid}`, until: st.now + ms,
       tick: (dt, t) => {
         const k = (t - t0) / 1000;
-        for (let i = 0; i < dt / 22; i++) {
-          const a = k * 7 + i * 2.1 + Math.random() * 0.4, r = 10 + Math.sin(k * 3) * 3;
-          st.particles.push({ x: x + Math.cos(a) * r, y: y - 6 - ((k * 30 + i * 7) % 40), vx: Math.cos(a + 1.6) * 0.25, vy: -0.35, life: 0, max: rnd(500, 900), col: Math.random() < 0.4 ? "#ffffff" : Math.random() < 0.5 ? col : "#7ad8ff", size: 1, glow: true });
+        for (let i = 0; i < dt / 14; i++) {
+          const a = k * 7 + i * 2.1 + Math.random() * 0.4, r = 13 + Math.sin(k * 3) * 4;
+          st.particles.push({ x: x + Math.cos(a) * r, y: y - 6 - ((k * 30 + i * 7) % 46), vx: Math.cos(a + 1.6) * 0.3, vy: -0.4, life: 0, max: rnd(800, 1400), col: Math.random() < 0.35 ? "#ffffff" : Math.random() < 0.5 ? col : "#7ad8ff", size: Math.random() < 0.6 ? 2 : 3, glow: true });
         }
       },
     });
-    this.ring(x, y, col, 22, 800, true);
+    // a bright pulsing core of light where the spell gathers
+    st.overlays.push((g, t) => {
+      const k = (t - t0) / ms;
+      if (k >= 1) return false;
+      const a = Math.sin(Math.min(1, k * 1.25) * Math.PI) * (0.8 + 0.2 * Math.sin(t / 90));
+      const cy = y - 24, r = 30;
+      g.save();
+      g.globalCompositeOperation = "lighter";
+      const gr = g.createRadialGradient(x, cy, 1, x, cy, r);
+      gr.addColorStop(0, `rgba(255,255,255,${0.85 * a})`); gr.addColorStop(0.25, hexA(col, 0.6 * a)); gr.addColorStop(1, hexA(col, 0));
+      g.fillStyle = gr; g.fillRect(x - r, cy - r, r * 2, r * 2);
+      g.restore();
+      return true;
+    });
+    st.flash(col, 160);
+    this.ring(x, y, col, 34, 1000, true);
+    setTimeout(() => this.ring(x, y, "#ffffff", 26, 800, true), 260);
   }
 
   private slash(x: number, y: number, dir: number) {
@@ -1194,12 +1293,29 @@ export class Director {
   }
 
   /** The state the scene rests in once the performance is over (choices on screen). */
-  rest(ended: boolean) {
+  rest(ended: boolean, instant = false): Promise<void> {
     const st = this.stage;
     for (const a of st.actors) a.bubble = undefined;
-    void st.camTo(W / 2, H / 2, 1, 1200);
-    if (st.look.fade > 0.05) void st.tween(st.look, "fade", ended ? Math.min(st.look.fade, 0.35) : 0, 900);
-    if (!ended && st.look.dark > 0.5) void st.tween(st.look, "dark", 0.45, 1200);
+    void st.camTo(W / 2, H / 2, 1, instant ? 0 : 1200);
+    if (st.look.fade > 0.05) void st.tween(st.look, "fade", ended ? Math.min(st.look.fade, 0.35) : 0, instant ? 0 : 900);
+    if (!ended && st.look.dark > 0.5) void st.tween(st.look, "dark", 0.45, instant ? 0 : 1200);
+    // the hero ran off (or was taken away): he walks calmly back in before the choices
+    const hero = this.hero();
+    if (ended || !hero || hero.pose === "dead") return Promise.resolve();
+    const off = hero.hidden || hero.x < 8 || hero.x > W - 8 || (hero.alpha ?? 1) < 0.4;
+    if (!off) return Promise.resolve();
+    const fromLeft = hero.x < W / 2;
+    const n = fromLeft ? 1 : 4;
+    hero.hidden = false; hero.z = 0; hero.scale = 1; hero.run = false; hero.to = undefined;
+    if (hero.pose !== "idle") hero.pose = "idle";
+    const x = this.freeX(n, hero), y = this.slot(n).y;
+    const inside = hero.x >= 8 && hero.x <= W - 8;
+    if (instant) { hero.x = x; hero.y = y; hero.alpha = 1; hero.facing = x < W / 2 ? "right" : "left"; return Promise.resolve(); }
+    if (inside) return this.fadeTo(hero, 1, 600);
+    hero.alpha = 1;
+    hero.x = fromLeft ? -22 : W + 22; hero.y = y;
+    const walk = st.moveTo(hero, x, y, 0.075).then(() => { hero.facing = x < W / 2 ? "right" : "left"; });
+    return Promise.race([walk, new Promise<void>((r) => setTimeout(r, 3500))]);
   }
 }
 

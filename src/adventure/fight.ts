@@ -64,6 +64,10 @@ interface FoeKit {
   magic: string;
   /** Strikes leave dark wisps that drain the hero. */
   drains: boolean;
+  /** Breathes fire (dragons, wyrms): every other attack is a jet of flame. */
+  breath?: boolean;
+  /** Ice instead of fire (frost wyrms). */
+  frost?: boolean;
 }
 
 function foeKit(def: FoeDef): FoeKit {
@@ -86,7 +90,7 @@ function foeKit(def: FoeDef): FoeKit {
   else if (k === "gourgaz") Object.assign(kit, { move: "slash", blood: "#4a7a2a", blood2: "#2a4a1a", bits: "ichor" });
   else if (/kraan|bat|raven|bird|winged-serpent|dragon/.test(k)) Object.assign(kit, { move: "swoop", blood: k === "dragon" ? "#c83a1a" : "#5a7a2a", blood2: "#2a3a1a", bits: k === "dragon" ? "blood" : "ichor" });
   else if (/doomwolf|wolf|mountain-cat/.test(k)) Object.assign(kit, { move: "leap" });
-  else if (k === "vordak") Object.assign(kit, { move: /helghast/.test(name) ? "drain" : "mindbolt", bits: "smoke", blood: "#6a3aa8", blood2: "#24123a", trail: "#c08aff", death: "dissolve", drains: /helghast/.test(name) });
+  else if (k === "vordak" || k === "helghast") Object.assign(kit, { move: k === "helghast" || /helghast/.test(name) ? "drain" : "mindbolt", bits: "smoke", blood: "#6a3aa8", blood2: "#24123a", trail: "#c08aff", death: "dissolve", drains: k === "helghast" || /helghast/.test(name), magic: k === "helghast" ? "#7affc8" : "#b060ff" });
   else if (k === "drakkar") Object.assign(kit, { move: "slash", trail: "#ff8a7a" });
   else if (/skeleton/.test(k)) Object.assign(kit, { move: "slash", bits: "bone", blood: "#e8e0c8", blood2: "#a89a80", trail: "#d8f0c0", death: "dissolve" });
   else if (k === "ghost") Object.assign(kit, { move: "drain", bits: "ghost", blood: "#9ae0ff", blood2: "#3a6a8a", trail: "#bfefff", death: "dissolve", drains: true, magic: "#8ae0ff" });
@@ -102,6 +106,7 @@ function foeKit(def: FoeDef): FoeKit {
   if (kit.flying) kit.death = "fall";
   else if (big && kit.death === "collapse") kit.death = "heavy";
   if (kit.move === "maul" || kit.move === "smash") kit.big = true;
+  if (k === "dragon" || /dragon|wyrm|rồng|fire-?breath|phun lửa/.test(name)) { kit.breath = true; kit.frost = /frost|ice|băng|tuyết/.test(name); }
   return kit;
 }
 
@@ -910,12 +915,54 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       idle(p);
     }
 
+    /** A jet of flame from the mouth to the hero: glow, roaring cone, embers, scorch. */
+    async function fireBreath(p: Pup, land: () => void, hx: number, hy: number) {
+      const k = kitOf(p);
+      // flame or frost: core, mid, outer colours and the ember tint
+      const C = k.frost ? { core: "235,250,255", mid: "150,220,255", out: "80,160,255", a: "#bfefff", b: "#6ac8ff", ember: "#d8f6ff", smoke: "#8aa8c0" } : { core: "255,255,220", mid: "255,200,60", out: "255,120,20", a: "#ffd050", b: "#ff7a20", ember: "#ffb040", smoke: "#3a3236" };
+      const mx = p.x - bodyHalf(p) - 2, my = gy - p.hover - p.z - Math.round(k.h * (k.flying ? 0.55 : 0.72));
+      play(p, "attack", [0], 120, true);
+      sfx("charge");
+      await fx.charge(mx, my, { col: C.ember, dur: 260, r: 16 });
+      play(p, "attack", [1, 2], 110, true);
+      sfx("cast", k.frost ? "ice" : "fire");
+      const dur = 620;
+      void fx.add(dur, (g, k0) => {
+        const grow = Math.min(1, k0 * 3), fade = k0 > 0.75 ? (1 - k0) / 0.25 : 1;
+        const ex = mx + (hx - 4 - mx) * grow;
+        g.save();
+        g.globalCompositeOperation = "lighter";
+        for (let i = 0; i < 3; i++) {
+          const w = (4 + i * 4) * (0.6 + 0.4 * grow);
+          const gr = g.createLinearGradient(mx, my, ex, hy);
+          gr.addColorStop(0, `rgba(${i === 0 ? C.core : C.mid},${(i === 0 ? 0.95 : 0.7 - i * 0.15) * fade})`);
+          gr.addColorStop(1, `rgba(${C.out},${0.25 * fade})`);
+          g.fillStyle = gr;
+          g.beginPath();
+          g.moveTo(mx, my - w * 0.3); g.lineTo(ex, hy - w - Math.sin(clock / 40 + i) * 2); g.lineTo(ex, hy + w + Math.cos(clock / 37 + i) * 2); g.lineTo(mx, my + w * 0.3);
+          g.closePath(); g.fill();
+        }
+        g.restore();
+      });
+      for (let t = 0; t < dur - 120; t += 40) {
+        const u = Math.min(1, t / 200);
+        fx.burst(mx + (hx - mx) * u * 0.5, my + (hy - my) * u * 0.5, { n: 6, dir: hx < mx ? 180 : 0, spread: 26, speed: 3.4, col: Math.random() < 0.5 ? C.a : C.b, glow: true, size: 2, life: 380, g: -0.0004 });
+        if (t === 200) { land(); fx.shake(3, 260); fx.flash(C.ember, 120, 0.35); }
+        await wait(40);
+      }
+      fx.embers(hx, hy + 6, { n: 18, w: 10, col: C.ember, speed: 1 });
+      fx.smoke(hx, hy - 4, { n: 6, col: C.smoke, w: 8, h: 4 });
+      await wait(140);
+      idle(p);
+    }
+
     async function foeAttack(p: Pup, res: "hit" | "block", dmg: number) {
       const k = kitOf(p);
       const big = dmg >= 6 || (res === "hit" && heroShown - dmg <= 0);
       const land = () => (res === "hit" ? heroHurt(dmg, big) : heroBlocks(p));
       const [hx, hy] = heroHitPoint();
       const reach = bodyHalf(p) + 13;
+      if (k.breath && Math.random() < 0.55) { await fireBreath(p, land, hx, hy); return; }
       switch (k.move) {
         case "spear": case "punch": {
           await approach(p, reach + (k.move === "spear" ? 8 : 0));

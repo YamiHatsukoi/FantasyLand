@@ -966,6 +966,70 @@ function vordak(): Def {
   return { w: 56, h: 56, flying: false, ox: -6, draw: (s, a) => drawHum(s, a, sp) };
 }
 
+// ============================================================ Helghast
+/** Tall cloaked undead: a long tattered black cloak, a high collar and a pale glowing face. */
+function helghast(): Def {
+  const ROBE = mat("#1e1e26", { rim: "#6a7a8a", rough: 0.15 }), ROBEd = dim(ROBE, 0.25), CLOAK = mat("#14141a", { rim: "#4a5a6a" });
+  const LINING = mat("#3a1420"), SKIN = mat("#d8e4dc", { rim: "#ffffff" }), STEELc = mat("#9aa4b4");
+  const b: HB = { thigh: 10, shin: 10, up: 8.5, fore: 8, torso: 16, stance: 3.2, hunch: 0.06 };
+  const EYE = "#8affd0";
+  const sp: HumSpec = {
+    b, style: "swing", weapon: W.sword, lie: [50, 6],
+    behind: (s, j, a) => { if (!a.dead) cloak(s, j, a, b.torso, b.thigh + b.shin + 1, CLOAK, LINING); },
+    leg: (s, j, i, a) => {
+      const ankle = j.ft[i];
+      s.fill(i ? ROBEd : dim(ROBEd, 0.2), (bb) => bb.poly([[ankle[0] - 2, ankle[1] - 1.8], [ankle[0] + 3.6, ankle[1] - 0.8], [ankle[0] + 3.8, ankle[1]], [ankle[0] - 2, ankle[1]]]));
+      if (i === 0) return;
+      // long robe to the ankles, ragged hem
+      const waist = add(j.hip, rot([0, -3], j.lean));
+      const xs = [j.ft[0][0], j.ft[1][0], waist[0]];
+      const x0 = Math.min(...xs) - 5.5, x1 = Math.max(...xs) + 5;
+      const hemY = a.dead ? -0.5 : -1.6;
+      const pts: P[] = [add(waist, rot([-5, 0], j.lean)), add(waist, rot([5, 0], j.lean))];
+      const n = 10;
+      for (let k = 0; k <= n; k++) {
+        const x = lerp(x1, x0, k / n), rag = (k % 2 ? 2.6 : 0) + hash(k, 5) * 1.4 + Math.sin(a.t * 6.28 + k) * 0.7;
+        pts.push([x, hemY - rag + (k === 0 || k === n ? 1 : 0)]);
+      }
+      s.fill(ROBE, (bb) => bb.poly(pts), { tex: (x, y, t, mx) => (Math.abs(Math.sin(mx * 0.8)) < 0.16 ? t - 1 : t) });
+    },
+    arm: (s, j, i) => {
+      const m = i ? ROBE : ROBEd, sk = i ? SKIN : dim(SKIN, 0.25);
+      s.fill(m, (bb) => { bb.capP(j.sh[i], j.el[i], 2.8, 2.5); bb.capP(j.el[i], mid(j.el[i], j.ha[i], 0.75), 2.5, 3.4); });
+      s.fill(sk, (bb) => bb.ell(j.ha[i][0], j.ha[i][1], 1.4, 1.3));
+    },
+    torso: (s) => {
+      const T = b.torso;
+      s.fill(ROBE, (bb) => { bb.poly([[-5, -T + 1.5], [4.4, -T + 1.5], [5.4, -T * 0.5], [4.6, 0], [-4.6, 0], [-5.8, -T * 0.5]]); }, { tex: (x, y, t, mx) => (Math.abs(Math.sin(mx * 1.2)) < 0.14 ? t - 1 : t) });
+      // silver clasp chain and a dark sash
+      s.fill(STEELc, (bb) => bb.rect(-4, -T + 3, 8, 0.9), { cast: false, spec: 0.4 });
+      s.fill(mat("#2a0e16"), (bb) => bb.rect(-4.8, -5, 10, 1.6), { cast: false });
+    },
+    head: (s, j, a) => {
+      const ex = j.ex;
+      // tall pointed collar / hood behind the head
+      s.fill(CLOAK, (bb) => { bb.poly([[-5.4, 1.4], [-6.2, -9], [-3, -13.5], [-1.4, -6], [-3.6, 1.6]]); bb.poly([[4.8, 1.6], [6.4, -4.4], [3.6, -2]]); });
+      // gaunt pale face, a little light of its own
+      s.fill(SKIN, (bb) => { bb.ell(1.6, -5, 3.2, 3.9); bb.poly([[0, -2.4], [4.6, -2.6], [3.8, 0.8], [1, 0.8]]); }, { hi: 0.6 });
+      s.fill(flatMat("#2a3a36"), (bb) => { bb.ell(3, -5.4, 1.3, 1.1); bb.rect(0.4, -8.6, 4, 0.8); }, { cast: false });
+      s.dot(4.6, -3.4, "#5a6a66");
+      s.line(1.6, -0.6, 4, -0.4, "#4a2a30");
+      // thin black hair to the shoulders
+      s.fill(flatMat("#0e0e12"), (bb) => { bb.ell(-0.6, -7.6, 3.6, 2.2); bb.poly([[-3.6, -7], [-1.6, -7], [-2, 1], [-3.8, 1]]); }, { cast: false });
+      if (ex !== "dead") {
+        const big = ex === "atk" || a.pose === "idle" && a.f === 2;
+        s.dot(3.2, -5.4, "#ffffff");
+        s.glow(3.2, -5.3, EYE, big ? 3.6 : 2.8);
+        s.glow(1.6, -4.6, "#c8fff0", 1.4);
+      }
+    },
+    front: (s, j, a) => {
+      if (a.st === 1 || a.st === 2) s.ripple(j.neck[0] + 5 + a.st * 3, j.neck[1] - 4, 3 + a.st * 2, "#8affd0");
+    },
+  };
+  return { w: 60, h: 66, flying: false, ox: -6, draw: (s, a) => drawHum(s, a, sp) };
+}
+
 // ============================================================ skeletons
 function ribcage(s: Spr, T: number, m: Mat) {
   // spine, ribs and pelvis
@@ -2275,6 +2339,7 @@ const DEFS: Record<string, () => Def> = {
   "giak-mountain": () => giak({ skin: "#867a6c", armour: "#3a3230", mountain: true }),
   drakkar: drakkar,
   vordak: vordak,
+  helghast: helghast,
   "skeleton-king": () => skeleton(true),
   skeleton: () => skeleton(false),
   zombie: zombie,
@@ -2320,7 +2385,8 @@ const KEYS: [string, ...string[]][] = [
   ["giak", "giak", "szall", "gnaag"],
   ["kraan", "kraan", "itikar"],
   ["doomwolf", "doomwolf", "doomwolves", "akataz", "taintor wolf", "mech-wulf", "hound of death", "plague hound", "warhound", "krorn"],
-  ["vordak", "vordak", "helghast", "darklord", "death knight sentinel", "mind reaper", "shadow reaver"],
+  ["helghast", "helghast"],
+  ["vordak", "vordak", "darklord", "death knight sentinel", "mind reaper", "shadow reaver"],
   ["drakkar", "drakkar", "death knight", "scarlet warrior", "sinistrari"],
   ["skeleton-king", "skeleton king", "skeleton-king", "barrow king", "lich", "undead king", "deathlord"],
   ["crypt-spawn", "crypt spawn", "crypt-spawn", "cryptspawn", "nagah", "psi-ghoul", "haemodyl"],
