@@ -27,6 +27,7 @@ import { FLAMES, archWin, battlements, castleDoor, drawShip, dungeonFace, furnit
 import { iconEl, uiIcon } from "./art/icons";
 import { lookFor, personFrame, type Facing, type Look, type Pose } from "./art/people";
 import { Px, hs, mix, rgba } from "./art/px";
+import { viewZoom } from "./motion";
 import { isMonster } from "./stage";
 import type { Choice, Loc, Scene } from "./types";
 import { saidSide } from "./world";
@@ -4199,7 +4200,10 @@ export function mountExplore(o: ExploreOpts): ExploreHandle {
     cssW = Math.max(1, r.width); cssH = Math.max(1, r.height);
     dpr = Math.min(3, window.devicePixelRatio || 1);
     canvas.width = Math.round(cssW * dpr); canvas.height = Math.round(cssH * dpr);
-    S = Math.max(1, Math.round(Math.min(canvas.height / 330, canvas.width / 440)));
+    const k = Math.min(canvas.height / 330, canvas.width / 440);
+    S = Math.max(1, Math.round(k));
+    // "Toàn cảnh": farther out, more of the place in view (half steps keep the pixels even enough)
+    if (viewZoom() === "full") S = Math.max(1, Math.min(S, Math.round(k * 0.75 * 2) / 2));
     bw = Math.ceil(canvas.width / S) + 2; bh = Math.ceil(canvas.height / S) + 2;
     buf.width = bw; buf.height = bh; lightC.width = bw; lightC.height = bh;
     g.imageSmoothingEnabled = false; ctx.imageSmoothingEnabled = false;
@@ -4213,6 +4217,7 @@ export function mountExplore(o: ExploreOpts): ExploreHandle {
   resize();
   const ro = new ResizeObserver(resize);
   ro.observe(root);
+  window.addEventListener("adv-zoom", resize);
 
   // ---- the hero
   const tileOf = (a: { x: number; y: number }): Pt => ({ x: clamp(Math.floor(a.x / TW), 0, A.w - 1), y: clamp(Math.floor((a.y - FEET + TW / 2) / TW), 0, A.h - 1) });
@@ -4967,6 +4972,7 @@ export function mountExplore(o: ExploreOpts): ExploreHandle {
       clearTimeout(hintTimer);
       clearTimeout(leaveTimer);
       ro.disconnect();
+      window.removeEventListener("adv-zoom", resize);
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keyup", onKey);
       window.removeEventListener("blur", onBlur);

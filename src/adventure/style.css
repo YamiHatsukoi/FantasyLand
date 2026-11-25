@@ -600,3 +600,15 @@
 .adv-badge.won { background: linear-gradient(#ffe08a, #d89a2c); color: #2a1405; box-shadow: 0 0 0 2px #090604, inset 0 2px 0 #fff4c0, 0 3px 0 rgba(0,0,0,.45); }
 .adv-badge-dot { width: 7px; height: 7px; background: #8fe070; box-shadow: 0 0 6px #8fe070; animation: advLow 1.4s infinite; }
 .adv-story .adv-dock { flex: 0 1 auto; min-height: 0; max-height: none; }
+
+/* framing toggle ("Toàn cảnh" / "Cận"), under the HUD's right-hand buttons */
+.adv-zoombtn { position: absolute; z-index: 4; right: 8px; top: calc(var(--safe-t) + 60px); min-height: 30px; font-size: 17px; opacity: .92; }
+.adv-play.performing .adv-zoombtn { opacity: .75; }
+@media (min-aspect-ratio: 29/20) and (min-width: 640px), (min-width: 700px) and (max-aspect-ratio: 29/20) {
+  .adv-zoombtn { top: calc(var(--safe-t) + var(--hud-h) + 4px); }
+}
+.adv-setts { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 2px; }
+.adv-sett { min-height: 38px; padding: 0 10px; }
+@media (max-width: 379px) and (max-aspect-ratio: 29/20) {
+  .adv-zoombtn { top: calc(var(--safe-t) + var(--hud-h) + 2px); min-height: 26px; font-size: 15px; opacity: .8; }
+}

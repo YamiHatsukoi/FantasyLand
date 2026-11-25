@@ -13,6 +13,7 @@ import { emoteFrame } from "./art/emotes";
 import { isPersonActor, lookFor, personFrame, type Facing, type Look, type Pose } from "./art/people";
 import { isLivingProp, propArt, type PropArt } from "./art/props";
 import { makeScene, type SceneHandle, type SceneSpec } from "./art/scene";
+import { calmMotion } from "./motion";
 
 export const W = 320;
 export const H = 180;
@@ -383,7 +384,11 @@ export class Stage {
     this.floaters.push({ text, x, y, col, born: this.now, big });
   }
 
-  shake(ms = 260, power = 1) { this.shakeUntil = this.now + ms; this.shakePower = power; }
+  /** Shakes the view (none with "Giảm rung màn hình" / reduced motion). */
+  shake(ms = 260, power = 1) {
+    if (calmMotion()) return;
+    this.shakeUntil = this.now + Math.min(ms, 320); this.shakePower = power;
+  }
   flash(col = "#fff", ms = 120) { this.flashCol = col; this.flashUntil = this.now + ms; this.flashMs = ms; }
 
   /** Top of an actor's head (world y), for emotes and bubbles. */
@@ -612,7 +617,7 @@ export class Stage {
     let ox = 0, oy = 0;
     if (t < this.shakeUntil) {
       const p = this.shakePower * Math.min(1, (this.shakeUntil - t) / 160 + 0.3);
-      ox = Math.round((Math.random() - 0.5) * 5 * OUT * p); oy = Math.round((Math.random() - 0.5) * 4 * OUT * p);
+      ox = Math.round((Math.random() - 0.5) * 2.5 * OUT * p); oy = Math.round((Math.random() - 0.5) * 2 * OUT * p);
     }
     c.fillStyle = "#000";
     c.fillRect(0, 0, W * OUT, H * OUT);

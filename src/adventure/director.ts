@@ -16,6 +16,7 @@ import { h } from "../ui/dom";
 import { creatureFrame, creatureSize } from "./art/creatures";
 import { isPersonActor, portrait, type Look } from "./art/people";
 import { isKnownProp, isLitProp, isLivingProp, propArt, propKind } from "./art/props";
+import { calmMotion } from "./motion";
 import { easeInOut, easeOut, H, isMonster, Stage, W, type Actor, type Particle, type StageProp } from "./stage";
 import type { Beat, Book, Section, StageAction } from "./types";
 
@@ -207,7 +208,7 @@ export function synthBeats(book: Book, sec: Section): Beat[] {
     else if (KW.run.test(t)) { if (kneeling) kneeling = false; slot = Math.min(slot + 1, 3); A.push({ run: HERO, to: slot }); }
     else if (KW.walk.test(t)) {
       if (kneeling) { A.push({ pose: "idle", who: HERO }); kneeling = false; }
-      if (slot < 3 && !here.length) { slot++; A.push({ move: HERO, to: slot }); } else cam.push({ camera: "drift-right" });
+      if (slot < 3 && !here.length) { slot++; A.push({ move: HERO, to: slot }); }
     }
     // a foe lunging
     const foe = here.find((x) => isMonster(x));
@@ -244,8 +245,7 @@ export function synthBeats(book: Book, sec: Section): Beat[] {
     if (KW.horse.test(t) && !present.has("horse")) A.push({ prop: "horse", at: 4 });
     if (KW.death.test(t) && !here.length) A.push({ prop: "corpse", at: 4 });
     if (KW.coin.test(t) && /\b(nhặt|tìm thấy|lấy|trả|đưa)\b/.test(t)) A.push({ sfx: "coin" });
-    // camera: a gentle move on every beat
-    if (!cam.length) cam.push({ camera: i === 0 ? "reveal" : ["drift-right", "breathe", "drift-left", "breathe"][i % 4] });
+    // camera: only where the words call for it (no idle drifting while the text types)
     A.push(...cam.slice(0, 2));
   }
   // how it ends
@@ -481,8 +481,8 @@ export class Director {
     this.scoped = this.scoped.filter((s) => { if (s.until <= i) { s.stop(); return false; } return true; });
     for (const a of st.actors) if (a.bubble) a.bubble = undefined;
     const list = (b?.do ?? []).filter((a) => a && typeof a === "object");
-    const hasCam = list.some((a) => "camera" in a && /zoom|pan|reveal|drift|push|breathe/.test(str(a.camera)));
-    if (!hasCam && !instant) void st.camTo(W / 2, H / 2, 1, 1300);
+    const hasCam = list.some((a) => "camera" in a && /zoom|pan|reveal|push/.test(str(a.camera)));
+    if (!hasCam && !instant && (st.cam.zoom !== 1 || st.cam.x !== W / 2 || st.cam.y !== H / 2)) void st.camTo(W / 2, H / 2, 1, 700);
     if (st.look.fade > 0.4 && !list.some((a) => "camera" in a && str(a.camera) === "fade-out")) void st.tween(st.look, "fade", 0, instant ? 0 : 900);
     const waits: Promise<unknown>[] = [];
     const facedInBeat = new Set<string>();
@@ -1258,25 +1258,26 @@ export class Director {
     const hero = this.hero();
     const s = subject ?? (hero ? { x: hero.x, y: hero.y } : { x: W / 2, y: H * 0.7 });
     const fy = clamp(s.y - 26, 40, H - 40);
+    // moves are short and smooth; idle drifts ("drift-*", "breathe") are left out: a camera
+    // swaying while the text types makes players dizzy. "Giảm rung màn hình": no zooms or shakes.
+    const calm = calmMotion();
     switch (kind) {
-      case "shake": st.shake(460, 1.3); break;
-      case "shake-soft": st.shake(220, 0.6); break;
-      case "zoom-in": void st.camTo(s.x, fy, 1.42, 1200); break;
-      case "push-in": void st.camTo((s.x + W / 2) / 2, fy, 1.12, 1600); break;
-      case "zoom-out": st.cam.x = s.x; st.cam.y = fy; st.cam.zoom = Math.max(st.cam.zoom, 1.4); void st.camTo(W / 2, H / 2, 1, 1800); break;
-      case "reveal": st.cam.x = W / 2; st.cam.y = H * 0.55; st.cam.zoom = 1.12; void st.camTo(W / 2, H / 2, 1, 2600); break;
-      case "pan-right": case "pan-left": case "drift-right": case "drift-left": {
+      case "shake": st.shake(300, 1); break;
+      case "shake-soft": st.shake(180, 0.5); break;
+      case "zoom-in": if (!calm) void st.camTo(s.x, fy, 1.3, 700); break;
+      case "push-in": if (!calm) void st.camTo((s.x + W / 2) / 2, fy, 1.1, 800); break;
+      case "zoom-out": if (!calm) { st.cam.x = s.x; st.cam.y = fy; st.cam.zoom = Math.max(st.cam.zoom, 1.3); void st.camTo(W / 2, H / 2, 1, 900); } break;
+      case "reveal": if (!calm) { st.cam.x = W / 2; st.cam.y = H * 0.55; st.cam.zoom = 1.08; void st.camTo(W / 2, H / 2, 1, 1000); } break;
+      case "pan-right": case "pan-left": {
+        if (calm) break;
         const right = kind.endsWith("right");
-        const soft = kind.startsWith("drift");
-        const z = soft ? 1.08 : 1.24;
-        const span = soft ? 26 : 70;
+        const span = 40;
         if (st.cam.zoom < 1.03) { st.cam.x = W / 2 + (right ? -span : span); st.cam.y = H * 0.56; }
-        void st.tween(st.cam, "zoom", z, 900);
-        void st.tween(st.cam, "y", H * 0.56, 900);
-        void st.tween(st.cam, "x", W / 2 + (right ? span : -span), soft ? 5200 : 4200, (k) => easeInOut(k));
+        void st.tween(st.cam, "zoom", 1.18, 600);
+        void st.tween(st.cam, "y", H * 0.56, 600);
+        void st.tween(st.cam, "x", W / 2 + (right ? span : -span), 1400, (k) => easeInOut(k));
         break;
       }
-      case "breathe": void st.camTo(W / 2, H * 0.54, 1.04, 3600); break;
       case "fade-out": void st.tween(st.look, "fade", 1, 1500); break;
       case "fade-in": st.look.fade = 1; void st.tween(st.look, "fade", 0, 1500); break;
       case "flash": st.flash("#ffffff", 300); break;

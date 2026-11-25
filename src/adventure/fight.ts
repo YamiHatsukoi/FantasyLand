@@ -26,7 +26,7 @@ import { lookFor, personFrame, portrait, withWeapon, type Look, type Pose, type 
 import { battleExit, canEvade, epMax, heroCs, itemName, playRound, profile, startBattle, type Battle, type RoundResult } from "./engine";
 import { isMonster, OUT, Stage, H as SH, W as SW } from "./stage";
 import type { AdvState, Book, FoeDef } from "./types";
-import { bump, gameBtn, StageFit } from "./ui";
+import { bump, calmMotion, gameBtn, StageFit } from "./ui";
 
 const HERO_X = 96;
 const FOE_X = 224;
@@ -267,7 +267,8 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
   const heroLook = withWeapon("lonewolf", s.weapons[0] ?? s.special.find((id) => id === "Sommerswerd" || !!book.items[id]?.weapon));
   const heroStyle = styleOf(heroLook.weapon);
   const golden = !!heroLook.blade;
-  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // "Giảm rung màn hình" / reduced motion: no screen shake, no zoom punches
+  const reduced = calmMotion();
 
   return new Promise((resolve) => {
     const stage = new Stage({ bg: sec.scene.bg, time: sec.scene.time, weather: sec.scene.weather, mood: "combat", seed: `${book.id}-${s.section}` }, "adv-stage battle");

@@ -6,7 +6,10 @@
 import { sfx } from "../audio/sfx";
 import { h, nn } from "../ui/dom";
 import { iconEl, uiIcon, type UiIcon } from "./art/icons";
+import { setViewZoom, viewZoom, type ViewZoom } from "./motion";
 import { H as SH, W as SW, type Stage } from "./stage";
+
+export { calmMotion, calmSetting, setCalmSetting, setViewZoom, viewZoom, zoomLabel, type ViewZoom } from "./motion";
 
 /* ================================================================== frames */
 
@@ -116,6 +119,32 @@ export function installSkin() {
   document.head.append(h("style", { id: "adv-skin" }, css.join("\n")));
 }
 
+/* ================================================================== view settings */
+
+/**
+ * Pinch on `el` switches the zoom (fingers apart: closer, together: the whole scene).
+ * Returns the cleanup.
+ */
+export function pinchZoom(el: HTMLElement) {
+  let d0 = 0;
+  const dist = (e: TouchEvent) => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+  const start = (e: TouchEvent) => { d0 = e.touches.length === 2 ? dist(e) : 0; };
+  const move = (e: TouchEvent) => {
+    if (!d0 || e.touches.length !== 2) return;
+    const r = dist(e) / d0;
+    if (r > 1.25 || r < 0.8) {
+      const z: ViewZoom = r > 1 ? "near" : "full";
+      d0 = 0;
+      if (z !== viewZoom()) setViewZoom(z);
+    }
+  };
+  const end = () => { d0 = 0; };
+  el.addEventListener("touchstart", start, { passive: true });
+  el.addEventListener("touchmove", move, { passive: true });
+  el.addEventListener("touchend", end);
+  return () => { el.removeEventListener("touchstart", start); el.removeEventListener("touchmove", move); el.removeEventListener("touchend", end); };
+}
+
 /* ================================================================== stage fitting */
 
 export interface FitOpts {
@@ -125,6 +154,8 @@ export interface FitOpts {
   anchorY?: number;
   /** Shows a blurred copy of the scene behind it, for boxes the scene does not cover. */
   ambient?: boolean;
+  /** Height at the top of the box covered by a HUD (the whole-width view starts below it). */
+  padTop?: () => number;
 }
 
 /**
@@ -147,6 +178,7 @@ export class StageFit {
     if (!stage.canvas.parentElement) box.append(stage.canvas);
     this.ro = new ResizeObserver(() => this.layout());
     this.ro.observe(box);
+    window.addEventListener("adv-zoom", this.onZoom);
     this.timer = window.setInterval(() => this.layout(), 700);
     const amb = () => {
       if (!this.alive) return;
@@ -161,6 +193,8 @@ export class StageFit {
     requestAnimationFrame(amb);
     this.layout();
   }
+
+  private onZoom = () => this.layout();
 
   set(o: FitOpts) { this.o = { ...this.o, ...o }; this.layout(); }
 
@@ -177,17 +211,27 @@ export class StageFit {
     if (!W || !H) return;
     const cover = Math.max(W / SW, H / SH);
     const contain = Math.min(W / SW, H / SH);
-    const minVis = this.o.minVis ?? 0.6;
-    let s = Math.max(contain, Math.min(cover, W / (SW * minVis)));
-    const r = Math.round(s);
-    if (s >= 1.5 && Math.abs(s - r) < 0.2 && r >= contain) s = r;
-    else if (s >= 2.5 && s < cover - 0.01) s = Math.max(contain, Math.floor(s));
+    const full = viewZoom() === "full";
+    let s: number;
+    if (full) {
+      // the whole width of the scene, letterboxed above and below
+      s = Math.min(cover, W / SW);
+      const f = Math.floor(s);
+      if (f >= 2 && s - f < 0.12) s = f;
+    } else {
+      const minVis = this.o.minVis ?? 0.6;
+      s = Math.max(contain, Math.min(cover, W / (SW * minVis)));
+      const r = Math.round(s);
+      if (s >= 1.5 && Math.abs(s - r) < 0.2 && r >= contain) s = r;
+      else if (s >= 2.5 && s < cover - 0.01) s = Math.max(contain, Math.floor(s));
+    }
     const cw = SW * s, ch = SH * s;
     const fx = this.focus();
     const left = cw <= W ? (W - cw) / 2 : Math.max(W - cw, Math.min(0, W / 2 - fx * s));
     const feet = this.stage.scene.groundY;
     const ay = this.o.anchorY ?? 0.78;
-    const top = ch <= H ? (H - ch) / 2 : Math.max(H - ch, Math.min(0, H * ay - feet * s));
+    let top = ch <= H ? (H - ch) / 2 : Math.max(H - ch, Math.min(0, H * ay - feet * s));
+    if (ch <= H && this.o.padTop) top = Math.max(top, Math.min(H - ch, this.o.padTop()));
     this.stage.visibleX = [Math.max(0, -left / s), Math.min(SW, (W - left) / s)];
     const cv = this.stage.canvas;
     cv.style.width = `${cw}px`;
@@ -201,6 +245,7 @@ export class StageFit {
   destroy() {
     this.alive = false;
     this.ro.disconnect();
+    window.removeEventListener("adv-zoom", this.onZoom);
     clearInterval(this.timer);
     this.amb?.remove();
   }

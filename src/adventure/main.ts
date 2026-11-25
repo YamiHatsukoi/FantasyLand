@@ -28,7 +28,7 @@ import { importBook, listBooks, loadBook, newShelfLink, removeBook, saveShelfLin
 import { AdvSaves, type SlotInfo } from "./save";
 import { Stage } from "./stage";
 import type { AdvState, Book, Choice, Disc, Offer } from "./types";
-import { advConfirm, advWindow, bump, countTo, gameBtn, iconBtn, installSkin, StageFit, ui } from "./ui";
+import { advConfirm, advWindow, bump, calmSetting, countTo, gameBtn, iconBtn, installSkin, pinchZoom, setCalmSetting, setViewZoom, StageFit, ui, viewZoom, zoomLabel } from "./ui";
 import { WorldMapView } from "./worldmap";
 import { locSides as worldLocSides, nodeOf } from "./world";
 
@@ -533,7 +533,16 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
     const place = h("div", { class: "adv-place" });
     const endBanner = h("div", { class: "adv-endban" });
     const tapHint = h("div", { class: "adv-taphint" }, "Chạm để tiếp tục");
-    const sceneWrap = h("div", { class: "adv-scene-wrap" }, sceneBox, h("div", { class: "adv-scene-shade" }), place, endBanner, tapHint, hud);
+    // how close the scene is framed: the whole width ("Toàn cảnh", default) or cropped closer ("Cận")
+    const zoomBtn = h("button", { class: "adv-tbtn fr-btn adv-zoombtn", type: "button", title: "Đổi khung nhìn (chụm/mở hai ngón cũng được)", onclick: (e: Event) => {
+      e.stopPropagation();
+      sfx("click");
+      setViewZoom(viewZoom() === "full" ? "near" : "full");
+    } });
+    const syncZoom = () => { zoomBtn.replaceChildren(h("span", null, zoomLabel(viewZoom()))); view.classList.toggle("zoom-near", viewZoom() === "near"); };
+    window.addEventListener("adv-zoom", syncZoom);
+    cleanups.push(() => window.removeEventListener("adv-zoom", syncZoom), pinchZoom(sceneBox));
+    const sceneWrap = h("div", { class: "adv-scene-wrap" }, sceneBox, h("div", { class: "adv-scene-shade" }), place, endBanner, tapHint, hud, zoomBtn);
 
     // --- story panel: the beat's words under the scene, then what to do next
     const secBadge = h("span", { class: "adv-secnum" });
@@ -559,6 +568,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
     const story = h("section", { class: "adv-story fr-panel" }, bar, capHost, dock);
     const pops = h("div", { class: "adv-pops", "aria-live": "polite" });
     const view = h("div", { class: "adv-play" }, sceneWrap, story, pops);
+    syncZoom();
     el.replaceChildren(view);
     syncAuto();
 
@@ -704,7 +714,8 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       return worldLocSides(book, loc);
     }
 
-    const sceneFit = () => (matchMedia("(min-aspect-ratio: 29/20) and (max-height: 520px)").matches ? { minVis: 0.9, anchorY: 0.8 } : { minVis: 0.62, anchorY: 0.8 });
+    const padTop = () => hud.offsetHeight + 2;
+    const sceneFit = () => (matchMedia("(min-aspect-ratio: 29/20) and (max-height: 520px)").matches ? { minVis: 0.9, anchorY: 0.8, padTop } : { minVis: 0.62, anchorY: 0.8, padTop });
     const specOf = (sid: string): SceneSpec => { const sc = book.sections[sid].scene; return { bg: sc.bg, time: sc.time, weather: sc.weather, mood: sc.mood, seed: `${book.id}-${sid}` }; };
 
     /** Top of the story panel: section number, place, the beat pips. */
@@ -989,7 +1000,13 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
           h("div", { class: "adv-discs-own" }, ...s.disciplines.map((d) => h("div", { class: "adv-disc-own fr-slot", title: book.names.discDesc?.[d] ?? "" }, iconEl(discIcon(d), 2), h("span", null, book.names.disc[d] ?? d)))),
           s.weaponskill ? h("p", { class: "adv-small" }, `Vũ khí sở trường: ${itemName(book, s.weaponskill)}`) : null,
           s.mastered?.length ? h("p", { class: "adv-small" }, `Vũ khí thành thạo: ${s.mastered.map((x) => itemName(book, x)).join(", ")}`) : null,
-          h("p", { class: "adv-small" }, `Đã qua ${new Set(s.visited).size}/${Object.keys(book.sections).length} đoạn · ${s.steps} bước.`)));
+          h("p", { class: "adv-small" }, `Đã qua ${new Set(s.visited).size}/${Object.keys(book.sections).length} đoạn · ${s.steps} bước.`),
+          h("div", { class: "adv-inv-t" }, ui("info", 1), "Cài đặt"),
+          h("div", { class: "adv-setts" },
+            h("button", { class: `adv-tbtn fr-btn adv-sett ${calmSetting() ? "on" : ""}`, type: "button", "aria-pressed": String(calmSetting()),
+              onclick: () => { setCalmSetting(!calmSetting()); sfx("click"); draw(); } }, h("span", null, `Giảm rung màn hình: ${calmSetting() ? "Bật" : "Tắt"}`)),
+            h("button", { class: "adv-tbtn fr-btn adv-sett", type: "button",
+              onclick: () => { setViewZoom(viewZoom() === "full" ? "near" : "full"); sfx("click"); draw(); } }, h("span", null, `Khung nhìn: ${zoomLabel(viewZoom())}`)))));
       };
       draw();
     }
