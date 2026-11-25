@@ -108,6 +108,7 @@ export function openMenu(extra: HTMLElement[] = []) {
           try { await app.saver?.wipe(); location.reload(); } catch (e) { toast(errorText(e), "bad"); }
         },
       }, "🔄 Chơi lại từ đầu"),
+      h("button", { class: "btn", onclick: () => void app.toHub?.() }, "🎮 Đổi game"),
       h("button", {
         class: "btn",
         onclick: async () => {

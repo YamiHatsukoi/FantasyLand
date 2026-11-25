@@ -10,11 +10,12 @@ import "./ui/style.css";
 import { app } from "./app";
 import { hashString } from "./core/rng";
 import { newGame } from "./core/state";
-import { ApiError, cachedSession, clearSession, errorText, type PlayerVisit, type Session } from "./net/api";
+import { ApiError, cachedSession, clearSession, errorText, logout, type PlayerVisit, type Session } from "./net/api";
 import { SaveManager } from "./net/save";
 import { openAppearance } from "./screens/appearance";
 import { mountDungeon, startExpedition } from "./screens/dungeon";
 import { mountArena } from "./screens/arena";
+import { mountHub } from "./screens/hub";
 import { mountLogin } from "./screens/login";
 import { mountSafeZone } from "./screens/safezone";
 import { mountVisit } from "./screens/visit";
@@ -29,8 +30,39 @@ if (import.meta.env.DEV) void Promise.all([import("./world/floors"), import("./d
 });
 
 function showLogin(err = "") {
-  app.show((root) => mountLogin(root, (s) => startSession(s), err));
+  app.show((root) => mountLogin(root, async (s) => showHub(s), err));
 }
+
+/** After login: pick FantasyLand or Adventure (same account, separate saves). */
+function showHub(s: Session) {
+  app.session = s;
+  closeAllModals();
+  app.show((root) => mountHub(root, s, {
+    fantasy: () => void startSession(s),
+    adventure: () => void goAdventure(s),
+    logout: async () => { await logout(s); location.reload(); },
+  }));
+}
+
+async function goAdventure(s: Session) {
+  app.root.replaceChildren(h("div", { class: "screen login" }, h("p", { class: "note" }, "Đang mở Adventure…")));
+  try {
+    const m = await import("./adventure/main");
+    app.show((root) => m.mountAdventure(root, s, {
+      leave: () => showHub(s),
+      expired: () => { clearSession(); showLogin("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."); },
+    }));
+  } catch (e) {
+    toast(errorText(e), "bad", 5000);
+    showHub(s);
+  }
+}
+
+/** From inside FantasyLand ("Đổi game" in the menu): save, then back to the picker. */
+app.toHub = async () => {
+  try { await app.saver?.flush(true); } catch { /* the local copy is kept */ }
+  if (app.session) showHub(app.session);
+};
 
 async function startSession(s: Session) {
   app.session = s;
@@ -112,7 +144,7 @@ document.addEventListener("pointerdown", (e) => {
 }, true);
 
 const cached = cachedSession();
-if (cached) void startSession(cached);
+if (cached) showHub(cached);
 else showLogin();
 
 // Service worker makes the game installable as an app (Chrome Android "Install app").

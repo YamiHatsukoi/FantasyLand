@@ -1467,3 +1467,22 @@ img.iicon.lg { width: 48px; height: 48px; }
 .ar-tag.dmg-magic { background: #3a2f6b; color: #d8ccff; }
 .ar-tag.dmg-true { background: #e8e8e8; color: #222; }
 .ar-tag.twist { background: #2d5a4a; color: #c8ffe8; }
+
+/* ---------------------------------------------------------------- game picker (hub) */
+.hub { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: calc(24px + var(--safe-t)) 16px calc(20px + var(--safe-b)); overflow-y: auto;
+  background: radial-gradient(ellipse at 30% 10%, #2a3a52 0%, transparent 55%), radial-gradient(ellipse at 80% 90%, #3a2a18 0%, transparent 50%), #0b0e12; }
+.hub-head { text-align: center; }
+.hub-user { color: var(--muted); margin-top: 6px; }
+.hub-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; width: min(760px, 100%); }
+.hub-card { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 18px 16px 16px; border-radius: 18px; cursor: pointer; text-align: center;
+  border: 1px solid var(--line); background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(0,0,0,.25)); color: var(--text); transition: transform .15s, border-color .15s, box-shadow .15s; }
+.hub-card:hover { transform: translateY(-3px); border-color: var(--gold); box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+.hub-card.fantasy { background: linear-gradient(180deg, rgba(60,140,90,.25), rgba(0,0,0,.3)); }
+.hub-card.adventure { background: linear-gradient(180deg, rgba(150,110,50,.28), rgba(0,0,0,.3)); }
+.hub-art { display: flex; gap: 6px; align-items: flex-end; justify-content: center; height: 110px; }
+.hub-hero { width: 64px; height: 96px; image-rendering: pixelated; filter: drop-shadow(0 4px 0 rgba(0,0,0,.35)); }
+.hub-title { font-family: var(--pixel); font-size: 40px; color: var(--gold); line-height: 1; text-shadow: 0 3px 0 #5a3a10; }
+.hub-sub { color: #e8d9b0; font-size: 14px; letter-spacing: .5px; }
+.hub-card p { margin: 4px 0 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
+.hub-badge { position: absolute; top: 10px; right: 10px; font-size: 11px; padding: 2px 8px; border-radius: 99px; background: var(--gold); color: #2a1c05; font-weight: 600; }
+.hub-logout { margin-top: 4px; }

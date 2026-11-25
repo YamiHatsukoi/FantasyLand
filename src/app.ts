@@ -47,6 +47,9 @@ class App {
     void s.flush().then(() => { if (s.status === "saved" || s.status === "offline") this.onCheckpoint?.(label); });
   }
 
+  /** Set by main: leave FantasyLand for the game picker. */
+  toHub?: () => Promise<void>;
+
   /** Set by the UI layer: shows the "saved" mark. */
   onCheckpoint?: (label: string) => void;
 }

@@ -223,6 +223,29 @@ export async function advDelete(s: Session, book: string, slot: number): Promise
   await rpc("adv_delete", { p_token: s.token, p_book: book, p_slot: slot });
 }
 
+export interface AdvBookInfo {
+  id: string;
+  title: string;
+  num: number;
+  updated_at: string;
+}
+
+export async function advBooks(s: Session): Promise<AdvBookInfo[]> {
+  return (await rpc<{ books: AdvBookInfo[] }>("adv_books_list", { p_token: s.token })).books ?? [];
+}
+
+export async function advBookGet(s: Session, book: string): Promise<{ data: unknown; updated_at: string }> {
+  return rpc("adv_book_get", { p_token: s.token, p_book: book });
+}
+
+export async function advBookPut(s: Session, book: string, title: string, num: number, data: unknown): Promise<void> {
+  await rpc("adv_book_put", { p_token: s.token, p_book: book, p_title: title, p_num: num, p_data: data });
+}
+
+export async function advBookDelete(s: Session, book: string): Promise<void> {
+  await rpc("adv_book_delete", { p_token: s.token, p_book: book });
+}
+
 export function cacheSession(s: Session) {
   try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch { /* storage unavailable */ }
 }

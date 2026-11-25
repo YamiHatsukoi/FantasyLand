@@ -4,11 +4,14 @@
  * imports their own personal copy, kept in their account only.
  */
 
-export type Disc =
-  | "camouflage" | "hunting" | "sixthsense" | "tracking" | "healing"
-  | "weaponskill" | "mindshield" | "mindblast" | "animalkinship" | "mindovermatter";
+export const DISCS_BY_RULES = {
+  kai: ["camouflage", "hunting", "sixthsense", "tracking", "healing", "weaponskill", "mindshield", "mindblast", "animalkinship", "mindovermatter"],
+  magnakai: ["weaponmastery", "animalcontrol", "curing", "invisibility", "huntmastery", "pathsmanship", "psisurge", "psiscreen", "nexus", "divination"],
+  grandmaster: ["grandweaponmastery", "animalmastery", "deliverance", "assimilance", "grandhuntmastery", "grandpathsmanship", "kaisurge", "kaiscreen", "grandnexus", "telegnosis", "magimagic", "kaialchemy"],
+  neworder: ["grandweaponmastery", "animalmastery", "deliverance", "assimilance", "grandhuntmastery", "grandpathsmanship", "kaisurge", "kaiscreen", "grandnexus", "telegnosis", "magimagic", "kaialchemy", "astrology", "herbmastery", "elementalism", "bardsmanship"],
+} as const;
 
-export const DISCS: Disc[] = ["camouflage", "hunting", "sixthsense", "tracking", "healing", "weaponskill", "mindshield", "mindblast", "animalkinship", "mindovermatter"];
+export type Disc = (typeof DISCS_BY_RULES)[keyof typeof DISCS_BY_RULES][number];
 
 export type Cond =
   | { disc: Disc }
@@ -19,6 +22,9 @@ export type Cond =
   | { ep: number }
   | { flag: string }
   | { notFlag: string }
+  | { epBelow: number }
+  | { rank: number }
+  | { arrows: number }
   | { all: Cond[] }
   | { any: Cond[] };
 
@@ -27,7 +33,11 @@ export type ItemType = "weapon" | "backpack" | "special" | "meal";
 export type Effect =
   | { ep: number }
   | { cs: number; for?: "combat" | "book" }
-  | { gold: number }
+  | { gold: number; optional?: boolean }
+  | { arrows: number }
+  | { loseChoice: "weapon" | "backpack" | "any"; n?: number }
+  | { epMax: number }
+  | { csBase: number }
   | { gain: string; type: ItemType; n?: number; optional?: boolean; desc?: string }
   | { lose: string }
   | { loseAll: "weapons" | "backpack" | "special" | "gold" | "everything" }
@@ -49,6 +59,8 @@ export interface Combat {
   win?: string;
   maxRounds?: { n: number; to: string };
   noMindblast?: boolean;
+  csIf?: { if: Cond; add: number }[];
+  onHurt?: string;
 }
 
 export interface Choice {
@@ -59,7 +71,8 @@ export interface Choice {
 
 export interface RandomPick {
   mods?: { if: Cond; add: number }[];
-  out: { min: number; max: number; to: string }[];
+  out: { min: number; max: number; to: string; fx?: Effect[] }[];
+  bow?: boolean;
 }
 
 export type Bg =
@@ -113,7 +126,10 @@ export interface Book {
   id: string;
   series: "lw";
   num: number;
+  /** Rule set: kai (1-5), magnakai (6-12), grandmaster (13-20), neworder (21-29). */
+  rules: "kai" | "magnakai" | "grandmaster" | "neworder";
   title: string;
+  titleEn?: string;
   /** Vietnamese "The Story So Far" paragraphs, shown before the adventure starts. */
   intro: string[];
   start: string;
@@ -131,16 +147,15 @@ export interface Book {
   /** Vietnamese names: disciplines, stats and terms used by the screens. */
   names: { disc: Record<Disc, string>; discDesc?: Partial<Record<Disc, string>>; [k: string]: unknown };
   actors?: Record<string, string>;
-  places?: Record<string, string>;
+  places?: Record<string, { name: string; desc: string }>;
+  map?: import("./worldmap").BookMap | null;
   sections: Record<string, Section>;
 }
 
-export interface Offer {
-  gain: string;
-  type: ItemType;
-  n: number;
-  desc?: string;
-}
+export type Offer =
+  | { gain: string; type: ItemType; n: number; desc?: string }
+  | { gold: number }
+  | { loseChoice: "weapon" | "backpack" | "any"; n: number };
 
 /** Progress of one play-through (what a save slot holds). */
 export interface AdvState {
@@ -158,6 +173,11 @@ export interface AdvState {
   special: string[];
   meals: number;
   gold: number;
+  arrows: number;
+  /** Weapons mastered (Magnakai Weaponmastery / Grand Weaponmastery). */
+  mastered?: string[];
+  /** ENDURANCE lost in the current section's combat (for "onHurt"). */
+  hurt?: boolean;
   flags: Record<string, boolean>;
   /** COMBAT SKILL changes: for the next combat only, and for the rest of the book. */
   csNext: number;
