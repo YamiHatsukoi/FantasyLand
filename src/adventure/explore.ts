@@ -2848,7 +2848,7 @@ export function mountExplore(o: ExploreOpts): { destroy(): void; pause(on: boole
     cssW = Math.max(1, r.width); cssH = Math.max(1, r.height);
     dpr = Math.min(3, window.devicePixelRatio || 1);
     canvas.width = Math.round(cssW * dpr); canvas.height = Math.round(cssH * dpr);
-    S = Math.max(1, Math.round(Math.min(canvas.height / 300, canvas.width / 400)));
+    S = Math.max(1, Math.round(Math.min(canvas.height / 330, canvas.width / 440)));
     bw = Math.ceil(canvas.width / S) + 2; bh = Math.ceil(canvas.height / S) + 2;
     buf.width = bw; buf.height = bh; lightC.width = bw; lightC.height = bh;
     g.imageSmoothingEnabled = false; ctx.imageSmoothingEnabled = false;
@@ -3305,7 +3305,7 @@ export function mountExplore(o: ExploreOpts): { destroy(): void; pause(on: boole
         let fadeIt = false;
         if (ob.fade && ob.img && ob.y > hero.y + 2) {
           const w = ob.img.width * ob.s, h = ob.img.height * ob.s;
-          fadeIt = ob.x - w / 2 < hx1 && ob.x + w / 2 > hx0 && ob.y - h < hy1 && ob.y - 6 > hy0;
+          fadeIt = ob.x - w * 0.32 < hx1 && ob.x + w * 0.32 > hx0 && ob.y - h * 0.9 < hy1 && ob.y - 10 > hy0 && ob.y - hero.y < TW * 2.2;
         }
         drawObj(ob, ox, oy, fadeIt);
         continue;

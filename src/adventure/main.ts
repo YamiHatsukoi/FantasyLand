@@ -36,19 +36,13 @@ export interface AdventureOpts {
 }
 
 /**
- * Explore mode (sections with scene.explore): a walkable view of the place where choices with
- * `via` are spots to walk to. The module is optional: when src/adventure/explore.ts exists it
- * replaces the static stage of those sections, otherwise the section plays as usual.
+ * Explore mode (sections with scene.explore): ./explore.ts draws the place as a walkable area
+ * where choices with `via` are spots to walk to. Loaded on demand (it is large); choices without
+ * `via` stay as buttons in the story panel.
  */
-interface ExploreSpot { id: string; text: string; via: NonNullable<Choice["via"]>; locked?: string }
-interface ExploreModule {
-  mountExplore(o: {
-    host: HTMLElement; seed: string; scene: SceneSpec & { place?: string }; heroLook: Look; entryFrom?: string;
-    spots: ExploreSpot[]; onPick: (id: string) => void;
-  }): { destroy(): void; pause?(on: boolean): void };
-}
-const exploreMods = import.meta.glob<ExploreModule>("./explore.ts");
-const loadExplore = exploreMods["./explore.ts"] as (() => Promise<ExploreModule>) | undefined;
+type ExploreView = { destroy(): void; pause(on: boolean): void };
+type Side = "north" | "south" | "east" | "west";
+const OPPOSITE: Record<Side, Side> = { north: "south", south: "north", east: "west", west: "east" };
 
 const itemLabel = (book: Book, o: { gain: string; n?: number }) => `${itemName(book, o.gain)}${(o.n ?? 1) > 1 ? ` ×${o.n}` : ""}`;
 const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -434,7 +428,9 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
     let s = s0;
     let stage: Stage | null = null;
     let fit: StageFit | null = null;
-    let explore: { destroy(): void; pause?(on: boolean): void } | null = null;
+    let explore: ExploreView | null = null;
+    /** Side of the place the hero walks in from (the opposite of the exit taken). */
+    let entrySide: Side | undefined;
     const save = (now = false) => saves!.save(slot, s, now);
     const heroLook = (): Look => withWeapon("lonewolf", s.weapons[0]);
     const killScene = () => { explore?.destroy(); explore = null; fit?.destroy(); fit = null; stage?.destroy(); stage = null; };
@@ -477,7 +473,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       if (view.dataset.sheet === st) return;
       view.dataset.sheet = st;
       sfx("click");
-      explore?.pause?.(st === "full");
+      explore?.pause(st === "full");
     }
     // drag / tap the handle
     let drag: { y: number; id: number } | null = null;
@@ -554,7 +550,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       if (sec.scene.cutscene && s.visited.filter((x) => x === to).length <= 1 && !s.flags[`cut:${to}`]) {
         s.flags[`cut:${to}`] = true;
         save();
-        explore?.pause?.(true);
+        explore?.pause(true);
         await playCutscene(el, book, to, heroLook());
       }
       if (!alive || !view.isConnected) return;
@@ -599,7 +595,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
     }
 
     /** The scene: a Stage, or the walkable explore view when the section is one and the module exists. */
-    function mountScene(from?: string) {
+    function mountScene() {
       const sec = book.sections[s.section];
       killScene();
       const spec: SceneSpec = { bg: sec.scene.bg, time: sec.scene.time, weather: sec.scene.weather, mood: sec.scene.mood, seed: `${book.id}-${s.section}` };
@@ -610,32 +606,35 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       fit = new StageFit(sceneBox, st, { minVis: 0.56, anchorY: 0.8 });
       sceneBox.classList.toggle("dead", s.ended === "death");
       sceneBox.classList.toggle("won", s.ended === "victory");
-      if (sec.scene.explore && loadExplore && !s.ended) {
+      if (sec.scene.explore && !s.ended) {
         const sid = s.section;
-        void loadExplore().then((mod) => {
-          if (s.section !== sid || !view.isConnected) return;
+        const entryFrom = entrySide;
+        void import("./explore").then((mod) => {
+          if (s.section !== sid || !view.isConnected || !alive) return;
           const list = visibleChoices(sec, s);
-          const spots: ExploreSpot[] = [];
+          const spots: { key: number; label: string; via: NonNullable<Choice["via"]>; locked?: string }[] = [];
           list.forEach((c, i) => {
             const cs = choiceState(s, c);
             if (cs === "hidden" || !c.via) return;
-            spots.push({ id: String(i), text: c.text, via: c.via, locked: cs === "locked" ? condText(book, c.if) : undefined });
+            spots.push({ key: i, label: c.text, via: c.via, locked: cs === "locked" ? condText(book, c.if) : undefined });
           });
+          if (!spots.length) return;
           killScene();
           sceneBox.replaceChildren();
           sceneBox.classList.add("explore");
           explore = mod.mountExplore({
-            host: sceneBox, seed: spec.seed, scene: { ...spec, place: sec.scene.place }, heroLook: heroLook(), entryFrom: from, spots,
-            onPick: (id) => { const c = list[Number(id)]; if (c && choiceState(s, c) === "ok") pick(c); },
+            host: sceneBox, seed: `${book.id}-${sec.scene.place}`, scene: sec.scene, heroLook: heroLook(), entryFrom, spots,
+            onPick: (key) => { const c = list[key]; if (c && choiceState(s, c) === "ok") pick(c); },
           });
+          render(undefined, true);
         }).catch(() => { /* explore failed to load: the static stage stays */ });
       } else sceneBox.classList.remove("explore");
     }
 
-    function render(from?: string) {
+    function render(_from?: string, keepScene = false) {
       renderChips();
       const sec = book.sections[s.section];
-      mountScene(from);
+      if (!keepScene) mountScene();
       view.classList.remove("shown", "ended", "won", "dead");
       if (view.dataset.sheet === "min") view.dataset.sheet = "half";
       const pn = placeName(placeOf(s.section));
@@ -689,6 +688,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
 
     /** A choice: pay its price / apply its effects, then go (or stay, for repeatable purchases). */
     function pick(c: Choice) {
+      entrySide = c.via?.exit ? OPPOSITE[c.via.exit] : undefined;
       const ch = c.fx ? apply(book, s, c.fx) : [];
       if (c.repeat) { save(); render(); showChanges(ch); return; }
       void goTo(c.to, ch);
@@ -715,7 +715,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
     }
 
     async function fight() {
-      explore?.pause?.(true);
+      explore?.pause(true);
       const res = await runFight(el, book, s, () => { renderChips(); save(); });
       save(true);
       if (!view.isConnected) return;
