@@ -22,6 +22,7 @@ import { Performance } from "./director";
 import {
   choiceState, condText, discsOf, drop, enter, epMax, itemName, newRun, pendingLoss, phase, pick10,
   profile, randomResult, retry, takeOffer, useItem, apply, continueRun, visibleChoices, type Change,
+  baseCs, randomPicks, carryNeeds, loreCircles, masteryCount, newSeries, ownDiscs, rankName, tierOf,
 } from "./engine";
 import { runFight } from "./fight";
 import { importBook, listBooks, loadBook, newShelfLink, removeBook, saveShelfLink, shelfLink, syncShelf, type BookEntry } from "./library";
@@ -48,6 +49,11 @@ const OPPOSITE: Record<Side, Side> = { north: "south", south: "north", east: "we
 
 const itemLabel = (book: Book, o: { gain: string; n?: number }) => `${itemName(book, o.gain)}${(o.n ?? 1) > 1 ? ` ×${o.n}` : ""}`;
 const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const SERIES_NAME: Record<Book["rules"], string> = { kai: "Kai", magnakai: "Magnakai", grandmaster: "Grand Master", neworder: "New Order" };
+const seriesName = (b: Book | Book["rules"]) => SERIES_NAME[typeof b === "string" ? b : b.rules ?? "kai"];
+const SERIES_TITLE: Record<Book["rules"], string> = { kai: "Kai Lord", magnakai: "Kai Master", grandmaster: "Kai Grand Master", neworder: "Kai Lord" };
+const seriesTitle = (b: Book) => SERIES_TITLE[b.rules ?? "kai"];
 
 export function mountAdventure(root: HTMLElement, session: Session, opts: AdventureOpts): Screen {
   installSkin();
@@ -216,14 +222,14 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       ...slots.map((sl) => {
         const d = sl.data;
         if (!d) return h("button", { class: "adv-slot empty fr-slot", type: "button", onclick: () => void startNew(book, sl.slot, entry) },
-          h("span", { class: "adv-slot-n" }, String(sl.slot + 1)), h("span", { class: "adv-slot-new" }, h("b", null, "Cuộc phiêu lưu mới"), h("small", null, "Tạo nhân vật Kai")), h("span", { class: "adv-slot-plus" }, "+"));
+          h("span", { class: "adv-slot-n" }, String(sl.slot + 1)), h("span", { class: "adv-slot-new" }, h("b", null, "Cuộc phiêu lưu mới"), h("small", null, `Tạo nhân vật ${seriesName(book)}`)), h("span", { class: "adv-slot-plus" }, "+"));
         const st = d.ended === "victory" ? "Đã hoàn thành" : d.ended === "death" ? "Đã tử nạn" : `Đoạn ${d.section} · ${d.steps} bước`;
         return h("div", { class: `adv-slot ${d.ended ?? ""}` },
           h("button", { class: "adv-slot-main fr-btn", type: "button", onclick: () => { sfx("click"); play(book, sl.slot, d, entry); } },
             h("span", { class: "adv-slot-face fr-slot" }, heroFace(d.weapons[0])),
             h("span", { class: "adv-slot-info" },
               h("b", null, d.name), h("small", null, st),
-              h("span", { class: "adv-slot-stats" }, ui("cs", 1), String(d.cs), ui("ep", 1), String(d.ep), ui("gold", 1), String(d.gold))),
+              h("span", { class: "adv-slot-stats" }, ui("cs", 1), String(baseCs(book, d)), ui("ep", 1), String(d.ep), ui("gold", 1), String(d.gold))),
             h("span", { class: "adv-slot-go" }, d.ended ? "Xem" : "Chơi tiếp")),
           iconBtn("close", "Xoá ô lưu", async () => {
             if (!(await confirm("Xoá ô lưu", `Xoá cuộc phiêu lưu của ${d.name} ở ô ${sl.slot + 1}? Không thể hoàn tác.`, "Xoá"))) return;
@@ -296,11 +302,16 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
   async function startNew(book: Book, slot: number, entry: BookEntry) {
     show(h("div", { class: "adv-menu" }, loading("Đang chuẩn bị…")));
     let heroes: AdvState[] = [];
+    let prevItems: Book["items"] | undefined;
+    const SERIES: Book["rules"][] = ["kai", "magnakai", "grandmaster", "neworder"];
     try {
       const prev = (await listBooks(session)).find((b) => b.num === book.num - 1);
       if (prev) {
         const prevBook = await loadBook(session, prev);
-        if ((prevBook.rules ?? "kai") === (book.rules ?? "kai")) {
+        // the same series, or the next one (book 5 → 6: the Kai Lord becomes a Kai Master)
+        const step = SERIES.indexOf(book.rules ?? "kai") - SERIES.indexOf(prevBook.rules ?? "kai");
+        if (step === 0 || step === 1) {
+          prevItems = prevBook.items;
           heroes = (await new AdvSaves(session, prev.id).list()).map((x) => x.data).filter((d): d is AdvState => !!d && d.ended === "victory");
         }
       }
@@ -312,11 +323,13 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       h("div", { class: "adv-menu-scroll" }, h("div", { class: "adv-menu-inner narrow" },
         h("div", { class: "adv-card fr-panel" },
           h("div", { class: "adv-panel-t" }, "Người hùng trở lại"),
-          h("p", { class: "adv-lead" }, `Bạn đã hoàn thành cuốn ${book.num - 1}. Mang nhân vật sang cuốn này để giữ chỉ số, kỹ năng và hành trang, và học thêm 1 kỹ năng mới.`),
-          ...heroes.map((p) => h("button", { class: "adv-slot-main fr-btn", type: "button", onclick: () => carryOver(book, slot, entry, p) },
+          h("p", { class: "adv-lead" }, heroes.some((p) => newSeries(book, p))
+            ? `Bạn đã hoàn thành cuốn ${book.num - 1}. Mang nhân vật sang cuốn này: giữ Kỹ Năng Chiến Đấu, Sức Bền, vũ khí, Ba Lô, Vật Phẩm Đặc Biệt và vàng, rồi chọn ${book.discCount} kỹ năng ${seriesName(book)} mới.`
+            : `Bạn đã hoàn thành cuốn ${book.num - 1}. Mang nhân vật sang cuốn này để giữ chỉ số, kỹ năng và hành trang, và học thêm 1 kỹ năng mới.`),
+          ...heroes.map((p) => h("button", { class: "adv-slot-main fr-btn", type: "button", onclick: () => carryOver(book, slot, entry, p, prevItems) },
             h("span", { class: "adv-slot-face fr-slot" }, heroFace(p.weapons[0])),
             h("span", { class: "adv-slot-info" }, h("b", null, p.name),
-              h("span", { class: "adv-slot-stats" }, ui("cs", 1), String(p.cs), ui("ep", 1), String(p.epBase), ui("gold", 1), String(p.gold), ` · ${p.disciplines.length} kỹ năng`)),
+              h("span", { class: "adv-slot-stats" }, ui("cs", 1), String(p.cs), ui("ep", 1), String(p.epBase), ui("gold", 1), String(p.gold), ` · ${ownDiscs(p).length} kỹ năng ${seriesName(tierOf(p))}`)),
             h("span", { class: "adv-slot-go" }, "Chọn"))),
           h("div", { class: "adv-or" }, "hoặc"),
           gameBtn("Tạo nhân vật mới", () => create(book, slot, entry), { cls: "block" }))))));
@@ -372,30 +385,67 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       on ? h("span", { class: "adv-check" }) : null);
   }
 
-  function carryOver(book: Book, slot: number, entry: BookEntry, prev: AdvState) {
+  /** Weaponmastery: the weapons to master (all `cap` of them, or the extra ones on top of those known). */
+  function masteryCard(book: Book, mastered: Set<string>, cap: number, known: string[], redraw: () => void) {
+    const wsDisc = profile(book).weapon.disc;
+    return h("div", { class: "adv-card fr-panel adv-ws" },
+      h("div", { class: "adv-panel-t" }, ui("weapons", 2), known.length ? `${book.names.disc[wsDisc]}: thêm vũ khí thành thạo` : `${book.names.disc[wsDisc]}: vũ khí thành thạo`, h("span", { class: "adv-count" }, `${mastered.size}/${cap}`)),
+      known.length ? h("p", { class: "adv-small" }, `Đã thành thạo: ${known.map((x) => itemName(book, x)).join(", ")}`) : null,
+      h("div", { class: "adv-opt-grid" }, ...[...new Set(book.weaponskill)].filter((w) => !known.includes(w)).map((w) => h("button", { class: `adv-opt ${mastered.has(w) ? "fr-sel on" : "fr-btn"}`, type: "button", onclick: () => {
+        if (mastered.has(w)) mastered.delete(w); else if (mastered.size < cap) mastered.add(w); else { toast(`Chỉ chọn được ${cap} vũ khí.`); return; }
+        sfx("click"); redraw();
+      } }, h("span", { class: "adv-item-l" }, iconEl(itemIcon(w, "weapon"), 2), h("b", null, itemName(book, w)))))));
+  }
+
+  function carryOver(book: Book, slot: number, entry: BookEntry, prev: AdvState, prevItems?: Book["items"]) {
+    const fresh = newSeries(book, prev);
     const discs = discsOf(book).filter((d) => !prev.disciplines.includes(d));
+    const wsDisc = profile(book).weapon.disc;
     let newDisc: Disc | undefined;
+    const chosen = new Set<Disc>();
+    const mastered = new Set<string>();
     const r = { gold: -1, ws: -1 };
     const picks: number[][] = book.kit.picks.map(() => []);
+    const needs = () => carryNeeds(book, prev, newDisc);
     const wiz = wizard("Mang nhân vật sang", book, () => void startNew(book, slot, entry), [
       {
         name: "Kỹ năng",
         draw: (box) => {
           const wsBox = h("div", { class: "adv-wheel-box" });
+          const n = needs();
+          if (fresh) {
+            if (!chosen.has(wsDisc)) mastered.clear();
+            box.append(...nn(
+              h("div", { class: "adv-hero-row" }, h("span", { class: "adv-medal fr-panel" }, heroFace(prev.weapons[0], 3)),
+                h("div", null, h("h2", { class: "adv-h2" }, prev.name), h("p", { class: "adv-lead" }, `trở thành ${seriesTitle(book)}. Đã thông thạo mọi kỹ năng ${seriesName(tierOf(prev))}; chọn ${book.discCount} kỹ năng ${seriesName(book)}.`))),
+              h("div", { class: "adv-step-h" }, h("p", { class: "adv-lead" }, `Chọn ${book.discCount} kỹ năng ${seriesName(book)}.`), h("span", { class: `adv-count big ${chosen.size === book.discCount ? "full" : ""}` }, `${chosen.size}/${book.discCount}`)),
+              h("div", { class: "adv-disc-grid" }, ...discs.map((d) => discCard(book, d, chosen.has(d), () => {
+                if (chosen.has(d)) chosen.delete(d); else if (chosen.size < book.discCount) chosen.add(d); else { toast(`Chỉ chọn được ${book.discCount} kỹ năng.`); return; }
+                sfx("click"); wiz.redraw();
+              }))),
+              chosen.has(wsDisc) && wsDisc !== "weaponskill" ? masteryCard(book, mastered, n.masteryCap, [], () => wiz.redraw()) : null));
+            return;
+          }
+          if (!n.weapons) mastered.clear();
           box.append(...nn(
             h("div", { class: "adv-hero-row" }, h("span", { class: "adv-medal fr-panel" }, heroFace(prev.weapons[0], 3)),
               h("div", null, h("h2", { class: "adv-h2" }, prev.name), h("p", { class: "adv-lead" }, discs.length ? "tiếp tục hành trình và học thêm 1 kỹ năng mới." : "đã thông thạo mọi kỹ năng."))),
-            h("div", { class: "adv-disc-grid" }, ...discs.map((d) => discCard(book, d, newDisc === d, () => { newDisc = d; sfx("click"); wiz.redraw(); }))),
+            h("div", { class: "adv-disc-grid" }, ...discs.map((d) => discCard(book, d, newDisc === d, () => { newDisc = d; mastered.clear(); sfx("click"); wiz.redraw(); }))),
             newDisc === "weaponskill" ? h("div", { class: "adv-card fr-panel" }, h("div", { class: "adv-panel-t" }, "Vũ khí sở trường"),
               r.ws < 0
                 ? h("div", { class: "adv-roll-row" }, wsBox, gameBtn("Bốc số", async (e) => { (e.currentTarget as HTMLButtonElement).disabled = true; r.ws = await wheelRoll(wsBox); await sleep(350); wiz.redraw(); }, { kind: "gold", icon: "dice" }))
-                : h("div", { class: "adv-found fr-parch" }, h("span", { class: "adv-item-l" }, iconEl(itemIcon(book.weaponskill[r.ws], "weapon"), 2), h("b", null, itemName(book, book.weaponskill[r.ws]))))) : null));
+                : h("div", { class: "adv-found fr-parch" }, h("span", { class: "adv-item-l" }, iconEl(itemIcon(book.weaponskill[r.ws], "weapon"), 2), h("b", null, itemName(book, book.weaponskill[r.ws]))))) : null,
+            n.weapons ? masteryCard(book, mastered, n.weapons, prev.mastered ?? [], () => wiz.redraw()) : null));
         },
-        ok: () => (discs.length === 0 || !!newDisc) && (newDisc !== "weaponskill" || r.ws >= 0),
+        ok: () => {
+          const n = needs();
+          if (fresh) return chosen.size === Math.min(book.discCount, discs.length) && (!chosen.has(wsDisc) || wsDisc === "weaponskill" || mastered.size === n.masteryCap);
+          return (discs.length === 0 || !!newDisc) && (newDisc !== "weaponskill" || r.ws >= 0) && mastered.size === n.weapons;
+        },
       },
       { name: "Hành trang", draw: kitStep(book, r, picks, " (tối đa 50)"), ok: () => kitOk(book, r, picks, false) },
     ], async () => {
-      const s = continueRun(book, prev, { newDisc, picks, goldRoll: Math.max(0, r.gold), weaponskillRoll: r.ws });
+      const s = continueRun(book, prev, { newDisc, newDiscs: [...chosen], mastered: [...mastered], picks, goldRoll: Math.max(0, r.gold), weaponskillRoll: r.ws, prevItems });
       saves!.save(slot, s, true);
       if (book.intro.length) await introScreen(book);
       play(book, slot, s, entry);
@@ -448,7 +498,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
         draw: (box) => {
           const wsBox = h("div", { class: "adv-wheel-box" });
           box.append(...nn(
-            h("div", { class: "adv-step-h" }, h("p", { class: "adv-lead" }, `Chọn ${book.discCount} kỹ năng Kai.`), h("span", { class: `adv-count big ${chosen.size === book.discCount ? "full" : ""}` }, `${chosen.size}/${book.discCount}`)),
+            h("div", { class: "adv-step-h" }, h("p", { class: "adv-lead" }, `Chọn ${book.discCount} kỹ năng ${seriesName(book)}.`), h("span", { class: `adv-count big ${chosen.size === book.discCount ? "full" : ""}` }, `${chosen.size}/${book.discCount}`)),
             h("div", { class: "adv-disc-grid" }, ...discs.map((d) => discCard(book, d, chosen.has(d), () => {
               if (chosen.has(d)) chosen.delete(d); else if (chosen.size < book.discCount) chosen.add(d); else { toast(`Chỉ chọn được ${book.discCount} kỹ năng.`); return; }
               sfx("click"); wiz.redraw();
@@ -462,12 +512,10 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
               r.ws < 0
                 ? h("div", { class: "adv-roll-row" }, wsBox, gameBtn("Bốc số", async (e) => { (e.currentTarget as HTMLButtonElement).disabled = true; r.ws = await wheelRoll(wsBox); await sleep(350); wiz.redraw(); }, { kind: "gold", icon: "dice" }))
                 : h("div", { class: "adv-found fr-parch" }, h("span", { class: "adv-item-l" }, iconEl(itemIcon(book.weaponskill[r.ws], "weapon"), 2), h("b", null, itemName(book, book.weaponskill[r.ws]))))) : null,
-            wsDisc !== "weaponskill" && chosen.has(wsDisc) ? h("div", { class: "adv-card fr-panel adv-ws" },
-              h("div", { class: "adv-panel-t" }, ui("weapons", 2), `${book.names.disc[wsDisc]}: vũ khí thành thạo`, h("span", { class: "adv-count" }, `${mastered.size}/3`)),
-              h("div", { class: "adv-opt-grid" }, ...[...new Set(book.weaponskill)].map((w) => h("button", { class: `adv-opt ${mastered.has(w) ? "fr-sel on" : "fr-btn"}`, type: "button", onclick: () => { if (mastered.has(w)) mastered.delete(w); else if (mastered.size < 3) mastered.add(w); sfx("click"); wiz.redraw(); } },
-                h("span", { class: "adv-item-l" }, iconEl(itemIcon(w, "weapon"), 2), h("b", null, itemName(book, w))))))) : null));
+            wsDisc !== "weaponskill" && chosen.has(wsDisc) ? masteryCard(book, mastered, masteryCount(book, { disciplines: [...chosen] }), [], () => wiz.redraw()) : null));
         },
-        ok: () => chosen.size === book.discCount && (!chosen.has("weaponskill") || r.ws >= 0),
+        ok: () => chosen.size === book.discCount && (!chosen.has("weaponskill") || r.ws >= 0)
+          && (wsDisc === "weaponskill" || !chosen.has(wsDisc) || mastered.size === masteryCount(book, { disciplines: [...chosen] })),
       },
       { name: "Hành trang", draw: kitStep(book, r, picks), ok: () => kitOk(book, r, picks, true) },
     ], async () => {
@@ -492,6 +540,8 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
 
   // ---------------------------------------------------------------- the story
   function play(book: Book, slot: number, s0: AdvState, entry: BookEntry) {
+    // items the hero brought from earlier books keep their names and bonuses on every screen
+    if (s0.items) book = { ...book, items: { ...s0.items, ...book.items } };
     clearStage();
     playMusic("title");
     let s = s0;
@@ -613,16 +663,16 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       epFill.style.width = `${pct}%`;
       epEl.classList.toggle("low", pct <= 30);
       countTo(epText, s.ep, (n) => `${n}/${max}`);
-      countTo(csC.v, s.cs);
+      countTo(csC.v, baseCs(book, s));
       countTo(goldC.v, s.gold);
       countTo(mealC.v, s.meals);
       if (last) {
         if (s.ep < last.ep) { bump(epEl, "hit"); bump(sceneWrap, "hurt"); } else if (s.ep > last.ep) bump(epEl, "heal");
-        if (s.cs !== last.cs) bump(csC.c, s.cs > last.cs ? "up" : "hit");
+        if (baseCs(book, s) !== last.cs) bump(csC.c, baseCs(book, s) > last.cs ? "up" : "hit");
         if (s.gold !== last.gold) bump(goldC.c, s.gold > last.gold ? "up" : "hit");
         if (s.meals !== last.meals) bump(mealC.c, s.meals > last.meals ? "up" : "hit");
       }
-      last = { ep: s.ep, cs: s.cs, gold: s.gold, meals: s.meals };
+      last = { ep: s.ep, cs: baseCs(book, s), gold: s.gold, meals: s.meals };
     }
 
     /** Moves to a section: map travel when the place changes, then the section is performed. */
@@ -863,11 +913,14 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
         const wheel = h("div", { class: "adv-wheel-box" });
         const rollBtn = gameBtn("Bốc số ngẫu nhiên", async () => {
           rollBtn.remove();
-          const n = await wheelRoll(wheel);
-          const res = randomResult(book, sec, s, n);
+          // "pick two numbers and add them together": one wheel per number
+          const nums: number[] = [];
+          for (let i = 0; i < randomPicks(sec); i++) { if (i) await sleep(350); nums.push(await wheelRoll(wheel)); }
+          const n = nums.reduce((a, x) => a + x, 0);
+          const res = randomResult(book, sec, s, nums);
           const extra = res.fx ? apply(book, s, res.fx) : [];
           if (res.end) { s.ended = res.end; save(true); showChanges(extra); renderChips(); }
-          dock.append(h("div", { class: "adv-roll fr-chip" }, `Số ${n}${res.add ? ` ${res.add > 0 ? "+" : ""}${res.add} = ${res.value}` : ""}`),
+          dock.append(h("div", { class: "adv-roll fr-chip" }, `Số ${nums.length > 1 ? `${nums.join(" + ")} = ${n}` : n}${res.add ? ` ${res.add > 0 ? "+" : ""}${res.add} = ${res.value}` : ""}`),
             gameBtn("Tiếp tục", () => (res.end ? render() : void goTo(res.to, extra)), { kind: "gold", cls: "block big" }));
           save();
         }, { kind: "gold", icon: "dice", cls: "block big" });
@@ -987,7 +1040,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
         w.body.replaceChildren(...nn(
           h("div", { class: "adv-chart-hero" }, h("span", { class: "adv-medal fr-panel" }, heroFace(s.weapons[0], 2)),
             h("div", { class: "adv-tiles" },
-              tile("cs", "Chiến Đấu", String(s.cs)),
+              tile("cs", "Chiến Đấu", String(baseCs(book, s))),
               tile("ep", "Sức Bền", `${s.ep}/${max}`, h("i", { class: "adv-tile-bar", style: `--p:${Math.max(0, Math.min(100, (100 * s.ep) / max))}%` })),
               tile("gold", "Vàng", `${s.gold}/50`),
               s.arrows ? tile("arrows", "Mũi tên", String(s.arrows)) : tile("meal", "Phần Ăn", String(s.meals)))),
@@ -996,9 +1049,11 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
             h("div", { class: "adv-inv-sec b" }, h("div", { class: "adv-inv-t" }, ui("backpack", 1), "Ba Lô", h("span", null, `${s.backpack.length + s.meals}/8`)), h("div", { class: "adv-grid" }, ...bag)),
             h("div", { class: "adv-inv-sec sp" }, h("div", { class: "adv-inv-t" }, ui("special", 1), "Vật Phẩm Đặc Biệt", h("span", null, String(s.special.length))), h("div", { class: "adv-grid" }, ...specials))),
           detail,
-          h("div", { class: "adv-inv-t" }, ui("book", 1), "Kỹ năng Kai"),
-          h("div", { class: "adv-discs-own" }, ...s.disciplines.map((d) => h("div", { class: "adv-disc-own fr-slot", title: book.names.discDesc?.[d] ?? "" }, iconEl(discIcon(d), 2), h("span", null, book.names.disc[d] ?? d)))),
+          h("div", { class: "adv-inv-t" }, ui("book", 1), `Kỹ năng ${seriesName(book)}`, rankName(s) ? h("span", null, rankName(s)) : null),
+          tierOf(s) !== "kai" ? h("p", { class: "adv-small" }, `Đã thông thạo mọi kỹ năng ${seriesName("kai")}${tierOf(s) !== "magnakai" ? ` và ${seriesName("magnakai")}` : ""}.`) : null,
+          h("div", { class: "adv-discs-own" }, ...ownDiscs(s).map((d) => h("div", { class: "adv-disc-own fr-slot", title: book.names.discDesc?.[d] ?? "" }, iconEl(discIcon(d), 2), h("span", null, book.names.disc[d] ?? d)))),
           s.weaponskill ? h("p", { class: "adv-small" }, `Vũ khí sở trường: ${itemName(book, s.weaponskill)}`) : null,
+          ...loreCircles(book, s).map((c) => h("p", { class: "adv-small" }, `${c.name} (Lore-circle): ${c.cs ? `+${c.cs} Kỹ Năng Chiến Đấu, ` : ""}+${c.ep} Sức Bền`)),
           s.mastered?.length ? h("p", { class: "adv-small" }, `Vũ khí thành thạo: ${s.mastered.map((x) => itemName(book, x)).join(", ")}`) : null,
           h("p", { class: "adv-small" }, `Đã qua ${new Set(s.visited).size}/${Object.keys(book.sections).length} đoạn · ${s.steps} bước.`),
           h("div", { class: "adv-inv-t" }, ui("info", 1), "Cài đặt"),

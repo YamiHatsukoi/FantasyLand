@@ -23,7 +23,7 @@ import { creatureFrame, creatureKey, creatureSize, type CPose } from "./art/crea
 import { arrowHead, darkOrbHead, digitsSprite, disc, ease, FxLayer, ring, type Ease } from "./art/fx";
 import { iconEl, uiIcon } from "./art/icons";
 import { lookFor, personFrame, portrait, withWeapon, type Look, type Pose, type WeaponKind } from "./art/people";
-import { battleExit, canEvade, epMax, heroCs, itemName, playRound, profile, startBattle, type Battle, type RoundResult } from "./engine";
+import { activeMind, battleExit, canEvade, epMax, fightWeapons, heroCs, itemName, mindChoices, mindName, playRound, startBattle, unarmedPenalty, type Battle, type RoundResult } from "./engine";
 import { isMonster, OUT, Stage, H as SH, W as SW } from "./stage";
 import type { AdvState, Book, FoeDef } from "./types";
 import { bump, calmMotion, gameBtn, StageFit } from "./ui";
@@ -263,8 +263,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
   const sec = book.sections[s.section];
   const c = sec.combat!;
   const b = startBattle(book, s, sec);
-  const prof = profile(book);
-  const heroLook = withWeapon("lonewolf", s.weapons[0] ?? s.special.find((id) => id === "Sommerswerd" || !!book.items[id]?.weapon));
+  const heroLook = withWeapon("lonewolf", fightWeapons(book, s, c)[0] ?? s.weapons[0]);
   const heroStyle = styleOf(heroLook.weapon);
   const golden = !!heroLook.blade;
   // "Giảm rung màn hình" / reduced motion: no screen shake, no zoom punches
@@ -864,14 +863,14 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
 
     // ---------------------------------------------------------------- mind attacks
     function mindSpec() {
-      const m = prof.mind[b.mind];
-      return m && s.disciplines.includes(m[0]) && !c.noMindblast ? m : null;
+      const m = activeMind(book, s, b.mind);
+      return m && !c.noMindblast ? m : null;
     }
     const MIND_COL: Record<string, [string, string]> = { mindblast: ["#c9a2ff", "#f4ecff"], psisurge: ["#ff7ae0", "#ffe4f8"], kaisurge: ["#ffe27a", "#fffbe8"] };
 
     async function mindStrike(p: Pup, immune: boolean, cost: number) {
       const m = mindSpec()!;
-      const [col, core] = MIND_COL[m[0]] ?? MIND_COL.mindblast;
+      const [col, core] = MIND_COL[m.as ?? m.disc] ?? MIND_COL.mindblast;
       const hx = hero.x + 2, hy = gy - 44;
       play(hero, "cast", [0, 1, 2], 80, true);
       hero.aura = col;
@@ -1338,17 +1337,18 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       ratioEl.replaceChildren(h("span", null, "Tỉ lệ"), h("b", { class: ratio >= 0 ? "good" : "bad" }, `${ratio > 0 ? "+" : ""}${ratio}`));
       csList.replaceChildren(h("span", null, iconEl(uiIcon("cs"), 1), ` KNCĐ ${cs.total}`),
         ...cs.parts.slice(1).map((p) => h("span", { class: p.v >= 0 ? "good" : "bad" }, `${p.label} ${p.v > 0 ? "+" : ""}${p.v}`)));
-      const minds = prof.mind.map((m, i) => ({ m, i })).filter(({ m }) => s.disciplines.includes(m[0]));
+      const minds = mindChoices(book, s);
+      const cur = activeMind(book, s, b.mind);
       const evadeOk = c.evade ? canEvade(book, s, b) : false;
       actions.replaceChildren(...nn(
         minds.length || c.evade ? h("div", { class: "adv-fsub" }, ...nn(
-          minds.length ? gameBtn(b.mind >= 0 ? `${book.names.disc[prof.mind[b.mind][0]]} +${prof.mind[b.mind][1]}${prof.mind[b.mind][2] ? ` (−${prof.mind[b.mind][2]})` : ""}` : "Không dùng tâm lực", () => {
-            // cycle: each mind option, then none
-            const order = [...minds.map((x) => x.i), -1];
+          minds.length ? gameBtn(cur ? `${mindName(book, cur)} +${cur.cs}${cur.cost ? ` (−${cur.cost})` : ""}` : "Không dùng tâm lực", () => {
+            // cycle: each mind option (Psi-surge, then Mindblast…), then none
+            const order = [...minds, -1];
             b.mind = order[(order.indexOf(b.mind) + 1) % order.length];
             render();
-          }, { kind: b.mind >= 0 ? "mind" : "btn", icon: "mind", cls: `adv-mind ${b.mind >= 0 ? "on" : ""}`, disabled: busy }) : null,
-          c.evade ? gameBtn(evadeOk ? "Chạy trốn" : `Chạy trốn (sau ${c.evade.after - b.round} hiệp)`, () => void round(true), { icon: "flee", disabled: busy || !evadeOk }) : null)) : null,
+          }, { kind: cur ? "mind" : "btn", icon: "mind", cls: `adv-mind ${cur ? "on" : ""}`, disabled: busy }) : null,
+          c.evade ? gameBtn(evadeOk ? "Chạy trốn" : c.evade.until !== undefined && b.round >= c.evade.until ? "Hết lúc chạy trốn" : `Chạy trốn (sau ${c.evade.after - b.round} hiệp)`, () => void round(true), { icon: "flee", disabled: busy || !evadeOk }) : null)) : null,
         gameBtn(auto && !b.over ? "Đang tự đánh…" : "Tấn công", () => void round(false), { kind: "red", icon: "cs", cls: "adv-attack block big", disabled: busy || auto }),
       ));
     }
@@ -1419,14 +1419,14 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       onChange();
       const win = b.over === "win";
       if (win) await victory();
-      const title = win ? "CHIẾN THẮNG" : b.over === "evaded" ? "ĐÃ THOÁT" : b.over === "timeout" ? (c.compare ? "HẾT HIỆP" : "HẾT GIỜ") : b.over === "beaten" ? "THUA TRẬN" : b.over === "hurt" ? "TRÚNG ĐÒN!" : "BẠI TRẬN";
+      const title = win ? "CHIẾN THẮNG" : b.over === "evaded" ? "ĐÃ THOÁT" : b.over === "timeout" ? (c.compare ? "HẾT HIỆP" : "HẾT GIỜ") : b.over === "beaten" ? "THUA TRẬN" : b.over === "hurt" ? "TRÚNG ĐÒN!" : b.over === "stopped" ? "DỪNG TAY" : "BẠI TRẬN";
       sfx(b.over === "lose" ? "defeat" : "victory");
       const done = (to2: string | null) => { alive = false; releaseOthers(); fit.destroy(); stage.destroy(); el.classList.add("out"); setTimeout(() => el.remove(), 250); playMusic("title"); resolve({ battle: b, exit: to2 }); };
       const alts = b.over === "evaded" ? c.evade?.alt ?? [] : [];
       const buttons = alts.length
         ? [gameBtn("Chạy theo lối đã định", () => done(exit), { kind: "gold", cls: "block" }), ...alts.map((a) => gameBtn(a.text, () => done(a.to), { cls: "block" }))]
         : [gameBtn("Tiếp tục", () => done(exit), { kind: "gold", cls: "block big" })];
-      const good = win || b.over === "evaded";
+      const good = win || b.over === "evaded" || b.over === "stopped";
       banner.replaceChildren(h("div", { class: `adv-fbanner-box fr-panel ${b.over} ${good ? "good" : "badend"}` },
         iconEl(uiIcon(win ? "trophy" : b.over === "evaded" ? "flee" : "skull"), 3),
         h("div", { class: "t" }, title),
@@ -1437,7 +1437,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
 
     // ---------------------------------------------------------------- start
     say(b.foes.length > 1 ? `${b.foes.length} kẻ thù lần lượt xông vào bạn.` : `${b.foes[0].def.name} chặn đường bạn!`);
-    if (heroStyle === "fist" && !s.weapons.length && !s.special.some((id) => id === "Sommerswerd" || book.items[id]?.weapon)) say("Bạn không có vũ khí: đánh tay không (−4).", "bad");
+    if (!fightWeapons(book, s, c).length) say(`Bạn không có vũ khí cận chiến: đánh tay không (${unarmedPenalty(book, s)}).`, "bad");
     else if (s.weapons[0]) say(`Bạn cầm ${itemName(book, s.weapons[0])}.`);
     busy = true;
     render();

@@ -19,6 +19,8 @@ export type Cond =
   | { item: string }
   | { notItem: string }
   | { gold: number }
+  /** Fewer than n Gold Crowns. */
+  | { goldBelow: number }
   | { ep: number }
   | { flag: string }
   | { notFlag: string }
@@ -28,6 +30,8 @@ export type Cond =
   | { noWeapon: true }
   | { armed: true }
   | { arrows: number }
+  /** Weaponskill / Weaponmastery / Grand Weaponmastery with this weapon (item key: "Bow", "Sword"…). */
+  | { mastered: string }
   | { all: Cond[] }
   | { any: Cond[] };
 
@@ -72,13 +76,17 @@ export interface Combat {
   foes: FoeDef[];
   together?: boolean;
   mods?: { cs?: number };
-  evade?: { after: number; to: string; alt?: { text: string; to: string }[] };
+  /** Evading: after `after` rounds have been fought; with `until`, only while fewer than `until` rounds have been (until 1 = the first round only). */
+  evade?: { after: number; until?: number; to: string; alt?: { text: string; to: string }[] };
+  /** The fight stops as soon as the foe's ENDURANCE is n or less: go to `to`. */
+  stopAt?: { foeEp: number; to: string };
   win?: string;
   maxRounds?: { n: number; to: string };
   noMindblast?: boolean;
   csIf?: { if: Cond; add: number }[];
   onHurt?: string;
-  firstRound?: { cs: number; rounds?: number };
+  /** COMBAT SKILL change in the first `rounds` rounds (default 1); with `if`, only when it holds (e.g. no Huntmastery). */
+  firstRound?: { cs: number; rounds?: number; if?: Cond };
   foeExtraLoss?: number;
   heroDrain?: { ep: number; if?: Cond };
   /** One-round fight decided by who lost more ENDURANCE (hero more / less / equal). */
@@ -88,6 +96,12 @@ export interface Combat {
   winBy?: { rounds: number; fast: string; slow: string };
   restoreHalf?: boolean;
   foeHoldLoss?: number;
+  /** COMBAT SKILL lost to a surprise attack or ambush (negative); Huntmastery ignores it. */
+  ambush?: number;
+  /** Weapons that cannot be used in this fight (item keys or weapon kinds, e.g. ["Bow"], ["Sommerswerd"]). */
+  forbid?: string[];
+  /** The foe attacks with Mindforce: ENDURANCE lost every round unless shielded (Mindshield / Psi-screen / Kai-screen). */
+  mindforce?: number;
 }
 
 export interface Choice {
@@ -105,6 +119,8 @@ export interface Choice {
 }
 
 export interface RandomPick {
+  /** Random numbers picked and added together (default 1): the out ranges then cover 0 to 9 × picks. */
+  picks?: number;
   mods?: { if: Cond; add: number }[];
   out: { min: number; max: number; to?: string; end?: "death" | "victory"; fx?: Effect[] }[];
   bow?: boolean;
@@ -188,6 +204,8 @@ export interface ItemDef {
   desc?: string;
   /** Counts as a weapon in hand although carried as a special item (Sommerswerd). */
   weapon?: boolean;
+  /** The kind of weapon it counts as for Weaponskill / Weaponmastery (Sommerswerd: "Sword"). */
+  as?: string;
   /** Passive bonus while carried (Helmet: epMax 2, Chainmail: epMax 4...). */
   epMax?: number;
   cs?: number;
@@ -199,7 +217,8 @@ export interface StartPick {
   /** "random": one option by a random number (option index = number); "choose": player picks `count`. */
   mode: "random" | "choose";
   count: number;
-  options: ({ gain: string; type: ItemType; n?: number } | { gold: number })[];
+  /** `arrows`: Arrows that come with it (a Quiver "contains six Arrows"). */
+  options: ({ gain: string; type: ItemType; n?: number; arrows?: number } | { gold: number })[];
 }
 
 export interface Book {
@@ -214,12 +233,12 @@ export interface Book {
   intro: string[];
   start: string;
   crt: CRT;
-  /** Weaponskill weapon by random number 0-9. */
+  /** Kai: Weaponskill weapon by random number 0-9. Later series: the Weaponmastery weapon list. */
   weaponskill: string[];
-  /** Kai disciplines a new hero picks. */
+  /** Disciplines a new hero picks (Kai 5, Magnakai 3, Grand Master 4…). */
   discCount: number;
   kit: {
-    items: { gain: string; type: ItemType; n?: number }[];
+    items: { gain: string; type: ItemType; n?: number; arrows?: number }[];
     gold: { random: boolean; add: number };
     picks: StartPick[];
   };
@@ -257,6 +276,8 @@ export interface AdvState {
   arrows: number;
   /** Weapons mastered (Magnakai Weaponmastery / Grand Weaponmastery). */
   mastered?: string[];
+  /** Definitions of carried items the current book does not describe (brought over from earlier books). */
+  items?: Record<string, ItemDef>;
   /** ENDURANCE lost in the current section's combat (for "onHurt"). */
   hurt?: boolean;
   /** Gear taken away (confiscated) by name, to be given back later. */

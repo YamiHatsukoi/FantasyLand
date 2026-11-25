@@ -7,8 +7,8 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  battleExit, canEvade, choiceState, continueRun, discsOf, enter, newRun, phase, pick10, playRound, randomResult,
-  startBattle, takeOffer, apply, visibleChoices,
+  battleExit, canEvade, choiceState, continueRun, discsOf, enter, newRun, phase, playRound, randomResult,
+  startBattle, takeOffer, apply, visibleChoices, rollRandom, carryNeeds,
 } from "../src/adventure/engine";
 import type { AdvState, Book, Disc } from "../src/adventure/types";
 
@@ -54,7 +54,7 @@ function doomed(book: Book): Set<string> {
     const x = book.sections[id];
     const c = x.combat;
     return [...(x.choices ?? []).map((y) => y.to), ...(x.random?.out ?? []).map((o) => o.to ?? (o.end === "death" ? "†" : "")),
-      c?.win, c?.lose, c?.onHurt, c?.evade?.to, c?.maxRounds?.to, ...Object.values(c?.winBy ?? {}), ...Object.values(c?.compare ?? {})].filter((t): t is string => typeof t === "string" && !!t);
+      c?.win, c?.lose, c?.onHurt, c?.stopAt?.to, c?.evade?.to, c?.maxRounds?.to, ...Object.values(c?.winBy ?? {}), ...Object.values(c?.compare ?? {})].filter((t): t is string => typeof t === "string" && !!t);
   };
   let changed = true;
   for (const [id, x] of Object.entries(book.sections)) if (x.end === "death") out.add(id);
@@ -97,7 +97,7 @@ function playOnce(book: Book, s: AdvState, rng: () => number, r: Report, careful
       if (to) { enter(book, s, to); continue; }
     }
     if (phase(book, s) === "random") {
-      const res = randomResult(book, sec, s, pick10(rng));
+      const res = randomResult(book, sec, s, rollRandom(sec, rng));
       if (res.fx) apply(book, s, res.fx);
       if (res.end) { s.ended = res.end; continue; }
       if (!res.to || !book.sections[res.to]) throw new Error(`§${s.section}: random leads to "${res.to}"`);
@@ -133,7 +133,14 @@ describe.skipIf(!DIR)("adventure book packages (random play-throughs)", () => {
         const prev = finishedHeroes.get(book.num - 1);
         let s: AdvState;
         try {
-          s = prev && i % 2 ? continueRun(book, prev, { newDisc: discsOf(book).find((d) => !prev.disciplines.includes(d)), picks: book.kit.picks.map((p) => p.mode === "random" ? [0] : [...p.options.keys()].slice(0, p.count)), goldRoll: 3 }) : hero(book, rng);
+          const need = prev ? carryNeeds(book, prev) : null;
+          const newDisc = need && !need.fresh ? discsOf(book).find((d) => !prev!.disciplines.includes(d)) : undefined;
+          const extra = prev ? carryNeeds(book, prev, newDisc) : null;
+          s = prev && i % 2 ? continueRun(book, prev, {
+            newDisc, newDiscs: need?.fresh ? discsOf(book).slice(0, book.discCount) : undefined,
+            mastered: book.weaponskill.filter((w) => !(prev.mastered ?? []).includes(w)).slice(0, extra?.masteryCap ?? 0),
+            picks: book.kit.picks.map((p) => p.mode === "random" ? [0] : [...p.options.keys()].slice(0, p.count)), goldRoll: 3,
+          }) : hero(book, rng);
           const careful = i % 4 === 3;
           if (careful) { s.cs = Math.max(s.cs, 19); s.epBase = Math.max(s.epBase, 29); s.ep = s.epBase; }
           playOnce(book, s, rng, r, careful);

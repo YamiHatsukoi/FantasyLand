@@ -1,5 +1,5 @@
 /** Lone Wolf rules of Adventure (Kai, Magnakai, Grand Master, New Order). Pure functions: no DOM. */
-import type { AdvState, Book, Combat, Cond, Disc, Effect, FoeDef, ItemType, Offer, Section } from "./types";
+import type { AdvState, Book, Combat, Cond, Disc, Effect, FoeDef, ItemDef, ItemType, Offer, Section } from "./types";
 import { DISCS_BY_RULES } from "./types";
 
 export type Rng = () => number;
@@ -19,23 +19,116 @@ export const KILL = -1;
  */
 export interface Profile {
   weapon: { disc: Disc; bonus: number };
-  /** Mind attacks: [discipline, COMBAT SKILL bonus, ENDURANCE cost per round]. */
-  mind: [Disc, number, number][];
+  /** Mind attacks, strongest first. A weaker form of the same discipline follows the stronger one. */
+  mind: MindOpt[];
   heal: Disc;
   hunt: Disc;
   shield: Disc;
   sense: Disc;
+  /** Ignores the COMBAT SKILL lost to a surprise attack or ambush (Magnakai Huntmastery and later). */
+  ambush?: Disc;
+}
+
+export interface MindOpt {
+  disc: Disc;
+  /** Name of the attack when it is not the discipline's own (Mindblast, the weak form of Psi-surge). */
+  as?: Disc;
+  cs: number;
+  /** ENDURANCE paid each round it is used. */
+  cost: number;
+  /** Cannot be used when ENDURANCE is below this (Psi-surge: not at 6 or below). */
+  minEp?: number;
 }
 
 export const PROFILES: Record<Book["rules"], Profile> = {
-  kai: { weapon: { disc: "weaponskill", bonus: 2 }, mind: [["mindblast", 2, 0]], heal: "healing", hunt: "hunting", shield: "mindshield", sense: "sixthsense" },
-  magnakai: { weapon: { disc: "weaponmastery", bonus: 3 }, mind: [["psisurge", 4, 2], ["psisurge", 2, 0]], heal: "curing", hunt: "huntmastery", shield: "psiscreen", sense: "divination" },
-  grandmaster: { weapon: { disc: "grandweaponmastery", bonus: 5 }, mind: [["kaisurge", 8, 1], ["kaisurge", 4, 0]], heal: "deliverance", hunt: "grandhuntmastery", shield: "kaiscreen", sense: "telegnosis" },
-  neworder: { weapon: { disc: "grandweaponmastery", bonus: 5 }, mind: [["kaisurge", 8, 1], ["kaisurge", 4, 0]], heal: "deliverance", hunt: "grandhuntmastery", shield: "kaiscreen", sense: "telegnosis" },
+  kai: { weapon: { disc: "weaponskill", bonus: 2 }, mind: [{ disc: "mindblast", cs: 2, cost: 0 }], heal: "healing", hunt: "hunting", shield: "mindshield", sense: "sixthsense" },
+  magnakai: {
+    weapon: { disc: "weaponmastery", bonus: 3 },
+    mind: [{ disc: "psisurge", cs: 4, cost: 2, minEp: 7 }, { disc: "psisurge", as: "mindblast", cs: 2, cost: 0 }],
+    heal: "curing", hunt: "huntmastery", shield: "psiscreen", sense: "divination", ambush: "huntmastery",
+  },
+  grandmaster: {
+    weapon: { disc: "grandweaponmastery", bonus: 5 },
+    mind: [{ disc: "kaisurge", cs: 8, cost: 1, minEp: 7 }, { disc: "kaisurge", as: "mindblast", cs: 4, cost: 0 }],
+    heal: "deliverance", hunt: "grandhuntmastery", shield: "kaiscreen", sense: "telegnosis", ambush: "grandhuntmastery",
+  },
+  neworder: {
+    weapon: { disc: "grandweaponmastery", bonus: 5 },
+    mind: [{ disc: "kaisurge", cs: 8, cost: 1, minEp: 7 }, { disc: "kaisurge", as: "mindblast", cs: 4, cost: 0 }],
+    heal: "deliverance", hunt: "grandhuntmastery", shield: "kaiscreen", sense: "telegnosis", ambush: "grandhuntmastery",
+  },
 };
 
 export const profile = (book: Book) => PROFILES[book.rules ?? "kai"];
 export const discsOf = (book: Book): readonly Disc[] => DISCS_BY_RULES[book.rules ?? "kai"];
+
+// ------------------------------------------------------------------ series, ranks, Lore-circles
+
+const TIERS = ["kai", "magnakai", "grandmaster", "neworder"] as const;
+const tierIdx = (r: Book["rules"] | undefined) => TIERS.indexOf(r ?? "kai");
+
+/** The highest series whose disciplines the hero has learnt (a Kai Master has Magnakai disciplines…). */
+export function tierOf(s: Pick<AdvState, "disciplines">): Book["rules"] {
+  const has = (r: Book["rules"]) => s.disciplines.some((d) => (DISCS_BY_RULES[r] as readonly Disc[]).includes(d));
+  if (has("grandmaster")) return s.disciplines.some((d) => (["astrology", "herbmastery", "elementalism", "bardsmanship"] as Disc[]).includes(d)) ? "neworder" : "grandmaster";
+  return has("magnakai") ? "magnakai" : "kai";
+}
+
+/**
+ * Disciplines of the hero's own series: the rank counts these. A Kai Master has mastered all ten
+ * Kai Disciplines, and a Grand Master all the Magnakai ones; those are known without being listed.
+ */
+export const ownDiscs = (s: Pick<AdvState, "disciplines">): Disc[] => s.disciplines.filter((d) => (DISCS_BY_RULES[tierOf(s)] as readonly Disc[]).includes(d));
+export const rankOf = (s: Pick<AdvState, "disciplines">) => ownDiscs(s).length;
+
+export function knows(s: Pick<AdvState, "disciplines">, d: Disc): boolean {
+  if (s.disciplines.includes(d)) return true;
+  const t = tierIdx(tierOf(s));
+  // every discipline of an earlier series (New Order heroes are trained apart: nothing implied)
+  if (t >= 3) return false;
+  return TIERS.slice(0, t).some((r) => (DISCS_BY_RULES[r] as readonly Disc[]).includes(d));
+}
+
+/** Titles by number of disciplines of the series ("Levels of … Training"). */
+export const RANKS: Partial<Record<Book["rules"], string[]>> = {
+  kai: ["Novice", "Intuite", "Doan", "Acolyte", "Initiate", "Aspirant", "Guardian", "Warmarn", "Savant", "Master"],
+  magnakai: ["Kai Master", "Kai Master Senior", "Kai Master Superior", "Primate", "Tutelary", "Principalin", "Mentora", "Scion-kai", "Archmaster", "Kai Grand Master"],
+  grandmaster: ["Kai Grand Master Senior", "Kai Grand Master Superior", "Kai Grand Sentinel", "Kai Grand Defender", "Kai Grand Guardian", "Sun Knight", "Sun Lord", "Sun Thane", "Grand Thane", "Grand Crown", "Sun Prince", "Kai Supreme Master"],
+};
+
+export function rankName(s: Pick<AdvState, "disciplines">): string {
+  const list = RANKS[tierOf(s)];
+  const n = rankOf(s);
+  return list && n > 0 ? list[Math.min(n, list.length) - 1] : "";
+}
+
+/** Magnakai ranks at which disciplines improve (Improved Disciplines). */
+export const MK = { tutelary: 5, mentora: 7, scion: 8, archmaster: 9 } as const;
+const mkRank = (book: Book, s: AdvState) => (book.rules === "magnakai" && tierOf(s) === "magnakai" ? rankOf(s) : 0);
+
+/** Lore-circles of the Magnakai: all their disciplines learnt add to the basic COMBAT SKILL and ENDURANCE. */
+export const LORE_CIRCLES: { id: string; name: string; discs: Disc[]; cs: number; ep: number }[] = [
+  { id: "fire", name: "Vòng Lửa", discs: ["weaponmastery", "huntmastery"], cs: 1, ep: 2 },
+  { id: "light", name: "Vòng Ánh Sáng", discs: ["animalcontrol", "curing"], cs: 0, ep: 3 },
+  { id: "solaris", name: "Vòng Solaris", discs: ["invisibility", "huntmastery", "pathsmanship"], cs: 1, ep: 3 },
+  { id: "spirit", name: "Vòng Tinh Thần", discs: ["psisurge", "psiscreen", "nexus", "divination"], cs: 3, ep: 3 },
+];
+
+/** Lore-circles the hero has completed (they count in Magnakai books; later books carry them in the stats). */
+export function loreCircles(book: Book, s: Pick<AdvState, "disciplines">) {
+  if (book.rules !== "magnakai") return [];
+  return LORE_CIRCLES.filter((c) => c.discs.every((d) => s.disciplines.includes(d)))
+    .map((c) => ({ ...c, name: (book.names.circle as Record<string, string> | undefined)?.[c.id] ?? c.name }));
+}
+
+/** COMBAT SKILL before fight modifiers: the basic score plus Lore-circle bonuses. */
+export const baseCs = (book: Book, s: AdvState) => s.cs + loreCircles(book, s).reduce((a, c) => a + c.cs, 0);
+
+/** How many weapons Weaponmastery covers: three at Kai Master Superior, one more per Magnakai book finished. */
+export function masteryCount(book: Book, s: Pick<AdvState, "disciplines">) {
+  if (book.rules !== "magnakai") return 3;
+  return Math.max(3, Math.min(new Set(book.weaponskill).size, rankOf(s)));
+}
 
 // ------------------------------------------------------------------ character
 
@@ -52,39 +145,78 @@ export interface NewHero {
   picks: number[][];
 }
 
-export function newRun(book: Book, h: NewHero): AdvState {
-  const now = Date.now();
-  const s: AdvState = {
-    v: 2, book: book.id, name: h.name, section: book.start,
-    cs: 10 + h.csRoll, ep: 0, epBase: 20 + h.epRoll,
-    disciplines: [...h.disciplines],
-    weaponskill: h.disciplines.includes("weaponskill") ? book.weaponskill[h.weaponskillRoll ?? 0] : undefined,
-    mastered: h.mastered,
-    weapons: [], backpack: [], special: [], meals: 0, arrows: 0,
-    gold: book.kit.gold.add + (book.kit.gold.random ? h.goldRoll ?? 0 : 0),
-    flags: {}, csNext: 0, csBook: 0, offers: [], fought: false,
-    visited: [], steps: 0, created: now, updated: now,
-  };
-  for (const it of book.kit.items) give(book, s, it.gain, it.type, it.n ?? 1);
+function giveKit(book: Book, s: AdvState, picks: number[][], skipOwned: boolean) {
+  const arrows = (n?: number) => { if (n) s.arrows = Math.min(has(s, "Quiver") ? 6 : 0, s.arrows + n); };
+  for (const it of book.kit.items) if (!skipOwned || !has(s, it.gain)) { give(book, s, it.gain, it.type, it.n ?? 1); arrows(it.arrows); }
   book.kit.picks.forEach((p, i) => {
-    for (const idx of h.picks[i] ?? []) {
+    for (const idx of picks[i] ?? []) {
       const o = p.options[idx];
       if (!o) continue;
       if ("gold" in o) s.gold = Math.min(MAX_GOLD, s.gold + o.gold);
-      else give(book, s, o.gain, o.type, o.n ?? 1);
+      else { give(book, s, o.gain, o.type, o.n ?? 1); arrows(o.arrows); }
     }
   });
+}
+
+export function newRun(book: Book, h: NewHero): AdvState {
+  const now = Date.now();
+  const discs = [...new Set(h.disciplines)].filter((d) => discsOf(book).includes(d));
+  const wm = profile(book).weapon.disc;
+  const s: AdvState = {
+    v: 2, book: book.id, name: h.name, section: book.start,
+    cs: 10 + h.csRoll, ep: 0, epBase: 20 + h.epRoll,
+    disciplines: discs,
+    weaponskill: book.rules === "kai" && discs.includes("weaponskill") ? book.weaponskill[h.weaponskillRoll ?? 0] : undefined,
+    weapons: [], backpack: [], special: [], meals: 0, arrows: 0,
+    gold: Math.min(MAX_GOLD, book.kit.gold.add + (book.kit.gold.random ? h.goldRoll ?? 0 : 0)),
+    flags: {}, csNext: 0, csBook: 0, offers: [], fought: false,
+    visited: [], steps: 0, created: now, updated: now,
+  };
+  if (wm !== "weaponskill" && discs.includes(wm)) s.mastered = [...new Set(h.mastered ?? [])].slice(0, masteryCount(book, s));
+  giveKit(book, s, h.picks, false);
   s.ep = epMax(book, s);
   enter(book, s, book.start);
   return s;
 }
 
+export interface CarryOver {
+  /** Same series: the one discipline learnt for the book finished. */
+  newDisc?: Disc;
+  /** A new series (Kai Lord → Kai Master): the disciplines of the new series picked (book.discCount). */
+  newDiscs?: Disc[];
+  picks: number[][];
+  goldRoll?: number;
+  weaponskillRoll?: number;
+  /** Weapons added to Weaponmastery (all of them on a first pick, one per finished book after). */
+  mastered?: string[];
+  /** Items of the earlier book: what the hero brings keeps its description and bonuses. */
+  prevItems?: Record<string, ItemDef>;
+}
+
+/** Does the hero enter a new series with this book (book 6, 13, 21)? */
+export const newSeries = (book: Book, prev: Pick<AdvState, "disciplines">) => tierIdx(book.rules) > tierIdx(tierOf(prev));
+
+/** What a hero of an earlier book must choose to continue in this one. */
+export function carryNeeds(book: Book, prev: AdvState, newDisc?: Disc) {
+  const fresh = newSeries(book, prev);
+  const wm = profile(book).weapon.disc;
+  const discs = fresh ? book.discCount : discsOf(book).some((d) => !prev.disciplines.includes(d)) ? 1 : 0;
+  let weapons = 0;
+  if (!fresh && wm !== "weaponskill") {
+    const after = { disciplines: newDisc ? [...prev.disciplines, newDisc] : prev.disciplines };
+    if (after.disciplines.includes(wm)) weapons = Math.max(0, masteryCount(book, after) - (prev.mastered?.length ?? 0));
+  }
+  return { fresh, discs, weapons, masteryCap: fresh ? 3 : weapons };
+}
+
 /**
- * Continue with the hero of a finished earlier book (Lone Wolf rules): stats, disciplines,
- * gear, gold and flags carry over; one new discipline is learnt per finished book; the new
- * book's equipment offer is added on top (as far as there is room).
+ * Continue with the hero of a finished earlier book (Lone Wolf rules): COMBAT SKILL, ENDURANCE,
+ * weapons, Backpack, Special Items, gold and flags carry over. Within a series one new discipline is
+ * learnt per finished book; entering a new series (Kai Lord → Kai Master in book 6) the hero picks
+ * the new series' disciplines, and the old Weaponskill does not apply any more. The new book's
+ * equipment offer is added on top (as far as there is room).
  */
-export function continueRun(book: Book, prev: AdvState, h: { newDisc?: Disc; picks: number[][]; goldRoll?: number; weaponskillRoll?: number; mastered?: string[] }): AdvState {
+export function continueRun(book: Book, prev: AdvState, h: CarryOver): AdvState {
   const now = Date.now();
   const s: AdvState = {
     ...JSON.parse(JSON.stringify(prev)) as AdvState,
@@ -93,19 +225,33 @@ export function continueRun(book: Book, prev: AdvState, h: { newDisc?: Disc; pic
   };
   // flags of the old book stay (later books ask "have you ever…"), cutscene marks do not
   for (const f of Object.keys(s.flags)) if (f.startsWith("cut:")) delete s.flags[f];
-  if (h.newDisc && !s.disciplines.includes(h.newDisc)) s.disciplines.push(h.newDisc);
-  if (h.newDisc === "weaponskill" && !s.weaponskill) s.weaponskill = book.weaponskill[h.weaponskillRoll ?? 0];
-  if (h.mastered?.length) s.mastered = [...new Set([...(s.mastered ?? []), ...h.mastered])];
-  s.gold = Math.min(MAX_GOLD, s.gold + book.kit.gold.add + (book.kit.gold.random ? h.goldRoll ?? 0 : 0));
-  for (const it of book.kit.items) if (!has(s, it.gain)) give(book, s, it.gain, it.type, it.n ?? 1);
-  book.kit.picks.forEach((p, i) => {
-    for (const idx of h.picks[i] ?? []) {
-      const o = p.options[idx];
-      if (!o) continue;
-      if ("gold" in o) s.gold = Math.min(MAX_GOLD, s.gold + o.gold);
-      else give(book, s, o.gain, o.type, o.n ?? 1);
+  // definitions of what the hero brings that this book does not describe
+  const owned = new Set([...s.weapons, ...s.backpack, ...s.special]);
+  const carried: Record<string, ItemDef> = {};
+  for (const id of owned) {
+    const def = book.items[id] ? undefined : h.prevItems?.[id] ?? prev.items?.[id];
+    if (def) carried[id] = def;
+  }
+  s.items = Object.keys(carried).length ? carried : undefined;
+  const wm = profile(book).weapon.disc;
+  const own = discsOf(book);
+  if (newSeries(book, prev)) {
+    // Lore-circle bonuses were counted on top of the basic scores: they now become part of them
+    const circles = LORE_CIRCLES.filter((c) => tierOf(prev) === "magnakai" && c.discs.every((d) => prev.disciplines.includes(d)));
+    s.cs += circles.reduce((a, c) => a + c.cs, 0);
+    s.epBase += circles.reduce((a, c) => a + c.ep, 0);
+    for (const d of new Set(h.newDiscs ?? [])) if (own.includes(d) && !s.disciplines.includes(d) && s.disciplines.filter((x) => own.includes(x)).length < book.discCount) s.disciplines.push(d);
+    s.weaponskill = undefined;
+    s.mastered = wm !== "weaponskill" && s.disciplines.includes(wm) ? [...new Set(h.mastered ?? [])].slice(0, masteryCount(book, s)) : undefined;
+  } else {
+    if (h.newDisc && own.includes(h.newDisc) && !s.disciplines.includes(h.newDisc)) s.disciplines.push(h.newDisc);
+    if (h.newDisc === "weaponskill" && book.rules === "kai" && !s.weaponskill) s.weaponskill = book.weaponskill[h.weaponskillRoll ?? 0];
+    if (wm !== "weaponskill" && s.disciplines.includes(wm) && h.mastered?.length) {
+      s.mastered = [...new Set([...(s.mastered ?? []), ...h.mastered])].slice(0, Math.max(masteryCount(book, s), s.mastered?.length ?? 0));
     }
-  });
+  }
+  s.gold = Math.min(MAX_GOLD, s.gold + book.kit.gold.add + (book.kit.gold.random ? h.goldRoll ?? 0 : 0));
+  giveKit(book, s, h.picks, true);
   s.ep = epMax(book, s); // a new adventure starts rested
   enter(book, s, book.start);
   return s;
@@ -113,13 +259,25 @@ export function continueRun(book: Book, prev: AdvState, h: { newDisc?: Disc; pic
 
 // ------------------------------------------------------------------ items
 
+/** An item's description: the book's own, or the one the hero brought from an earlier book. */
+export const itemDef = (book: Book, s: Pick<AdvState, "items"> | undefined, id: string): ItemDef | undefined => book.items[id] ?? s?.items?.[id];
+
 export function epMax(book: Book, s: AdvState) {
-  return s.epBase + s.special.reduce((a, id) => a + (book.items[id]?.epMax ?? 0), 0);
+  return s.epBase + s.special.reduce((a, id) => a + (itemDef(book, s, id)?.epMax ?? 0), 0) + loreCircles(book, s).reduce((a, c) => a + c.ep, 0);
 }
 
 /** Holds a weapon: one in the weapon slots, or the Sommerswerd. */
 export function armed(s: AdvState, book?: Book) {
-  return s.weapons.length > 0 || s.special.some((id) => id === "Sommerswerd" || !!book?.items[id]?.weapon);
+  return s.weapons.length > 0 || s.special.some((id) => id === "Sommerswerd" || !!(book ? itemDef(book, s, id) : s.items?.[id])?.weapon);
+}
+
+/** The kind of weapon an item counts as (the Sommerswerd is a sword). */
+export const weaponKind = (book: Book, s: AdvState, id: string) => itemDef(book, s, id)?.as ?? (id === "Sommerswerd" ? "Sword" : id);
+
+/** Weapons usable hand to hand: a Bow is not (fighting with only a Bow is fighting bare-handed). */
+export function meleeWeapons(book: Book, s: AdvState): string[] {
+  const special = s.special.filter((id) => id === "Sommerswerd" || !!itemDef(book, s, id)?.weapon);
+  return [...special, ...s.weapons].filter((id) => weaponKind(book, s, id) !== "Bow");
 }
 
 export function has(s: AdvState, id: string) {
@@ -162,8 +320,8 @@ export function drop(book: Book, s: AdvState, id: string): boolean {
   return false;
 }
 
-export function itemName(book: Book, id: string) {
-  return id === "Meal" ? "Phần Ăn" : book.items[id]?.name ?? id;
+export function itemName(book: Book, id: string, s?: Pick<AdvState, "items">) {
+  return id === "Meal" ? "Phần Ăn" : itemDef(book, s, id)?.name ?? id;
 }
 
 // ------------------------------------------------------------------ conditions & effects
@@ -172,15 +330,17 @@ export function check(s: AdvState, c: Cond | undefined): boolean {
   if (!c) return true;
   if ("all" in c) return c.all.every((x) => check(s, x));
   if ("any" in c) return c.any.some((x) => check(s, x));
-  if ("notDisc" in c) return !s.disciplines.includes(c.notDisc);
-  if ("disc" in c) return s.disciplines.includes(c.disc);
+  if ("notDisc" in c) return !knows(s, c.notDisc);
+  if ("disc" in c) return knows(s, c.disc);
+  if ("mastered" in c) return masters(s, c.mastered);
   if ("notItem" in c) return !has(s, c.notItem);
   if ("item" in c) return has(s, c.item);
+  if ("goldBelow" in c) return s.gold < c.goldBelow;
   if ("gold" in c) return s.gold >= c.gold;
   if ("epBelow" in c) return s.ep < c.epBelow;
   if ("ep" in c) return s.ep >= c.ep;
-  if ("notRank" in c) return s.disciplines.length < c.notRank;
-  if ("rank" in c) return s.disciplines.length >= c.rank;
+  if ("notRank" in c) return rankOf(s) < c.notRank;
+  if ("rank" in c) return rankOf(s) >= c.rank;
   if ("noWeapon" in c) return !armed(s);
   if ("armed" in c) return armed(s);
   if ("arrows" in c) return s.arrows >= c.arrows;
@@ -189,12 +349,19 @@ export function check(s: AdvState, c: Cond | undefined): boolean {
   return true;
 }
 
+/** Weaponskill / Weaponmastery / Grand Weaponmastery with this weapon. */
+export function masters(s: Pick<AdvState, "disciplines" | "mastered" | "weaponskill">, w: string): boolean {
+  if (s.weaponskill === w && s.disciplines.includes("weaponskill")) return true;
+  return (s.mastered ?? []).includes(w) && (s.disciplines.includes("weaponmastery") || s.disciplines.includes("grandweaponmastery"));
+}
+
 export function condText(book: Book, c: Cond | undefined): string {
   if (!c) return "";
   if ("all" in c) return c.all.map((x) => condText(book, x)).filter(Boolean).join(", ");
   if ("any" in c) return c.any.map((x) => condText(book, x)).filter(Boolean).join(" hoặc ");
   if ("disc" in c) return `cần ${book.names.disc[c.disc] ?? c.disc}`;
   if ("item" in c) return `cần ${itemName(book, c.item)}`;
+  if ("mastered" in c) return `cần thành thạo ${itemName(book, c.mastered)}`;
   if ("gold" in c) return `cần ${c.gold} Vương Miện Vàng`;
   if ("ep" in c) return `cần ${c.ep} Sức Bền`;
   if ("rank" in c) return `cần ${c.rank} kỹ năng`;
@@ -205,7 +372,7 @@ export function condText(book: Book, c: Cond | undefined): string {
 /** A choice the player can pick, one shown locked (a missing discipline...), or one not shown. */
 export function choiceState(s: AdvState, c: { if?: Cond }): "ok" | "locked" | "hidden" {
   if (check(s, c.if)) return "ok";
-  const negative = (x: Cond): boolean => "notDisc" in x || "notItem" in x || "notFlag" in x || "epBelow" in x || "notRank" in x || "noWeapon" in x || ("all" in x && x.all.some(negative)) || ("any" in x && x.any.every(negative));
+  const negative = (x: Cond): boolean => "notDisc" in x || "goldBelow" in x || "notItem" in x || "notFlag" in x || "epBelow" in x || "notRank" in x || "noWeapon" in x || ("all" in x && x.all.some(negative)) || ("any" in x && x.any.every(negative));
   return c.if && negative(c.if) ? "hidden" : "locked";
 }
 
@@ -352,11 +519,23 @@ export function visibleChoices(sec: Section, s: AdvState) {
   return (sec.choices ?? []).filter((c) => !c.force);
 }
 
-/** The random number picked for the section's table, with modifiers, and where it leads. */
-export function randomResult(book: Book, sec: Section, s: AdvState, n: number) {
+/** How many random numbers the section's table adds together. */
+export const randomPicks = (sec: Section) => Math.max(1, sec.random?.picks ?? 1);
+
+/** Picks the section's random number(s) 0-9 (random.picks of them). */
+export const rollRandom = (sec: Section, rng: Rng = Math.random) => Array.from({ length: randomPicks(sec) }, () => pick10(rng));
+
+/** The random number(s) picked for the section's table (summed), with modifiers, and where it leads. */
+export function randomResult(book: Book, sec: Section, s: AdvState, nums: number | number[]) {
   const r = sec.random!;
+  const n = typeof nums === "number" ? nums : nums.reduce((a, x) => a + x, 0);
   let add = (r.mods ?? []).reduce((a, m) => a + (check(s, m.if) ? m.add : 0), 0);
-  if (r.bow && s.weapons.includes("Bow") && s.disciplines.includes(profile(book).weapon.disc)) add += profile(book).weapon.bonus;
+  if (r.bow && s.weapons.some((w) => weaponKind(book, s, w) === "Bow")) {
+    const p = profile(book).weapon;
+    if (masters(s, "Bow")) add += p.bonus;
+    // Mentora: Weaponmastery makes every missile weapon more accurate
+    if (mkRank(book, s) >= MK.mentora && s.disciplines.includes(p.disc)) add += 2;
+  }
   const v = n + add;
   const out = r.out.find((o) => v >= o.min && v <= o.max) ?? (v < r.out[0].min ? r.out[0] : r.out[r.out.length - 1]);
   return { n, add, value: v, to: out.to ?? "", end: out.end, fx: out.fx };
@@ -370,7 +549,7 @@ export function eatMeal(book: Book, s: AdvState): Change[] {
 
 /** Healing Potion and the like: usable outside combat. */
 export function useItem(book: Book, s: AdvState, id: string): Change[] {
-  const it = book.items[id];
+  const it = itemDef(book, s, id);
   if (!it?.heal || !has(s, id) || s.ep >= epMax(book, s)) return [];
   drop(book, s, id);
   if (/laumspur/i.test(id)) delete s.flags.bleeding;
@@ -411,14 +590,14 @@ export interface Battle {
   round: number;
   /** Mind attack in use: index into the profile's `mind` list, or -1. */
   mind: number;
-  over?: "win" | "lose" | "evaded" | "timeout" | "beaten" | "hurt";
+  over?: "win" | "lose" | "evaded" | "timeout" | "beaten" | "hurt" | "stopped";
   compare?: "more" | "less" | "equal";
   /** ENDURANCE the hero lost in this fight. */
   lost: number;
 }
 
 export function startBattle(book: Book, s: AdvState, sec: Section): Battle {
-  const avail = profile(book).mind.findIndex(([d]) => s.disciplines.includes(d));
+  const avail = mindChoices(book, s)[0] ?? -1;
   return { foes: sec.combat!.foes.map((def) => ({ def, ep: def.ep })), idx: 0, round: 0, mind: avail, lost: 0 };
 }
 
@@ -429,23 +608,71 @@ export interface CsBreakdown {
 
 const mindImmune = (foe: FoeDef) => (foe.immune ?? []).some((x) => ["mindblast", "psisurge", "kaisurge"].includes(x));
 
-export function weaponBonus(book: Book, s: AdvState): { label: string; v: number } | null {
+/** Mind attacks as the hero's rank has them (Archmaster: Psi-surge +6 for 1 ENDURANCE, down to 5; Mindblast +3). */
+export function mindOpts(book: Book, s: AdvState): MindOpt[] {
+  const list = profile(book).mind;
+  if (mkRank(book, s) < MK.archmaster) return list;
+  return list.map((o) => (o.disc !== "psisurge" ? o : o.as ? { ...o, cs: 3 } : { ...o, cs: 6, cost: 1, minEp: 5 }));
+}
+
+/** Indexes of the mind attacks the hero knows (the fight's mind toggle cycles through them). */
+export const mindChoices = (book: Book, s: AdvState) => mindOpts(book, s).map((o, i) => (knows(s, o.disc) ? i : -1)).filter((i) => i >= 0);
+
+/**
+ * The mind attack used this round for the one chosen: itself, or its weaker form when ENDURANCE is
+ * too low for it (Psi-surge at 6 or below becomes Mindblast). Null when none.
+ */
+export function activeMind(book: Book, s: AdvState, idx: number): (MindOpt & { i: number }) | null {
+  const list = mindOpts(book, s);
+  const o = list[idx];
+  if (!o || !knows(s, o.disc)) return null;
+  let i = idx;
+  while (list[i].minEp && s.ep < list[i].minEp!) {
+    i++;
+    if (!list[i] || list[i].disc !== o.disc) return null;
+  }
+  return { ...list[i], i };
+}
+
+const MIND_NAMES: Partial<Record<Disc, string>> = { mindblast: "Tâm Lực Kích", psisurge: "Psi-surge", kaisurge: "Kai-surge" };
+export const mindName = (book: Book, o: MindOpt) => book.names.disc[o.as ?? o.disc] ?? MIND_NAMES[o.as ?? o.disc] ?? o.as ?? o.disc;
+
+/** Weapons this fight does not allow (combat.forbid: by item key or weapon kind). */
+const forbidden = (book: Book, s: AdvState, c: Combat | undefined, id: string) => !!c?.forbid?.some((f) => f === id || f === weaponKind(book, s, id));
+
+/** Weapons usable in this fight, the Sommerswerd first. */
+export const fightWeapons = (book: Book, s: AdvState, c?: Combat) => meleeWeapons(book, s).filter((id) => !forbidden(book, s, c, id));
+
+export function weaponBonus(book: Book, s: AdvState, c?: Combat): { label: string; v: number } | null {
   const p = profile(book).weapon;
   if (!s.disciplines.includes(p.disc)) return null;
-  const skilled = p.disc === "weaponskill" ? (s.weaponskill ? [s.weaponskill] : []) : s.mastered ?? [];
-  const w = s.weapons.find((x) => skilled.includes(x));
-  return w ? { label: `${book.names.disc[p.disc]} (${itemName(book, w)})`, v: p.bonus } : null;
+  const w = fightWeapons(book, s, c).find((x) => masters(s, weaponKind(book, s, x)));
+  // Scion-kai: +4 instead of +3 with a mastered weapon
+  const v = p.bonus + (mkRank(book, s) >= MK.scion ? 1 : 0);
+  return w ? { label: `${book.names.disc[p.disc]} (${itemName(book, w, s)})`, v } : null;
+}
+
+/** Fighting bare-handed: −4 (Weaponmastery: −2 from Tutelary, −1 from Scion-kai). */
+export function unarmedPenalty(book: Book, s: AdvState) {
+  const r = s.disciplines.includes("weaponmastery") ? mkRank(book, s) : 0;
+  return r >= MK.scion ? -1 : r >= MK.tutelary ? -2 : -4;
 }
 
 /** Hero COMBAT SKILL for this fight, with its parts (shown on the battle screen). */
 export function heroCs(book: Book, s: AdvState, c: Combat, foe: FoeDef, mind = -1, round = 0): CsBreakdown {
   const parts: { label: string; v: number }[] = [{ label: "Cơ bản", v: s.cs }];
-  if (!armed(s, book)) parts.push({ label: "Tay không", v: -4 });
-  else { const w = weaponBonus(book, s); if (w) parts.push(w); }
-  if (c.firstRound && round < (c.firstRound.rounds ?? 1)) parts.push({ label: round ? `Hiệp ${round + 1}` : "Hiệp đầu", v: c.firstRound.cs });
-  const m = profile(book).mind[mind];
-  if (m && s.disciplines.includes(m[0]) && !c.noMindblast && !mindImmune(foe)) parts.push({ label: `${book.names.disc[m[0]]}${m[2] ? ` (−${m[2]} Sức Bền/hiệp)` : ""}`, v: m[1] });
-  for (const id of s.special) if (book.items[id]?.cs) parts.push({ label: itemName(book, id), v: book.items[id].cs! });
+  for (const lc of loreCircles(book, s)) if (lc.cs) parts.push({ label: lc.name, v: lc.cs });
+  if (!fightWeapons(book, s, c).length) parts.push({ label: "Tay không", v: unarmedPenalty(book, s) });
+  else { const w = weaponBonus(book, s, c); if (w) parts.push(w); }
+  if (c.firstRound && round < (c.firstRound.rounds ?? 1) && check(s, c.firstRound.if)) parts.push({ label: round ? `Hiệp ${round + 1}` : "Hiệp đầu", v: c.firstRound.cs });
+  const amb = profile(book).ambush;
+  if (c.ambush && !(amb && s.disciplines.includes(amb))) parts.push({ label: "Bị đánh úp", v: c.ambush });
+  const m = activeMind(book, s, mind);
+  if (m && !c.noMindblast && !mindImmune(foe)) parts.push({ label: `${mindName(book, m)}${m.cost ? ` (−${m.cost} Sức Bền/hiệp)` : ""}`, v: m.cs });
+  for (const id of s.special) {
+    const cs = itemDef(book, s, id)?.cs;
+    if (cs && !forbidden(book, s, c, id)) parts.push({ label: itemName(book, id, s), v: cs });
+  }
   if (c.mods?.cs) parts.push({ label: "Hoàn cảnh", v: c.mods.cs });
   for (const m2 of c.csIf ?? []) if (check(s, m2.if)) parts.push({ label: "Hoàn cảnh", v: m2.add });
   if (s.csNext) parts.push({ label: "Tạm thời", v: s.csNext });
@@ -479,17 +706,18 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
   const c = book.sections[s.section].combat!;
   const foeIdx = b.idx;
   const foe = b.foes[foeIdx];
+  // the mind attack in use this round (Psi-surge turns to Mindblast when ENDURANCE is too low)
+  const am = activeMind(book, s, b.mind);
   const ratio = heroCs(book, s, c, foe.def, b.mind, b.round).total - foe.def.cs;
   const n = pick10(rng);
   const [fl, hl] = book.crt[n][crtColumnOf(ratio)];
   b.round++;
-  const m = profile(book).mind[b.mind];
-  const mindCost = m && !c.noMindblast && !mindImmune(foe.def) ? m[2] : 0;
-  const sommer = (s.special.includes("Sommerswerd") || s.weapons.includes("Sommerswerd")) && foe.def.undead;
+  const mindCost = am && !c.noMindblast && !mindImmune(foe.def) ? am.cost : 0;
+  const sommer = fightWeapons(book, s, c).includes("Sommerswerd") && foe.def.undead;
   const hit = fl === KILL ? foe.ep : (fl + (c.foeExtraLoss ?? 0)) * (sommer ? 2 : 1) * (foe.def.double ? 2 : 1);
   const foeLoss = evade || (c.foeHoldLoss ?? 0) >= b.round ? 0 : hit;
   const held = (foe.def.holdRounds ?? 0) >= b.round;
-  const drain = c.heroDrain && check(s, c.heroDrain.if) ? c.heroDrain.ep : 0;
+  const drain = (c.heroDrain && check(s, c.heroDrain.if) ? c.heroDrain.ep : 0) + (c.mindforce && !knows(s, profile(book).shield) ? c.mindforce : 0);
   const heroLoss = (held ? 0 : hl === KILL ? s.ep : hl) + mindCost + drain;
   if (!evade) foe.ep = Math.max(0, foe.ep - foeLoss);
   s.ep = Math.max(0, s.ep - heroLoss);
@@ -502,6 +730,7 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
   const foeKilled = !evade && foe.ep <= 0;
   if (heroKilled) b.over = "lose";
   else if (evade) b.over = "evaded";
+  else if (c.stopAt && foe.ep <= c.stopAt.foeEp) b.over = "stopped";
   else if (foeKilled) {
     if (b.idx < b.foes.length - 1) b.idx++;
     else b.over = "win";
@@ -515,7 +744,7 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
 
 export function canEvade(book: Book, s: AdvState, b: Battle) {
   const e = book.sections[s.section].combat?.evade;
-  return !!e && b.round >= e.after && !b.over;
+  return !!e && b.round >= e.after && (e.until === undefined || b.round < e.until) && !b.over;
 }
 
 /** Where to go after the battle: a section id, "" to stay (choices/random follow), null = death. */
@@ -524,6 +753,7 @@ export function battleExit(book: Book, s: AdvState, b: Battle): string | null {
   if (b.over === "lose") { s.ended = "death"; return null; }
   if (b.over === "beaten") return c.lose ?? "";
   if (b.over === "hurt") return c.onHurt ?? "";
+  if (b.over === "stopped") return c.stopAt?.to ?? "";
   if (b.over === "win" && c.winBy) return b.round <= c.winBy.rounds ? c.winBy.fast : c.winBy.slow;
   if (b.over === "evaded") return c.evade?.to ?? "";
   if (c.compare && b.compare) return c.compare[b.compare];
@@ -543,7 +773,7 @@ export function validateBook(book: Book): string[] {
   for (const [id, sec] of Object.entries(book.sections ?? {})) {
     const c = sec.combat;
     const links = [...(sec.choices ?? []).map((x) => x.to), ...(sec.random?.out ?? []).map((o) => o.to),
-      c?.win, c?.lose, c?.winBy?.fast, c?.winBy?.slow, c?.evade?.to, ...(c?.evade?.alt ?? []).map((a) => a.to), c?.maxRounds?.to, c?.onHurt, c?.compare?.more, c?.compare?.less, c?.compare?.equal].filter((x): x is string => !!x);
+      c?.win, c?.lose, c?.winBy?.fast, c?.winBy?.slow, c?.evade?.to, ...(c?.evade?.alt ?? []).map((a) => a.to), c?.maxRounds?.to, c?.stopAt?.to, c?.onHurt, c?.compare?.more, c?.compare?.less, c?.compare?.equal].filter((x): x is string => !!x);
     for (const t of links) if (!book.sections[t]) errs.push(`§${id} → §${t}: không có đoạn này`);
     if (!links.length && !sec.end && !(sec.random?.out ?? []).some((o) => o.end)) errs.push(`§${id}: ngõ cụt`);
   }
