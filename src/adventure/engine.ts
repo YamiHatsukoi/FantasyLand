@@ -225,6 +225,8 @@ export function changeEp(book: Book, s: AdvState, d: number): Change[] {
 export function apply(book: Book, s: AdvState, fx: Effect[] | undefined): Change[] {
   const out: Change[] = [];
   for (const e of fx ?? []) {
+    const when = (e as { if?: Cond }).if;
+    if (when && !check(s, when)) continue;
     if ("ep" in e) out.push(...changeEp(book, s, e.ep));
     else if ("epMax" in e) { s.epBase += e.epMax; out.push(...changeEp(book, s, e.epMax > 0 ? e.epMax : 0)); out.push({ kind: "ep", label: `Sức Bền tối đa ${e.epMax > 0 ? "+" : ""}${e.epMax}`, good: e.epMax > 0 }); }
     else if ("csBase" in e) { s.cs += e.csBase; out.push({ kind: "cs", label: `Kỹ Năng Chiến Đấu ${e.csBase > 0 ? "+" : ""}${e.csBase}`, good: e.csBase > 0 }); }
@@ -480,7 +482,7 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
   const m = profile(book).mind[b.mind];
   const mindCost = m && !c.noMindblast && !mindImmune(foe.def) ? m[2] : 0;
   const sommer = (s.special.includes("Sommerswerd") || s.weapons.includes("Sommerswerd")) && foe.def.undead;
-  const hit = fl === KILL ? foe.ep : (fl + (c.foeExtraLoss ?? 0)) * (sommer ? 2 : 1);
+  const hit = fl === KILL ? foe.ep : (fl + (c.foeExtraLoss ?? 0)) * (sommer ? 2 : 1) * (foe.def.double ? 2 : 1);
   const foeLoss = evade || (c.foeHoldLoss ?? 0) >= b.round ? 0 : hit;
   const held = (foe.def.holdRounds ?? 0) >= b.round;
   const drain = c.heroDrain && check(s, c.heroDrain.if) ? c.heroDrain.ep : 0;

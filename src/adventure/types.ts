@@ -32,7 +32,10 @@ export type Cond =
 
 export type ItemType = "weapon" | "backpack" | "special" | "meal";
 
-export type Effect =
+/** Any effect may carry `if`: it applies only when the condition holds. */
+export type Effect = EffectBase & { if?: Cond };
+
+type EffectBase =
   | { ep: number }
   | { cs: number; for?: "combat" | "book" }
   | { gold: number; optional?: boolean }
@@ -58,6 +61,8 @@ export interface FoeDef {
   undead?: boolean;
   /** The foe does not strike back during the first n rounds. */
   holdRounds?: number;
+  /** Loses double ENDURANCE. */
+  double?: boolean;
 }
 
 export interface Combat {
