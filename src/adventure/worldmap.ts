@@ -5,8 +5,8 @@
  * walks the road when the story moves to another place.
  */
 import { personCanvas } from "../render/people";
-import { T, TS, tileSet } from "../render/tiles";
-import { BIOMES } from "../world/biomes";
+import { T, TS } from "../render/tiles";
+import { G, hash, noise, paintMap, type ArtNode, type MapFx, type Pt } from "./art/mapart";
 import type { Bg } from "./types";
 
 export interface BookMap {
@@ -18,29 +18,19 @@ export interface BookMap {
   group?: Record<string, string>;
 }
 
-const BIOME_OF: Record<Bg, string> = {
-  forest: "forest", hill: "autumn", road: "forest", river: "forest", lake: "forest", field: "sakura",
-  village: "forest", town: "ruins", city: "ruins", castle: "ruins", hall: "ruins", ruins: "ruins",
-  cave: "ruins", tunnel: "ruins", swamp: "swamp", mountain: "tundra", bridge: "forest", camp: "forest",
-  inn: "forest", ship: "reef", sea: "reef", coast: "reef", desert: "desert", temple: "ruins", dungeon: "ruins", sky: "forest",
+/** Ground of the land around a place, how far it reaches (tiles) and how wooded it is. */
+const LAND: Record<Bg, [number, number, number]> = {
+  forest: [G.FOREST, 4.4, 0.95], hill: [G.HILL, 4.2, 0.2], road: [G.GRASS, 3.6, 0.32], river: [G.GRASS, 3.6, 0.4], lake: [G.GRASS, 3.6, 0.36],
+  field: [G.MEADOW, 4.2, 0.03], village: [G.MEADOW, 3.8, 0.1], town: [G.GRASS, 3.4, 0.1], city: [G.GRASS, 4, 0.08], castle: [G.GRASS, 3.4, 0.14],
+  hall: [G.GRASS, 3, 0.1], ruins: [G.GRASS, 3.6, 0.32], cave: [G.ROCK, 2.6, 0.14], tunnel: [G.ROCK, 2.4, 0.12], swamp: [G.SWAMP, 4.4, 0.42],
+  mountain: [G.ROCK, 4.6, 0.06], bridge: [G.GRASS, 3.2, 0.3], camp: [G.FOREST, 3.6, 0.5], inn: [G.GRASS, 3.4, 0.28], ship: [G.SAND, 2.2, 0],
+  sea: [G.SAND, 2.2, 0], coast: [G.SAND, 2.6, 0.06], desert: [G.SAND, 4.6, 0.01], temple: [G.GRASS, 3.4, 0.24], dungeon: [G.ROCK, 2.6, 0.12], sky: [G.MEADOW, 3.6, 0.08],
 };
-const TREES: Partial<Record<Bg, number>> = { forest: 0.5, camp: 0.3, inn: 0.3, village: 0.18, road: 0.25, hill: 0.14, swamp: 0.2, field: 0.04, lake: 0.25, river: 0.25 };
-const WATERY = new Set<Bg>(["river", "lake", "sea", "coast", "ship", "bridge"]);
-const CITY = new Set<Bg>(["city", "castle", "town", "hall"]);
+const UNDER = new Set<Bg>(["cave", "tunnel", "dungeon"]);
+const BUILT = new Set<Bg>(["city", "town", "castle", "hall"]);
+const BIOME_OF = ["forest", "forest", "sakura", "autumn", "ruins", "tundra", "desert", "swamp", "forest"];
 
 export const mapPlace = (m: BookMap, place: string) => m.group?.[place] ?? place;
-
-function hash(x: number, y: number, s = 0) {
-  let h = (x * 374761393 + y * 668265263 + s * 2147483647) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-function noise(x: number, y: number, s: number) {
-  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
-  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
-  const a = hash(xi, yi, s), b = hash(xi + 1, yi, s), c = hash(xi, yi + 1, s), d = hash(xi + 1, yi + 1, s);
-  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
-}
 
 interface Terrain {
   w: number;
@@ -48,77 +38,198 @@ interface Terrain {
   tile: Uint8Array;
   biome: string[];
   roads: Map<string, { x: number; y: number }[]>;
+  /** What the painter needs: ground kinds, woods, districts, water. */
+  art: {
+    nodes: ArtNode[]; kind: Uint8Array; trees: Float32Array; district: Uint16Array; walled: Set<number>;
+    rivers: Pt[][]; lakes: { x: number; y: number; rx: number; ry: number; sea: boolean; swamp?: boolean }[]; cold: boolean;
+  };
+  fx?: MapFx;
 }
 
-/** Road between two places: a gentle curve, in tile steps. */
+/** Road between two places: a gentle curve, sampled about every 0.8 tile. */
 function roadPoints(a: { x: number; y: number }, b: { x: number; y: number }, seed: number) {
   const mx = (a.x + b.x) / 2 + (hash(seed, 1) - 0.5) * Math.abs(b.y - a.y) * 0.5;
   const my = (a.y + b.y) / 2 + (hash(seed, 2) - 0.5) * Math.abs(b.x - a.x) * 0.5;
+  const at = (t: number) => ({ x: (1 - t) * (1 - t) * a.x + 2 * (1 - t) * t * mx + t * t * b.x, y: (1 - t) * (1 - t) * a.y + 2 * (1 - t) * t * my + t * t * b.y });
+  let len = 0;
+  for (let i = 0; i < 16; i++) { const p = at(i / 16), q = at((i + 1) / 16); len += Math.hypot(q.x - p.x, q.y - p.y); }
+  const n = Math.max(2, Math.ceil(len / 0.8));
   const pts: { x: number; y: number }[] = [];
-  const n = Math.max(2, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) * 1.6));
-  for (let i = 0; i <= n; i++) {
-    const t = i / n;
-    const x = Math.round((1 - t) * (1 - t) * a.x + 2 * (1 - t) * t * mx + t * t * b.x);
-    const y = Math.round((1 - t) * (1 - t) * a.y + 2 * (1 - t) * t * my + t * t * b.y);
-    const last = pts[pts.length - 1];
-    if (last && last.x === x && last.y === y) continue;
-    // keep steps 4-connected so the road has no diagonal gaps
-    if (last && last.x !== x && last.y !== y) pts.push({ x, y: last.y });
-    pts.push({ x, y });
-  }
+  for (let i = 0; i <= n; i++) pts.push(at(i / n));
+  pts[0] = { x: a.x, y: a.y }; pts[n] = { x: b.x, y: b.y };
   return pts;
+}
+
+/** Smooth curve through points (Catmull-Rom), with a gentle meander. */
+function meander(course: Pt[], seed: number) {
+  const out: Pt[] = [];
+  for (let i = 0; i < course.length - 1; i++) {
+    const p0 = course[Math.max(0, i - 1)], p1 = course[i], p2 = course[i + 1], p3 = course[Math.min(course.length - 1, i + 2)];
+    const L = Math.hypot(p2.x - p1.x, p2.y - p1.y), n = Math.max(2, Math.ceil(L / 0.3));
+    for (let k = 0; k < n; k++) {
+      const t = k / n, t2 = t * t, t3 = t2 * t;
+      const f = (a: number, b: number, c: number, d: number) => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+      const x = f(p0.x, p1.x, p2.x, p3.x), y = f(p0.y, p1.y, p2.y, p3.y);
+      const dx = p2.x - p1.x, dy = p2.y - p1.y, l = Math.hypot(dx, dy) || 1;
+      const wob = (noise(out.length / 9, 0, seed) - 0.5) * 2.2 * Math.sin(Math.PI * t);
+      out.push({ x: x - (dy / l) * wob, y: y + (dx / l) * wob });
+    }
+  }
+  out.push(course[course.length - 1]);
+  return out;
 }
 
 export function buildTerrain(m: BookMap): Terrain {
   const { w, h } = m;
-  const nodes = Object.entries(m.nodes);
-  const tile = new Uint8Array(w * h);
-  const biome: string[] = new Array(w * h);
-  const near = new Int16Array(w * h).fill(-1);
-  const nearD = new Float32Array(w * h);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const jx = x + (noise(x / 6, y / 6, 3) - 0.5) * 6, jy = y + (noise(x / 6, y / 6, 7) - 0.5) * 6;
-    let best = -1, bd = 1e9;
-    nodes.forEach(([, n], i) => { const d = Math.hypot(n.x - jx, n.y - jy); if (d < bd) { bd = d; best = i; } });
-    const i = y * w + x;
-    near[i] = best; nearD[i] = bd;
-    const bg = bd > 11 ? "forest" : nodes[best][1].bg;
-    biome[i] = BIOME_OF[bg as Bg] ?? "forest";
-    const r = hash(x, y, 11);
-    const density = bd > 11 ? 0.42 : TREES[bg as Bg] ?? 0.05;
-    tile[i] = bd > 2.5 && r < density * (0.6 + noise(x / 5, y / 5, 5) * 0.8) ? T.OBSTACLE : r > 0.94 ? T.DECOR : T.GROUND;
-  }
-  // lakes and a river through the watery places, flowing to the east edge
-  const water = nodes.filter(([, n]) => WATERY.has(n.bg)).map(([, n]) => n).sort((a, b) => a.x - b.x);
-  const wet = (x: number, y: number) => { if (x >= 0 && y >= 0 && x < w && y < h) tile[y * w + x] = T.WATER; };
-  if (water.length) {
-    const course = [{ x: 0, y: water[0].y }, ...water.map((n) => ({ x: n.x + 2, y: n.y + 2 })), { x: w - 1, y: water[water.length - 1].y + 4 }];
-    for (let i = 0; i < course.length - 1; i++) for (const p of roadPoints(course[i], course[i + 1], 90 + i)) { wet(p.x, p.y); wet(p.x + 1, p.y); }
-    for (const n of nodes) if (n[1].bg === "lake" || n[1].bg === "sea" || n[1].bg === "coast")
-      for (let dy = -3; dy <= 3; dy++) for (let dx = -4; dx <= 4; dx++) if (dx * dx / 16 + dy * dy / 9 <= 1 + noise(n[1].x + dx, n[1].y + dy, 9) * 0.4) wet(n[1].x + 2 + dx, n[1].y + 2 + dy);
-  }
-  // cities: paved squares inside a wall
-  for (const [, n] of nodes) if (CITY.has(n.bg)) {
-    const R = n.bg === "city" ? 5 : 3;
-    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
-      const x = n.x + dx, y = n.y + dy;
-      if (x < 0 || y < 0 || x >= w || y >= h) continue;
-      tile[y * w + x] = Math.max(Math.abs(dx), Math.abs(dy)) === R ? T.WALL : T.PAVE;
-      biome[y * w + x] = "ruins";
-    }
-  }
-  // roads (bridges over water)
-  const roads = new Map<string, { x: number; y: number }[]>();
-  m.edges.forEach(([a, b], i) => {
-    const pts = roadPoints(m.nodes[a], m.nodes[b], i);
-    roads.set(`${a}|${b}`, pts);
-    for (const p of pts) {
-      const k = p.y * w + p.x;
-      tile[k] = tile[k] === T.WATER || tile[k] === T.WALL || tile[k] === T.PAVE ? T.PAVE : T.ALT;
-    }
+  const ids = Object.keys(m.nodes);
+  const groupCount: Record<string, number> = {};
+  for (const v of Object.values(m.group ?? {})) groupCount[v] = (groupCount[v] ?? 0) + 1;
+  const raw = ids.map((id) => ({ id, x: m.nodes[id].x, y: m.nodes[id].y, bg: m.nodes[id].bg, imp: 1 + (groupCount[id] ?? 0) }));
+  const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
+  // rivers, lakes and bridges among mine tunnels are underground: draw them as rock
+  const nodes: ArtNode[] = raw.map((n) => {
+    if (!["river", "lake", "bridge"].includes(n.bg)) return n;
+    const near = raw.filter((o) => o !== n).sort((a, b) => dist(a, n) - dist(b, n)).slice(0, 3);
+    return near.filter((o) => UNDER.has(o.bg)).length >= 2 ? { ...n, bg: "cave" as Bg } : n;
   });
-  for (const [, n] of nodes) { const k = n.y * w + n.x; if (tile[k] !== T.PAVE) tile[k] = T.ALT; }
-  return { w, h, tile, biome, roads };
+  const cold = ids.filter((id) => /ice|snow|frozen|glacier|kalte|frost/.test(id)).length >= 4;
+  const seed = ids.length * 31 + w;
+
+  // ground kind by smooth votes of nearby places, woods likewise
+  const kind = new Uint8Array(w * h), trees = new Float32Array(w * h);
+  const votes = new Float32Array(9), kn = new Float32Array(9);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    votes.fill(0);
+    votes[G.FOREST] = 0.05;
+    let tw = 0.05, td = 0.05 * (cold ? 0.3 : 0.9);
+    const jx = x + (noise(x / 6, y / 6, 3) - 0.5) * 5, jy = y + (noise(x / 6, y / 6, 7) - 0.5) * 5;
+    for (let k = 0; k < 9; k++) kn[k] = 0.7 + 0.6 * noise(x / 4, y / 4, k * 7 + 1);
+    for (const n of nodes) {
+      const [k, sig, dens] = LAND[n.bg] ?? LAND.forest;
+      const dx = n.x - jx, dy = n.y - jy, lim = sig * 2.6;
+      if (dx > lim || dx < -lim || dy > lim || dy < -lim) continue;
+      const d = Math.hypot(dx, dy);
+      if (d > lim) continue;
+      const wgt = Math.exp(-(d / sig) * (d / sig)) * kn[k];
+      votes[k] += wgt; tw += wgt; td += wgt * dens;
+    }
+    let best = 0;
+    for (let k = 1; k < 9; k++) if (votes[k] > votes[best]) best = k;
+    if (cold && best !== G.ROCK && best !== G.SAND) best = G.SNOW;
+    kind[y * w + x] = best;
+    trees[y * w + x] = td / tw;
+  }
+
+  // water: lakes beside lake places, sea round ships and coasts, ponds in swamps, a river
+  const lakes: Terrain["art"]["lakes"] = [];
+  const edgeDir = (n: Pt) => {
+    const c = [{ d: n.x, x: -1, y: 0 }, { d: w - 1 - n.x, x: 1, y: 0 }, { d: n.y, x: 0, y: -1 }, { d: h - 1 - n.y, x: 0, y: 1 }].sort((a, b) => a.d - b.d)[0];
+    return c;
+  };
+  for (const n of nodes) {
+    if (n.bg === "lake") {
+      let best = { x: n.x, y: n.y + 2.6 }, bs = 1e9;
+      for (let a = 0; a < 8; a++) {
+        const c = { x: n.x + Math.cos((a / 8) * Math.PI * 2) * 3.4, y: n.y + Math.sin((a / 8) * Math.PI * 2) * 2.6 };
+        let sc = nodes.filter((o) => o !== n && ((o.x - c.x) / 3.8) ** 2 + ((o.y - c.y) / 3) ** 2 < 1).length * 10;
+        if (c.x < 1 || c.y < 1 || c.x > w - 2 || c.y > h - 2) sc += 3;
+        sc += hash(a, n.x, n.y) * 0.5;
+        if (sc < bs) { bs = sc; best = c; }
+      }
+      lakes.push({ ...best, rx: 3.1, ry: 2.3, sea: false });
+    } else if (n.bg === "ship" || n.bg === "sea") {
+      lakes.push({ x: n.x, y: n.y, rx: n.bg === "sea" ? 4.6 : 3.6, ry: n.bg === "sea" ? 3.6 : 3, sea: true });
+      const e = edgeDir(n);
+      if (e.d < 12) lakes.push({ x: n.x + e.x * e.d, y: n.y + e.y * e.d, rx: e.x ? e.d * 0.6 + 4 : 6, ry: e.y ? e.d * 0.6 + 4 : 6, sea: true });
+    } else if (n.bg === "coast") {
+      const e = edgeDir(n), off = Math.min(e.d + 3, 4.6);
+      lakes.push({ x: n.x + e.x * off, y: n.y + e.y * off, rx: 3.8, ry: 3.4, sea: true });
+      if (e.d < 12) lakes.push({ x: n.x + e.x * e.d, y: n.y + e.y * e.d, rx: e.x ? e.d * 0.5 + 3.5 : 6, ry: e.y ? e.d * 0.5 + 3.5 : 6, sea: true });
+    } else if (n.bg === "swamp") {
+      lakes.push({ x: n.x + 1.8, y: n.y + 1.3, rx: 1.7, ry: 1.1, sea: false, swamp: true });
+      lakes.push({ x: n.x - 2, y: n.y + 2.2, rx: 1.2, ry: 0.8, sea: false, swamp: true });
+    }
+  }
+  const rivers: Pt[][] = [];
+  const wetNodes = nodes.filter((n) => n.bg === "river" || n.bg === "bridge" || n.bg === "lake");
+  if (wetNodes.length) {
+    const pt = (n: ArtNode): Pt => n.bg === "river" ? { x: n.x + 0.3, y: n.y + 1.3 } : n.bg === "lake" ? (() => { const l = lakes.find((q) => Math.hypot(q.x - n.x, q.y - n.y) < 5 && !q.sea); return l ? { x: l.x, y: l.y } : { x: n.x, y: n.y }; })() : { x: n.x, y: n.y };
+    const left = wetNodes.slice().sort((a, b) => edgeDir(a).d - edgeDir(b).d);
+    const chain = [left[0]];
+    const rest = new Set(left.slice(1));
+    while (rest.size) {
+      const last = chain[chain.length - 1];
+      let nb: ArtNode | null = null, bd = 1e9;
+      for (const o of rest) { const d = dist(o, last); if (d < bd) { bd = d; nb = o; } }
+      if (!nb) break;
+      chain.push(nb); rest.delete(nb);
+    }
+    const pts = chain.map(pt);
+    const e0 = edgeDir(pts[0]), e1 = edgeDir(pts[pts.length - 1]);
+    const course = [{ x: pts[0].x + e0.x * (e0.d + 2), y: pts[0].y + e0.y * (e0.d + 2) }, ...pts];
+    const endEdge = e1.x === e0.x && e1.y === e0.y && pts.length > 1 ? { x: -e0.x, y: -e0.y, d: e0.x > 0 || e0.y > 0 ? (e0.x ? pts[pts.length - 1].x : pts[pts.length - 1].y) : e0.x ? w - pts[pts.length - 1].x : h - pts[pts.length - 1].y } : e1;
+    if (endEdge.d < 30 || pts.length === 1) course.push({ x: pts[pts.length - 1].x + endEdge.x * (endEdge.d + 2), y: pts[pts.length - 1].y + endEdge.y * (endEdge.d + 2) });
+    rivers.push(meander(course, seed));
+  }
+  const wetTile = (x: number, y: number) => {
+    for (const l of lakes) if (((x - l.x) / l.rx) ** 2 + ((y - l.y) / l.ry) ** 2 < 0.8) return true;
+    for (const r of rivers) for (const p of r) if (Math.abs(p.x - x) < 0.7 && Math.abs(p.y - y) < 0.7) return true;
+    return false;
+  };
+
+  // built-up districts: towns and cities, and castles/halls packed together
+  const seeds = nodes.filter((n) => n.bg === "city" || n.bg === "town" || ((n.bg === "castle" || n.bg === "hall") && nodes.filter((o) => o !== n && BUILT.has(o.bg) && dist(o, n) < 3.2).length >= 2));
+  const seedSet = new Set(seeds);
+  const others = nodes.filter((n) => !seedSet.has(n));
+  const district = new Uint16Array(w * h), mask = new Uint8Array(w * h);
+  for (const n of seeds) {
+    let R = n.bg === "city" ? (n.imp >= 4 ? 5.6 : 3.7) : n.bg === "town" ? 2.7 : n.bg === "castle" ? 2.2 : 1.8;
+    let dOther = 99;
+    for (const o of others) dOther = Math.min(dOther, dist(o, n));
+    R = Math.min(R, Math.max(1.3, dOther - 0.9));
+    const rx = Math.round(R * (0.85 + hash(n.x, n.y, 5) * 0.3)), ry = Math.round(R * (0.85 + hash(n.x, n.y, 6) * 0.3));
+    for (let y = n.y - ry; y <= n.y + ry; y++) for (let x = n.x - rx; x <= n.x + rx; x++) {
+      if (x < 0 || y < 0 || x >= w || y >= h) continue;
+      // squarish blocks with the corners cut once the town is large
+      if (rx >= 3 && ry >= 3 && Math.abs(x - n.x) === rx && Math.abs(y - n.y) === ry) continue;
+      if (wetTile(x + 0.5, y + 0.5)) continue;
+      mask[y * w + x] = 1;
+    }
+  }
+  const walled = new Set<number>();
+  let nextId = 0;
+  for (let i = 0; i < w * h; i++) {
+    if (!mask[i] || district[i]) continue;
+    const id = ++nextId, stack = [i], cells: number[] = [];
+    district[i] = id;
+    while (stack.length) {
+      const c = stack.pop()!; cells.push(c);
+      const cx = c % w, cy = (c - cx) / w;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = cx + dx, ny = cy + dy, j = ny * w + nx;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h || !mask[j] || district[j]) continue;
+        district[j] = id; stack.push(j);
+      }
+    }
+    const inside = seeds.filter((n) => district[n.y * w + n.x] === id);
+    const xs = cells.map((c) => c % w), ys = cells.map((c) => (c / w) | 0);
+    const thin = Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) < 4;
+    if (cells.length >= 10 && !thin && (inside.some((n) => n.bg === "city" || n.bg === "town") || inside.length >= 3)) walled.add(id);
+  }
+
+  // roads
+  const roads = new Map<string, { x: number; y: number }[]>();
+  m.edges.forEach(([a, b], i) => { if (m.nodes[a] && m.nodes[b]) roads.set(`${a}|${b}`, roadPoints(m.nodes[a], m.nodes[b], i)); });
+
+  // coarse tile grid, kept for callers that read it
+  const tile = new Uint8Array(w * h), biome: string[] = new Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x;
+    biome[i] = BIOME_OF[kind[i]];
+    tile[i] = district[i] ? T.PAVE : wetTile(x, y) ? T.WATER : trees[i] > 0.55 ? T.OBSTACLE : T.GROUND;
+  }
+  for (const pts of roads.values()) for (const p of pts) { const k = Math.round(p.y) * w + Math.round(p.x); if (k >= 0 && k < w * h) tile[k] = tile[k] === T.WATER || tile[k] === T.PAVE ? T.PAVE : T.ALT; }
+  return { w, h, tile, biome, roads, art: { nodes, kind, trees, district, walled, rivers, lakes, cold } };
 }
 
 const cache = new Map<string, { terrain: Terrain; art: HTMLCanvasElement }>();
@@ -127,43 +238,8 @@ export function renderTerrain(key: string, m: BookMap) {
   const hit = cache.get(key);
   if (hit) return hit;
   const terrain = buildTerrain(m);
-  const { w, h, tile, biome } = terrain;
-  const art = document.createElement("canvas");
-  art.width = w * TS; art.height = h * TS;
-  const c = art.getContext("2d")!;
-  c.imageSmoothingEnabled = false;
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const i = y * w + x, set = tileSet(BIOMES[biome[i]] ?? BIOMES.forest), v = (x * 7 + y * 13) % 4, t = tile[i];
-    const img = t === T.WATER ? set.water[0] : t === T.OBSTACLE ? set.tiles[T.GROUND][v] : (set.tiles[t] ?? set.tiles[T.GROUND])[v];
-    c.drawImage(img, x * TS, y * TS);
-  }
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const i = y * w + x;
-    if (tile[i] !== T.OBSTACLE) continue;
-    const set = tileSet(BIOMES[biome[i]] ?? BIOMES.forest);
-    const tall = set.tall[(x * 7 + y * 13) % set.tall.length];
-    c.drawImage(tall, x * TS + TS / 2 - tall.width / 2, (y + 1) * TS - tall.height);
-  }
-  // place markers
-  for (const n of Object.values(m.nodes)) {
-    const px = n.x * TS + TS / 2, py = n.y * TS + TS / 2;
-    c.fillStyle = "rgba(0,0,0,.35)";
-    c.fillRect(px - 6, py + 3, 12, 3);
-    if (CITY.has(n.bg)) {
-      c.fillStyle = "#cfc6b8"; c.fillRect(px - 7, py - 10, 14, 12);
-      c.fillStyle = "#8a2f2f"; c.fillRect(px - 8, py - 14, 5, 5); c.fillRect(px + 3, py - 14, 5, 5);
-      c.fillStyle = "#3a2a20"; c.fillRect(px - 2, py - 4, 4, 6);
-    } else if (["dungeon", "ruins", "cave", "tunnel", "temple"].includes(n.bg)) {
-      c.fillStyle = "#4a4550"; c.fillRect(px - 6, py - 8, 12, 10);
-      c.fillStyle = "#120f16"; c.fillRect(px - 3, py - 5, 6, 7);
-    } else if (["village", "inn", "camp"].includes(n.bg)) {
-      c.fillStyle = "#9a6a3a"; c.fillRect(px - 5, py - 5, 10, 7);
-      c.fillStyle = "#b8452f"; c.beginPath(); c.moveTo(px - 7, py - 5); c.lineTo(px, py - 11); c.lineTo(px + 7, py - 5); c.fill();
-    } else {
-      c.fillStyle = "#f2c542"; c.fillRect(px - 2, py - 8, 4, 10);
-      c.fillStyle = "#6a4312"; c.fillRect(px - 1, py - 8, 2, 10);
-    }
-  }
+  const { art, fx } = paintMap({ key, w: terrain.w, h: terrain.h, ...terrain.art, roads: [...terrain.roads.values()] });
+  terrain.fx = fx;
   const out = { terrain, art };
   cache.set(key, out);
   return out;
@@ -202,6 +278,27 @@ export interface MapViewOpts {
   here: string;
   label: (place: string) => string;
   onTapPlace?: (place: string) => void;
+}
+
+let GLOW: HTMLCanvasElement | null = null, CLOUD: HTMLCanvasElement | null = null;
+function glowSprite() {
+  if (GLOW) return GLOW;
+  const c = (GLOW = document.createElement("canvas")); c.width = c.height = 32;
+  const g = c.getContext("2d")!, r = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  r.addColorStop(0, "rgba(255,200,110,.6)"); r.addColorStop(0.35, "rgba(255,150,60,.25)"); r.addColorStop(1, "rgba(255,120,40,0)");
+  g.fillStyle = r; g.fillRect(0, 0, 32, 32);
+  return c;
+}
+function cloudSprite() {
+  if (CLOUD) return CLOUD;
+  const c = (CLOUD = document.createElement("canvas")); c.width = 110; c.height = 60;
+  const g = c.getContext("2d")!;
+  for (const [x, y, r] of [[30, 34, 22], [55, 26, 26], [80, 34, 20], [48, 40, 20], [68, 42, 18]]) {
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, "rgba(10,20,30,.8)"); gr.addColorStop(1, "rgba(10,20,30,0)");
+    g.fillStyle = gr; g.fillRect(0, 0, 110, 60);
+  }
+  return c;
 }
 
 /** Interactive map: drag to pan, wheel/pinch buttons to zoom, fog over unknown land. */
@@ -326,6 +423,63 @@ export class WorldMapView {
     this.cv.addEventListener("wheel", (e) => { e.preventDefault(); this.zoomBy(-e.deltaY); }, { passive: false });
   }
 
+  private calm = !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+  /** Light touches over the painted map: water glints, fire glow, chimney smoke, cloud shadows, birds. */
+  private ambient(c: CanvasRenderingContext2D, t: number, ox: number, oy: number, W: number, H: number) {
+    const fx = this.terrain.fx;
+    if (!fx) return;
+    const z = this.zoom;
+    const on = (x: number, y: number, m: number) => { const sx = ox + x * z, sy = oy + y * z; return sx > -m && sy > -m && sx < W + m && sy < H + m; };
+    c.fillStyle = "#eaf8ff";
+    fx.glints.forEach((g, i) => {
+      const ph = (t / 2600 + hash(i, 7)) % 1;
+      if (ph > 0.14 || !on(g.x, g.y, 4)) return;
+      c.globalAlpha = Math.sin((ph / 0.14) * Math.PI) * 0.85;
+      c.fillRect(Math.round(ox + g.x * z), Math.round(oy + g.y * z), Math.ceil(z * (ph > 0.04 && ph < 0.1 ? 2 : 1)), Math.ceil(z));
+    });
+    const gl = glowSprite();
+    fx.fires.forEach((f, i) => {
+      if (!on(f.x, f.y, 60)) return;
+      const fl = 0.75 + 0.25 * Math.sin(t / 83 + i * 2.1) * Math.sin(t / 57 + i);
+      const s = 28 * z * (0.9 + fl * 0.2);
+      c.globalAlpha = fl;
+      c.drawImage(gl, ox + f.x * z - s / 2, oy + f.y * z - s / 2, s, s);
+    });
+    c.fillStyle = "#e6e4e0";
+    fx.smoke.forEach((p, i) => {
+      if (!on(p.x, p.y - 10, 40)) return;
+      for (let k = 0; k < 4; k++) {
+        const ph = (t / 3600 + hash(i, 3) + k / 4) % 1;
+        const x = p.x + ph * 6 + Math.sin(ph * 5 + i) * 1.2, y = p.y - ph * 15, r = 1 + ph * 2.6;
+        c.globalAlpha = (1 - ph) * 0.6 * Math.min(1, ph * 8);
+        c.fillRect(Math.round(ox + (x - r / 2) * z), Math.round(oy + (y - r / 2) * z), Math.ceil(r * z), Math.ceil(r * z));
+      }
+    });
+    // slow cloud shadows and a few birds
+    const mw = this.art.width, mh = this.art.height, cl = cloudSprite();
+    c.imageSmoothingEnabled = true;
+    for (let i = 0; i < 6; i++) {
+      const x = ((hash(i, 11) * (mw + 400) + t * 0.006 * (0.7 + hash(i, 12) * 0.6)) % (mw + 400)) - 200, y = hash(i, 13) * mh;
+      if (!on(x, y, 400 * z)) continue;
+      c.globalAlpha = 0.13;
+      c.drawImage(cl, ox + (x - 110) * z, oy + (y - 60) * z, 220 * z, 120 * z);
+    }
+    c.imageSmoothingEnabled = false;
+    c.globalAlpha = 1;
+    c.fillStyle = "#20242a";
+    for (let f = 0; f < 3; f++) {
+      const span = mw + 600, bx = ((hash(f, 21) * span + t * 0.018) % span) - 300, by = hash(f, 22) * mh + Math.sin(t / 5000 + f) * 30;
+      for (let b = 0; b < 5; b++) {
+        const x = bx - (b % 2 ? 1 : -1) * Math.ceil(b / 2) * 7 - Math.ceil(b / 2) * 2, y = by + Math.ceil(b / 2) * 5;
+        if (!on(x, y, 20)) continue;
+        const flap = Math.sin(t / 110 + b * 1.7 + f) > 0 ? -1 : 1;
+        const X = Math.round(ox + x * z), Y = Math.round(oy + y * z), u = Math.max(1, Math.round(z));
+        c.fillRect(X - 2 * u, Y + flap * u, u, u); c.fillRect(X - u, Y, u, u); c.fillRect(X, Y + u, u, u); c.fillRect(X + u, Y, u, u); c.fillRect(X + 2 * u, Y + flap * u, u, u);
+      }
+    }
+  }
+
   private draw(t: number) {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const W = this.cv.clientWidth, H = this.cv.clientHeight;
@@ -349,6 +503,7 @@ export class WorldMapView {
     if (this.hero.flip) { c.translate(hx, 0); c.scale(-1, 1); c.translate(-hx, 0); }
     c.drawImage(spr, hx - sw / 2, hy - shh, sw, shh);
     c.restore();
+    if (!this.calm) this.ambient(c, t, ox, oy, W, H);
     // fog, smoothed
     c.imageSmoothingEnabled = true;
     c.drawImage(this.fog, ox, oy, this.o.map.w * k, this.o.map.h * k);
