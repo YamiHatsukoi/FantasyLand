@@ -2076,5 +2076,915 @@ function boatFn(c: C, x: number, y: number): Fn {
     g.drawImage(img, Math.round(x + dx), y - 21 + dy);
   };
 }
-// @@BUILD@@
-const BUILD: Partial<Record<Bg, Builder>> & { field: Builder } = { forest: bForest, hill: bHill, road: bRoad, river: bRiver, lake: bLake, field: bForest };
+
+// ------------------------------------------------------------ field
+function wheatFn(c: C, y0: number, y1: number): Fn {
+  const N = 8, frames: HTMLCanvasElement[] = [];
+  const r = seeded(c.s.seed + "wheat");
+  const stalks: { x: number; y: number; h: number; c: number }[] = [];
+  for (let y = y0; y <= y1; y += 2) {
+    const f = (y - y0) / (y1 - y0);
+    for (let x = -4; x < W + 4; x += f < 0.3 ? 1 : 2) if (r.next() < 0.85) stalks.push({ x: x + r.int(0, 1), y: y + r.int(0, 1), h: Math.round(4 + f * 14 + r.next() * 3), c: r.int(0, 3) });
+  }
+  const pal = c.snow ? ["#c8b890", "#d8ccb0", "#b0a080", "#e8e0d0"] : ["#d8a840", "#e8c060", "#c08a30", "#f4dc88"];
+  for (let k = 0; k < N; k++) {
+    const L = new Layer(W, H);
+    const ph = (k / N) * Math.PI * 2;
+    for (const s of stalks) {
+      const f = (s.y - y0) / (y1 - y0);
+      const lean = Math.sin(s.x * 0.045 - ph + s.y * 0.05) * (0.8 + c.wind * 1.6) * (0.4 + f) + c.wind * 1.2;
+      const col = pal[s.c];
+      for (let i = 0; i < s.h; i++) { const u = i / s.h; L.px(Math.round(s.x + lean * u * u * 2), s.y - i, i < s.h * 0.3 ? hs(col, -0.25) : col); }
+      const tx = Math.round(s.x + lean * 2), ty = s.y - s.h;
+      L.rect(tx, ty - 2, 1, 3, hs(col, 0.25)); if (f > 0.5) { L.px(tx - 1, ty - 1, col); L.px(tx + 1, ty, col); }
+    }
+    L.rect(0, y1 + 1, W, H - y1, "rgba(0,0,0,0)");
+    frames.push(prep(c, L, 0));
+  }
+  return (g, t) => g.drawImage(frames[Math.floor(t / (170 - c.wind * 60)) % N], 0, 0);
+}
+function bField(c: C) {
+  const r = c.r; c.horizon = 104;
+  skyLayer(c);
+  countryBackdrop(c, { mtn: r.chance(0.3), fields: true });
+  const L2 = lay(c);
+  // farmstead in the distance
+  const fx = r.int(30, 230);
+  cottage(c, L2, fx, 124, 34, 12, { wall: "#e8dcc4", kind: "timber", roof: "#c8a050", roofKind: "thatch", chimney: true, s: r.int(0, 99) });
+  if (r.chance(0.6)) windmill(c, L2, fx > 160 ? fx - 50 : fx + 80, 124, 0.8);
+  for (let i = 0; i < 3; i++) { const hx = r.int(0, W); L2.p.blob(hx, 120, 6, 5, "#d8b050", { outline: false }); L2.rect(hx - 6, 124, 13, 1, "#8a6a30"); }
+  L2.rect(0, 124, W, H - 124, "#9aa848");
+  commit(c, L2, 0.15);
+  anim(c, wheatFn(c, 124, 146));
+  const L3 = lay(c);
+  ground(c, L3, 146, "dirt", { tufts: 0 });
+  for (let x = 0; x < W; x++) { if (hn(x, 3) > 0.3) L3.px(x, 146, "#8a9a3a"); if (hn(x, 4) > 0.6) L3.px(x, 147, "#7a8a30"); }
+  for (let x = 0; x < W; x += 2) if (hn(x, 5) > 0.5) L3.px(x, 158 + Math.round(hn(x, 6) * 3), "#8a6a40");
+  for (let i = 0; i < 12; i++) { const x = r.int(0, W), y = r.int(144, 150); L3.px(x, y, "#e03a2a"); L3.px(x + 1, y, "#e03a2a"); L3.px(x, y + 1, "#2a1a1a"); }
+  const scx = r.chance(0.5) ? r.int(16, 40) : r.int(280, 304);
+  L3.rect(scx, 118, 2, 34, "#6a4a2a"); L3.rect(scx - 9, 126, 20, 2, "#6a4a2a");
+  L3.rect(scx - 5, 124, 12, 12, "#6a7aa0"); L3.rect(scx - 5, 124, 3, 12, "#8a9ac0"); L3.ellipse(scx + 1, 120, 4, 4, "#e0c890"); L3.rect(scx - 5, 114, 13, 3, "#8a5a3a"); L3.rect(scx - 2, 111, 7, 3, "#8a5a3a");
+  L3.px(scx - 1, 119, "#2a1a1a"); L3.px(scx + 2, 119, "#2a1a1a"); for (let k = 0; k < 4; k++) L3.px(scx - 10 - k % 2, 127 + k, "#e8d070");
+  commit(c, L3, 0);
+  if (!c.wet) { anim(c, birdsFn(c, { y0: 30, y1: 70 })); if (c.dark < 0.5) anim(c, butterfliesFn(4, 112, 140, c.s.seed)); else anim(c, firefliesFn(16, 110, 145, c.s.seed)); }
+  c.groundY = 156; c.slots = stdSlots(154, 3);
+}
+
+// ------------------------------------------------------------ village
+function chickensFn(c: C, n: number, y0: number, y1: number): Fn {
+  const r = seeded(c.s.seed + "chk");
+  const ch = Array.from({ length: n }, () => ({ x: r.int(30, 290), y: r.int(y0, y1), ph: r.next() * 9, col: r.pick(["#f4f0e8", "#c87a3a", "#8a5a3a"]) }));
+  const comb = gc(c, "#e03a2a"), leg = gc(c, "#e8a030");
+  const cols = ch.map((k) => gc(c, k.col));
+  return (g, t) => ch.forEach((k, i) => {
+    const s = t * 0.00025 + k.ph, dir = Math.cos(s) > 0 ? 1 : -1;
+    const x = Math.round(k.x + Math.sin(s) * 14), y = k.y;
+    const peck = Math.sin(t * 0.004 + k.ph * 3) > 0.7 ? 2 : 0;
+    g.fillStyle = cols[i]; g.fillRect(x - 2, y - 4, 5, 3); g.fillRect(x - 3 * dir + (dir < 0 ? 0 : 0), y - 5, 1, 2);
+    g.fillRect(x + 2 * dir, y - 6 + peck, 2, 2);
+    g.fillStyle = comb; g.fillRect(x + 2 * dir + (dir > 0 ? 1 : 0), y - 7 + peck, 1, 1);
+    g.fillStyle = leg; g.fillRect(x, y - 1, 1, 1); g.fillRect(x + 1, y - 1, 1, 1); g.fillRect(x + 3 * dir + (dir > 0 ? 1 : -1), y - 5 + peck, 1, 1);
+  });
+}
+function laundryFn(c: C, x0: number, x1: number, y: number): Fn {
+  const r = seeded(c.s.seed + "laundry");
+  const items: { x: number; w: number; h: number; col: string }[] = [];
+  for (let x = x0 + 4; x < x1 - 8; x += r.int(9, 13)) items.push({ x, w: r.int(5, 8), h: r.int(6, 10), col: gc(c, r.pick(["#f4f0e8", "#a8c8e8", "#e8a0a0", "#c8d890", "#f0d890"])) });
+  const rope = gc(c, "#d8ccb0");
+  return (g, t) => {
+    g.fillStyle = rope;
+    for (let x = x0; x <= x1; x++) { const u = (x - x0) / (x1 - x0); g.fillRect(x, Math.round(y + Math.sin(u * Math.PI) * 3), 1, 1); }
+    for (const it of items) {
+      const u = (it.x - x0) / (x1 - x0), yy = Math.round(y + Math.sin(u * Math.PI) * 3);
+      for (let i = 0; i < it.w; i++) {
+        const sw = Math.round(Math.sin(t * 0.003 * (1 + c.wind) + it.x * 0.3 + i * 0.4) * (0.6 + c.wind * 1.4));
+        g.fillStyle = i % 3 === 2 ? hs(it.col, -0.15) : it.col;
+        g.fillRect(it.x + i, yy + 1, 1, it.h - 2);
+        g.fillRect(it.x + i + sw, yy + it.h - 1, 1, 1);
+      }
+    }
+  };
+}
+function bVillage(c: C) {
+  const r = c.r; c.horizon = 100;
+  skyLayer(c);
+  countryBackdrop(c, { mtn: r.chance(0.35), base: 98 });
+  const L2 = lay(c);
+  treeLine(L2, 122, "#3c7840", { seed: c.s.seed + "vt", h: [12, 22], step: [6, 12], fill: false });
+  const walls = ["#e8dcc4", "#d8c8a8", "#c8b898", "#e0d0c0"], kinds: WallKind[] = ["timber", "timber", "plank", "log", "stone"];
+  const back = r.int(2, 3);
+  for (let i = 0; i < back; i++) {
+    const w = r.int(36, 46), x = Math.round((i + 0.5) * (W / back) - w / 2 + r.int(-20, 20));
+    cottage(c, L2, x, 122, w, r.int(12, 15), { wall: r.pick(walls), kind: r.pick(kinds), roof: r.chance(0.6) ? "#c8a050" : r.pick(["#a85a3a", "#6a7a8a"]), roofKind: r.chance(0.6) ? "thatch" : "shingle", chimney: r.chance(0.7), s: r.int(0, 999), shutters: r.chance(0.5) ? r.pick(["#4a7a5a", "#7a3a3a", "#3a5a8a"]) : undefined });
+  }
+  commit(c, L2, 0.22);
+  const L3 = lay(c);
+  ground(c, L3, 126, "grass", { flowers: 30, tufts: 40 });
+  // trodden village green / square
+  for (let y = 132; y < H; y++) for (let x = 0; x < W; x++) {
+    const f = (y - 132) / (H - 132), d = Math.abs(x - 160) / (120 + f * 100);
+    if (d + vnoise(x, y, 9, 4) * 0.35 < 0.8) L3.px(x, y, c.snow ? (bay(x, y) > 0.5 ? "#dce4f0" : "#c8d0e0") : vnoise(x, y * 2, 5, 5) > 0.55 ? "#b08a5a" : bay(x, y) > 0.7 ? "#8a6a44" : "#a07a4c");
+  }
+  const n = r.int(2, 3), slotsX: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const w = r.int(46, 60), x = Math.round(i * (W / n) + r.int(0, Math.max(1, W / n - w)));
+    slotsX.push(x + w / 2);
+    cottage(c, L3, x, 134, w, r.int(15, 19), { wall: r.pick(walls), kind: r.pick(kinds), roof: r.chance(0.65) ? "#d0a850" : r.pick(["#a85a3a", "#7a5a8a", "#5a7a9a"]), roofKind: r.chance(0.65) ? "thatch" : "shingle", chimney: r.chance(0.8), s: r.int(0, 999), box: r.chance(0.6), lantern: r.chance(0.5), shutters: r.chance(0.5) ? r.pick(["#4a7a5a", "#7a3a3a", "#3a5a8a"]) : undefined });
+  }
+  for (let i = 0; i < 3; i++) { const fx = r.int(-10, 260); fence(L3, fx, fx + r.int(20, 50), 140); }
+  if (r.chance(0.7)) well(c, L3, r.int(40, 280), 144);
+  for (let i = 0; i < 3; i++) { const bx = r.int(10, 300); if (r.chance(0.5)) barrelAt(L3, bx, 140); else crateAt(L3, bx, 140); }
+  for (let i = 0; i < 4; i++) bush(L3, r.int(0, W), 135, r.int(4, 6), "#4a8a3c", r, r.chance(0.4) ? r.pick(["#f0a0c0", "#f8e060", "#ffffff"]) : undefined);
+  commit(c, L3, 0);
+  if (r.chance(0.6)) { const lx = r.int(20, 200); const L = lay(c); for (const px of [lx, lx + 50]) { L.rect(px, 116, 2, 22, "#6a4a2a"); L.px(px, 116, "#8a6a4a"); } commit(c, L, 0); anim(c, laundryFn(c, lx + 1, lx + 50, 118)); }
+  if (r.chance(0.7)) { const L = lay(c); lampPost(c, L, r.chance(0.5) ? r.int(10, 40) : r.int(280, 310), 148); commit(c, L, 0); }
+  anim(c, chickensFn(c, r.int(2, 4), 144, 150));
+  swayTree(c, broadSprite(r, r.int(12, 15), "#4a9040", r.chance(0.3) ? "round" : "oak"), r.chance(0.5) ? r.int(4, 30) : r.int(290, 316), 136);
+  if (!c.wet) anim(c, birdsFn(c, { y0: 20, y1: 50 }));
+  if (c.dark >= 0.5 && !c.wet) anim(c, firefliesFn(8, 120, 150, c.s.seed));
+  c.groundY = 154; c.slots = stdSlots(152, 3);
+}
+
+// ------------------------------------------------------------ town & city
+function cobbles(L: Layer, y0: number, col: string, wet = false, sky = "#8ab0d0") {
+  L.rect(0, y0, W, H - y0, hs(col, -0.5));
+  let y = y0, row = 0;
+  while (y < H) {
+    const f = (y - y0) / (H - y0), rh = Math.round(2 + f * 4);
+    let x = -Math.floor(hn(row, 1) * 10);
+    while (x < W) {
+      const sw = Math.round(3 + f * 7 + hn(row, x, 2) * 3);
+      const cc = hs(col, (hn(row, x, 3) - 0.5) * 0.28);
+      L.rect(x, y, sw - 1, rh - 1, cc);
+      L.rect(x + 1, y, sw - 3, 1, hs(cc, 0.22)); L.px(x, y + 1, hs(cc, 0.12));
+      if (rh > 3) L.rect(x + 1, y + rh - 2, sw - 3, 1, hs(cc, -0.18));
+      if (wet && hn(row, x, 4) > 0.6) L.px(x + 1, y, mix(sky, "#ffffff", 0.3));
+      x += sw;
+    }
+    y += rh; row++;
+  }
+  L.g.fillStyle = "rgba(20,10,30,0.25)"; L.g.fillRect(0, y0, W, 2);
+}
+function puddles(c: C, L: Layer, y0: number, n: number) {
+  const r = seeded(c.s.seed + "pud");
+  for (let i = 0; i < n; i++) { const x = r.int(10, W - 10), y = r.int(y0 + 6, H - 4), w = r.int(6, 16); L.ellipse(x, y, w, Math.max(1, Math.round(w / 6)), mix(c.sky[2], "#3a4a6a", 0.45)); L.span(x - w + 3, x - 2, y - 1, mix(c.sky[3], "#ffffff", 0.2)); }
+}
+function buntingFn(c: C, x0: number, y0: number, x1: number, y1: number): Fn {
+  const cols = ["#e04a4a", "#f2c542", "#4a8ae0", "#f4f0e8", "#4ab060"].map((k) => gc(c, k)), rope = gc(c, "#3a3030");
+  return (g, t) => {
+    const n = Math.round(x1 - x0), sag = 8;
+    for (let i = 0; i <= n; i++) {
+      const u = i / n, x = Math.round(x0 + (x1 - x0) * u), y = Math.round(y0 + (y1 - y0) * u + Math.sin(u * Math.PI) * sag + Math.sin(t * 0.0018 + u * 4) * 0.6 * (0.5 + c.wind));
+      g.fillStyle = rope; g.fillRect(x, y, 1, 1);
+      if (i % 6 === 2) { g.fillStyle = cols[(i / 6 | 0) % cols.length]; const sw = Math.round(Math.sin(t * 0.004 * (1 + c.wind) + i) * c.wind); g.fillRect(x - 1, y + 1, 4, 2); g.fillRect(x + sw, y + 3, 2, 2); g.fillRect(x + sw, y + 5, 1, 1); }
+    }
+  };
+}
+function pigeonsFn(c: C, n: number, y0: number, y1: number): Fn {
+  const r = seeded(c.s.seed + "pig");
+  const ps = Array.from({ length: n }, () => ({ x: r.int(20, 300), y: r.int(y0, y1), ph: r.next() * 9 }));
+  const body = gc(c, "#8a8a9a"), dk = gc(c, "#5a5a6a"), neck = gc(c, "#6a8a7a");
+  return (g, t) => ps.forEach((p) => {
+    const s = t * 0.0003 + p.ph, dir = Math.cos(s * 0.7) > 0 ? 1 : -1, x = Math.round(p.x + Math.sin(s * 0.7) * 10), peck = Math.sin(t * 0.005 + p.ph) > 0.6 ? 1 : 0;
+    g.fillStyle = body; g.fillRect(x - 2, p.y - 3, 4, 2); g.fillStyle = dk; g.fillRect(x - 2 - dir, p.y - 3, 1, 1);
+    g.fillStyle = neck; g.fillRect(x + dir * 2 - (dir < 0 ? 1 : 0), p.y - 4 + peck, 1, 2);
+  });
+}
+function townFar(c: C, col: string, spire = true) {
+  const L = lay(c), r = c.r;
+  for (let x = -6; x < W; x += r.int(10, 18)) {
+    const w = r.int(10, 18), h = r.int(8, 18), b = c.horizon + 14;
+    L.rect(x, b - h, w, h + 30, hs(col, (r.next() - 0.5) * 0.1));
+    L.tex([[x - 1, b - h], [x + w / 2, b - h - w * 0.6], [x + w + 1, b - h]], () => hs(col, -0.12));
+    if (r.chance(0.4)) addWin(c, x + 2 + r.int(0, w - 6), b - h + 3, 3, 3, true);
+  }
+  if (spire) {
+    const sx = r.int(60, 260), b = c.horizon + 4;
+    L.rect(sx, b - 26, 10, 40, hs(col, 0.06)); L.tex([[sx - 1, b - 26], [sx + 5, b - 50], [sx + 11, b - 26]], () => hs(col, -0.1));
+    L.rect(sx + 3, b - 20, 3, 5, hs(col, -0.3)); L.px(sx + 5, b - 52, hs(col, -0.2));
+  }
+  commit(c, L, 0.45);
+}
+function bTown(c: C) {
+  const r = c.r; c.horizon = 96;
+  skyLayer(c);
+  countryBackdrop(c, { base: 92 });
+  townFar(c, "#8a8494");
+  const L2 = lay(c);
+  const base = 136;
+  let x = -r.int(4, 18);
+  const signs = ["mug", "sword", "bread", "potion", "key", "coin"];
+  const tops: { x: number; y: number }[] = [];
+  while (x < W) {
+    const w = r.int(30, 44), floors = r.int(1, 2);
+    const info = townHouse(c, L2, x, base, w, floors, {
+      wall: r.pick(["#efe4cc", "#e8d8b8", "#d8c8b0", "#f0e0d0", "#e0d4c0"]), kind: r.chance(0.75) ? "timber" : "plank",
+      ground: r.pick(["#a8a4a0", "#b0a090", "#9a9aa4"]), groundKind: r.chance(0.6) ? "stone" : "brick",
+      roof: r.pick(["#a8503a", "#8a4a3a", "#5a6a80", "#7a5a4a", "#b86a3a"]), roofKind: r.chance(0.6) ? "shingle" : "slate",
+      s: r.int(0, 999), shop: r.chance(0.6), sign: r.chance(0.5) ? r.pick(signs) : undefined, awning: r.chance(0.4) ? r.pick(["#c84a4a", "#4a7ac8", "#4a9a5a"]) : undefined, chimney: r.chance(0.4),
+    });
+    tops.push({ x: x + w / 2, y: info.top });
+    x += w + r.int(0, 3);
+  }
+  commit(c, L2, 0);
+  const L3 = lay(c);
+  cobbles(L3, base, "#9a9488", c.wet, c.sky[3]);
+  if (c.wet) puddles(c, L3, base, 5);
+  if (r.chance(0.5)) { // market stall
+    const sx = r.int(30, 230), sc0 = r.pick(["#c84a4a", "#4a7ac8", "#d8a030"]);
+    for (const px of [sx, sx + 38]) L3.rect(px, 128, 2, 16, "#6a4a2a");
+    for (let i = 0; i < 42; i++) { const st = Math.floor(i / 4) % 2 ? sc0 : "#f4ece0"; L3.rect(sx - 2 + i, 122, 1, 6, st); if (i % 4 === 1) L3.px(sx - 2 + i, 128, st); }
+    L3.rect(sx, 136, 40, 3, "#8a5a34"); L3.rect(sx, 136, 40, 1, "#b08050");
+    for (let i = 0; i < 12; i++) { const col = r.pick(["#e04a4a", "#f2c542", "#7ac050", "#e8902a", "#a060c0"]); L3.ellipse(sx + 3 + i * 3, 135, 1, 1, col); }
+  }
+  for (let i = 0; i < 3; i++) { const bx = r.int(4, 310); if (r.chance(0.5)) barrelAt(L3, bx, 140); else crateAt(L3, bx, 140); }
+  commit(c, L3, 0);
+  const L4 = lay(c);
+  lampPost(c, L4, r.int(20, 70), 142); lampPost(c, L4, r.int(250, 300), 142);
+  commit(c, L4, 0);
+  if (tops.length > 2 && r.chance(0.6)) { const a = tops[r.int(0, tops.length - 2)]; anim(c, buntingFn(c, a.x, 108, a.x + r.int(80, 140), 110)); }
+  anim(c, pigeonsFn(c, r.int(2, 5), 146, 158));
+  if (!c.wet) anim(c, birdsFn(c, { y0: 16, y1: 40 }));
+  c.groundY = 154; c.slots = stdSlots(152, 3);
+}
+function fountainFn(c: C, x: number, y: number): Fn {
+  const wcol = gc(c, "#bfe0f8"), wcol2 = gc(c, "#8ac0e8");
+  return (g, t) => {
+    for (let i = 0; i < 26; i++) {
+      const a = ((t * 0.0012 + i / 26) % 1), side = i % 2 ? 1 : -1;
+      const px = x + side * a * 12, py = y - 16 + (-(1 - (2 * a - 1) ** 2)) * 6 + a * 14;
+      g.fillStyle = i % 3 ? wcol : wcol2; g.fillRect(Math.round(px), Math.round(py), 1, 1);
+    }
+    g.fillStyle = wcol; for (let k = 0; k < 4; k++) g.fillRect(x, y - 22 + Math.round(((t * 0.02 + k * 2) % 6)), 1, 1);
+    for (let k = 0; k < 6; k++) { const a = Math.sin(t * 0.004 + k * 1.3); if (a > 0.3) g.fillRect(x - 14 + k * 5, y - 2, 2, 1); }
+  };
+}
+function bCity(c: C) {
+  const r = c.r; c.horizon = 96;
+  skyLayer(c);
+  const L0 = lay(c);
+  hills(L0, c, 100, 18, "#7a9478", { seed: "ch" });
+  // castle on the hill behind the city
+  const kx = r.int(80, 240);
+  for (const [dx, w, h] of [[-26, 10, 30], [-8, 16, 46], [12, 10, 36], [26, 8, 24]] as const) {
+    L0.rect(kx + dx, 96 - h, w, h + 10, "#9a98a8"); L0.rect(kx + dx + w - 2, 96 - h, 2, h + 10, "#7a7888");
+    L0.tex([[kx + dx - 1, 96 - h], [kx + dx + w / 2, 96 - h - w], [kx + dx + w + 1, 96 - h]], () => "#5a5a7a");
+    addWin(c, kx + dx + w / 2 - 1, 96 - h + 6, 3, 4, true);
+  }
+  commit(c, L0, 0.45);
+  townFar(c, "#9a90a0", false);
+  const variant = r.chance(0.5) ? "gate" : "plaza";
+  const L2 = lay(c);
+  const wall = "#b0aaa8";
+  if (variant === "gate") {
+    // houses peeking over the wall
+    for (let x = -10; x < W; x += r.int(18, 30)) { const w = r.int(18, 26), h = r.int(22, 40); wallTex(L2.p, x, 132 - h, w, h, r.pick(["#d8ccb8", "#c8c0b0", "#e0d4c0"]), "timber", x + 99); L2.tex([[x - 2, 132 - h], [x + w / 2, 132 - h - w * 0.7], [x + w + 2, 132 - h]], (px, py) => roofCol("slate", "#6a6a88", px, py, 0.5, (px - x) / w, 4)); addWin(c, x + 4, 132 - h + 4, 5, 5, r.chance(0.6)); }
+    castleWall(c, L2, 0, W, 108, 140, wall, 11, { slits: true });
+    const gx = 160 + r.int(-30, 30);
+    squareTower(c, L2, gx - 44, 140, 26, 54, wall, { s: 21, flag: r.pick(["#c83a3a", "#3a5ac8", "#e0b030"]), roof: r.chance(0.5) ? "#4a4a6a" : undefined });
+    squareTower(c, L2, gx + 18, 140, 26, 54, wall, { s: 22, flag: r.pick(["#c83a3a", "#3a5ac8", "#e0b030"]), roof: r.chance(0.5) ? "#4a4a6a" : undefined });
+    wallTex(L2.p, gx - 18, 100, 36, 40, wall, "stone", 30);
+    castleWall(c, L2, gx - 18, gx + 18, 100, 104, wall, 31);
+    gateArch(L2, gx, 140, 22, 30, wall, r.chance(0.6), "#c8b48a");
+    const bc = r.pick(["#a82a2a", "#2a4aa8", "#2a7a3a"]);
+    banner(L2, gx - 40, 112, 10, 22, bc, "#f2c542", r.int(0, 2)); banner(L2, gx + 30, 112, 10, 22, bc, "#f2c542", r.int(0, 2));
+    torch(c, L2, gx - 15, 116); torch(c, L2, gx + 15, 116);
+  } else {
+    let x = -r.int(4, 14);
+    while (x < W) {
+      const w = r.int(34, 46);
+      townHouse(c, L2, x, 138, w, r.int(2, 3), { wall: r.pick(["#d8d0c4", "#c8c4bc", "#e0d8cc"]), kind: r.chance(0.5) ? "stone" : "brick", ground: "#a8a4a0", groundKind: "stone", roof: r.pick(["#5a6a80", "#4a5a70", "#7a4a3a"]), roofKind: "slate", s: r.int(0, 999), shop: r.chance(0.5), sign: r.chance(0.4) ? r.pick(["mug", "sword", "potion", "key", "coin"]) : undefined, jetty: false, chimney: r.chance(0.4) });
+      x += w + 1;
+    }
+  }
+  commit(c, L2, 0);
+  const L3 = lay(c);
+  cobbles(L3, variant === "gate" ? 140 : 138, "#a49e94", c.wet, c.sky[3]);
+  if (c.wet) puddles(c, L3, 140, 5);
+  let fx = -1;
+  if (variant === "plaza" && r.chance(0.7)) {
+    fx = r.int(120, 200);
+    L3.ellipse(fx, 146, 22, 5, "#7a7a84"); L3.ellipse(fx, 145, 20, 4, "#3a6a98"); L3.rect(fx - 22, 146, 45, 4, "#9a9aa4"); L3.rect(fx - 22, 146, 45, 1, "#c4c4cc");
+    L3.rect(fx - 2, 128, 4, 18, "#a4a4ae"); L3.ellipse(fx, 128, 6, 2, "#9a9aa4"); L3.rect(fx - 1, 122, 2, 6, "#a4a4ae");
+  }
+  commit(c, L3, 0);
+  if (fx > 0) anim(c, fountainFn(c, fx, 146));
+  const L4 = lay(c);
+  lampPost(c, L4, r.int(14, 60), 150); lampPost(c, L4, r.int(260, 306), 150);
+  commit(c, L4, 0);
+  anim(c, pigeonsFn(c, r.int(2, 5), 150, 162));
+  if (!c.wet) anim(c, birdsFn(c, { y0: 16, y1: 40 }));
+  c.groundY = 156; c.slots = fx > 0 ? stdSlots(158, 2, [36, 76, 116, 204, 244, 284]) : stdSlots(156, 3);
+}
+
+// ------------------------------------------------------------ castle
+function bCastle(c: C) {
+  const r = c.r; c.horizon = 108;
+  skyLayer(c);
+  const L0 = lay(c);
+  mountains(L0, c, 112, r.int(40, 60), "#7a84a4", { snow: r.chance(0.6) ? 80 : undefined, seed: "cm" });
+  commit(c, L0, 0.55);
+  const L1 = lay(c);
+  hills(L1, c, 126, 16, "#6a9a58", { freq: 0.014, trees: "#3c7a3c", seed: "crise" });
+  commit(c, L1, 0.15);
+  const L2 = lay(c);
+  const stone = r.pick(["#b4aca4", "#a8a8b4", "#c0b098"]), roof = r.pick(["#3a4a7a", "#7a3a3a", "#3a5a4a", "#4a4a6a"]), flag = r.pick(["#d83a3a", "#3a5ad8", "#e8c030", "#f4f4f4"]);
+  const cx = 160 + r.int(-30, 30), base = 132;
+  // keep
+  squareTower(c, L2, cx - 22, base - 20, 44, 62, stone, { s: 1, flag, roof: r.chance(0.5) ? roof : undefined });
+  roundTower(c, L2, cx - 34, base - 14, 14, 76, stone, { roof, flag, s: 2 });
+  roundTower(c, L2, cx + 36, base - 14, 12, 64, stone, { roof, flag, s: 3 });
+  // curtain wall with towers
+  castleWall(c, L2, cx - 120, cx + 120, base - 34, base, stone, 5, { slits: true });
+  for (const dx of [-120, -64, 64, 120]) roundTower(c, L2, cx + dx, base, 18, 50, stone, { roof: r.chance(0.6) ? roof : undefined, flag: r.chance(0.5) ? flag : undefined, s: dx + 200 });
+  // gatehouse
+  wallTex(L2.p, cx - 16, base - 44, 32, 44, stone, "stone", 7);
+  castleWall(c, L2, cx - 18, cx + 18, base - 44, base - 40, stone, 8);
+  gateArch(L2, cx, base, 18, 24, stone, false);
+  banner(L2, cx - 30, base - 30, 8, 18, flag, "#f2c542", 0); banner(L2, cx + 22, base - 30, 8, 18, flag, "#f2c542", 0);
+  torch(c, L2, cx - 12, base - 26); torch(c, L2, cx + 12, base - 26);
+  commit(c, L2, 0.04);
+  water(c, 132, 140, { col: "#3a6a7a", amp: 0.8, glints: 12, murk: true });
+  const L3 = lay(c);
+  ground(c, L3, 140, "grass", { flowers: 18, tufts: 40 });
+  // drawbridge & road
+  L3.tex([[cx - 10, 130], [cx + 10, 130], [cx + 14, 141], [cx - 14, 141]], (px, py) => ((px - cx + 20) % 4 === 0 ? "#5a3a20" : py === 130 ? "#b08a5a" : "#8a6440"));
+  for (let y = 141; y < H; y++) { const f = (y - 141) / (H - 141), hw = 14 + f * 50; for (let x = Math.round(cx - hw); x <= cx + hw; x++) if (hn(x, y, 3) > Math.abs(x - cx) / hw * 0.6) L3.px(x, y, vnoise(x, y, 4, 2) > 0.5 ? "#a8906a" : "#988060"); }
+  L3.line(cx - 10, 130, cx - 16, 108, "#3a3030"); L3.line(cx + 10, 130, cx + 16, 108, "#3a3030");
+  commit(c, L3, 0);
+  if (!c.wet) anim(c, birdsFn(c, { y0: 20, y1: 50 }));
+  c.groundY = 154; c.slots = stdSlots(152, 3);
+}
+
+// ------------------------------------------------------------ ruins
+function arch(L: Layer, x: number, base: number, w: number, h: number, col: string, s: number, broken = 0) {
+  const pw = 7;
+  column(L, x, base - h, base, pw, col, { s, ivy: hn(s, 1) > 0.4 });
+  column(L, x + w - pw, base - h + (broken ? Math.round(broken) : 0), base, pw, col, { s: s + 1, broken: broken > 0, ivy: hn(s, 2) > 0.5 });
+  if (!broken) {
+    const cx = x + w / 2, rr = (w - pw * 2) / 2 + 1, top = base - h;
+    for (let a = Math.PI; a <= Math.PI * 2 + 0.01; a += 0.12) {
+      const ax = cx + Math.cos(a) * (rr + 2), ay = top + Math.sin(a) * (rr + 2) * 0.9;
+      L.rect(Math.round(ax) - 2, Math.round(ay) - 2, 5, 4, hs(col, (hn(Math.round(a * 10), s) - 0.5) * 0.2));
+      L.px(Math.round(ax) - 2, Math.round(ay) - 2, hs(col, 0.3));
+    }
+  }
+}
+function bRuins(c: C) {
+  const r = c.r; c.horizon = 106;
+  skyLayer(c);
+  countryBackdrop(c, { mtn: r.chance(0.5), hillCol: "#7a9478" });
+  const stone = r.pick(["#c8bca8", "#b4b0a8", "#c0b4a0"]);
+  const L2 = lay(c);
+  // ruined wall with empty arched windows
+  const wx = r.int(-20, 120), ww = r.int(120, 190), wb = 132;
+  for (let x = wx; x < wx + ww; x++) {
+    const h = 26 + Math.round(Math.sin((x - wx) * 0.05) * 10 + vnoise(x, 0, 6, 3) * 22);
+    for (let y = wb - h; y < wb; y++) {
+      const row = Math.floor((y - wb) / 4), bx = Math.floor((x + (row % 2) * 4) / 8);
+      const cc = hs(stone, (hn(row, bx, 9) - 0.5) * 0.24 - 0.04);
+      L2.px(x, y, (y - wb) % 4 === 0 || (x + (row % 2) * 4) % 8 === 0 ? hs(stone, -0.38) : y === wb - h ? hs(cc, 0.25) : cc);
+    }
+  }
+  for (let ax = wx + 12; ax < wx + ww - 20; ax += 30) {
+    for (let y = 104; y < 124; y++) for (let x = ax; x < ax + 12; x++) { const dx = x - ax - 5.5, dy = y - 110; if (dy > 0 || dx * dx + dy * dy < 36) if (L2.solid(x, y)) L2.px(x, y, mix(c.sky[3], "#ffffff", 0.1)); }
+    L2.g.clearRect(ax, 106, 12, 18);
+    for (let y = 104; y < 124; y++) L2.px(ax - 1, y, hs(stone, 0.2));
+  }
+  for (let i = 0; i < 40; i++) ivy(L2, wx + r.int(0, ww), wb, r.int(4, 20), r.int(0, 99));
+  commit(c, L2, 0.18);
+  const L3 = lay(c);
+  ground(c, L3, 132, "meadow", { flowers: 30, tufts: 60 });
+  // broken colonnade
+  const n = r.int(3, 5);
+  for (let i = 0; i < n; i++) {
+    const x = Math.round(20 + (i + r.next() * 0.4) * (280 / n)), h = r.int(40, 78), broken = r.chance(0.6);
+    column(L3, x, 140 - h, 140, 9, stone, { broken, ivy: r.chance(0.6), s: i * 7 + 1 });
+    if (!broken && i < n - 1 && r.chance(0.5)) { L3.rect(x - 3, 140 - h - 5, 280 / n * 0.8, 5, stone); L3.rect(x - 3, 140 - h - 5, 280 / n * 0.8, 1, hs(stone, 0.25)); L3.rect(x - 3, 140 - h - 1, 280 / n * 0.8, 1, hs(stone, -0.4)); }
+  }
+  if (r.chance(0.5)) arch(L3, r.int(40, 200), 140, 46, 62, stone, 3, r.chance(0.5) ? 20 : 0);
+  // fallen drums and blocks
+  for (let i = 0; i < 6; i++) {
+    const x = r.int(0, W), y = r.int(142, 172), w = r.int(8, 16), h = r.int(5, 8);
+    if (r.chance(0.5)) { L3.rect(x, y - h, w, h, stone); L3.rect(x, y - h, w, 1, hs(stone, 0.3)); L3.rect(x + w - 2, y - h, 2, h, hs(stone, -0.3)); L3.ellipse(x, y - h / 2, 2, h / 2, hs(stone, 0.15)); }
+    else rock(L3, x, y, w, h, stone, r, "#5a9a3a");
+  }
+  if (r.chance(0.5)) plant(L3, deadTreeSprite(r, r.int(40, 60)), r.chance(0.5) ? r.int(10, 60) : r.int(260, 310), 140);
+  commit(c, L3, 0);
+  anim(c, birdsFn(c, { y0: 30, y1: 70, col: "#1a1418", n: r.int(2, 4) }));
+  c.front.push(motesFn(16, 0, W, 60, 160, c.s.seed, c.dark > 0.5 ? "#a8c0ff" : "#fff0c0", 0.5));
+  if (c.s.time !== "day" || c.fog) c.front.push(fogFn(c, 120, 50, 0.5, 0.005));
+  frontFoliage(c, "#4a8a3c", { corners: true });
+  c.groundY = 154; c.slots = stdSlots(152, 3);
+}
+
+// ------------------------------------------------------------ swamp
+function bubblesFn(c: C, y0: number, y1: number): Fn {
+  const col = gc(c, "#a8b890");
+  return (g, t) => {
+    g.fillStyle = col;
+    for (let i = 0; i < 6; i++) {
+      const per = 2200 + hn(i, 1) * 1800, k = Math.floor(t / per), a = (t % per) / per;
+      const x = Math.round(20 + hn(i, k, 2) * 280), y = Math.round(y0 + hn(i, k, 3) * (y1 - y0));
+      if (a < 0.7) { const s = a < 0.35 ? 1 : 2; g.globalAlpha = 0.9; g.fillRect(x, y - s, s, s); }
+      else { g.globalAlpha = 1 - a; g.fillRect(x - 2, y, 1, 1); g.fillRect(x + 2, y, 1, 1); g.fillRect(x, y - 2, 1, 1); }
+    }
+    g.globalAlpha = 1;
+  };
+}
+function bSwamp(c: C) {
+  const r = c.r; c.horizon = 100;
+  c.sky = c.sky.map((k) => mix(k, "#4a6a50", 0.25));
+  c.haze = mix(c.haze, "#8aa088", 0.4);
+  skyLayer(c);
+  const L1 = lay(c);
+  treeLine(L1, 110, "#4a6450", { seed: c.s.seed + "sw1", h: [10, 22], step: [6, 14], pine: 0.2 });
+  for (let x = 0; x < W; x += r.int(20, 40)) plant(L1, deadTreeSprite(r, r.int(26, 40), "#4a5048"), x, 112);
+  commit(c, L1, 0.55);
+  const L2 = lay(c);
+  for (let x = -10; x < W + 10; x += r.int(28, 50)) plant(L2, r.chance(0.5) ? broadSprite(r, r.int(12, 16), "#4a6a38", "willow") : deadTreeSprite(r, r.int(44, 64), "#3e3a34"), x, 122);
+  L2.rect(0, 120, W, 3, "#3a4a30");
+  for (let x = 0; x < W; x++) if (hn(x, 8) > 0.4) L2.px(x, 119, "#4a5a34");
+  commit(c, L2, 0.25);
+  water(c, 122, 148, { col: "#3e5040", amp: 0.6, glints: 10, reflect: 0.45, murk: true });
+  anim(c, bubblesFn(c, 126, 146));
+  const L3 = lay(c);
+  // lily pads & duckweed on the water, then muddy hummocks the party stands on
+  for (let i = 0; i < 22; i++) { const x = r.int(0, W), y = r.int(126, 146); L3.ellipse(x, y, r.int(2, 4), 1, "#4a7a34"); L3.px(x - 1, y - 1, "#6a9a44"); if (r.chance(0.2)) { L3.px(x + 1, y - 1, "#e8e0f0"); L3.px(x + 1, y - 2, "#f8a0c8"); } }
+  for (let i = 0; i < 160; i++) L3.px(r.int(0, W), r.int(124, 147), r.chance(0.5) ? "#5a7a34" : "#6a8a3a");
+  const p = r.next() * 9, top = (x: number) => 146 + Math.sin(x * 0.04 + p) * 3 + Math.sin(x * 0.11) * 1.5;
+  ground(c, L3, 143, "mud", { top, tufts: 40 });
+  for (let i = 0; i < 6; i++) { const x = r.int(0, W), y = r.int(150, 176); L3.ellipse(x, y, r.int(6, 14), r.int(1, 2), mix("#3e5040", c.sky[3], 0.25)); }
+  for (let i = 0; i < 5; i++) { const x = r.int(0, W), y = Math.round(top(x)) + 2; for (let k = 0; k < 3; k++) L3.line(x, y, x + r.int(-8, 8), y + r.int(3, 7), "#3a3028"); }
+  commit(c, L3, 0);
+  reeds(c, [0, W], 140, 150, 30);
+  anim(c, firefliesFn(c.dark > 0.4 ? 20 : 8, 100, 150, c.s.seed, "#d8ffb0", "#80ff90"));
+  c.front.push(fogFn(c, 104, 60, 0.7, 0.004, c.dark > 0.6 ? "#3a5a50" : "#b8c8b0"));
+  c.front.push(fogFn(c, 136, 50, 0.5, -0.008, c.dark > 0.6 ? "#3a5a50" : "#c0d0b8"));
+  frontFoliage(c, "#4a6a38", { kind: "reed" });
+  c.groundY = 158; c.slots = stdSlots(156, 3);
+}
+
+// ------------------------------------------------------------ mountain
+function eagleFn(c: C): Fn {
+  const col = gc(c, "#2a2028"), r = seeded(c.s.seed + "eagle");
+  const cx = r.int(80, 240), cy = r.int(30, 50);
+  return (g, t) => {
+    const a = t * 0.00035, x = Math.round(cx + Math.cos(a) * 50), y = Math.round(cy + Math.sin(a) * 12);
+    const f = Math.floor(t / 300) % 6 === 0 ? 1 : 0;
+    g.fillStyle = col; g.fillRect(x - 1, y, 3, 1); g.fillRect(x - 5, y - 1 + f, 4, 1); g.fillRect(x + 2, y - 1 + f, 4, 1); g.fillRect(x - 6, y - f, 1, 1); g.fillRect(x + 6, y - f, 1, 1);
+  };
+}
+function bMountain(c: C) {
+  const r = c.r; c.horizon = 112;
+  skyLayer(c);
+  const L0 = lay(c);
+  mountains(L0, c, 112, r.int(50, 70), "#8a94b8", { snow: 82, seed: "m0", peaks: r.int(3, 5) });
+  commit(c, L0, 0.5);
+  // sea of cloud between the ranges
+  const cloudBand = (y: number, a: number) => { const L = lay(c); const cr = seeded(c.s.seed + "mc" + y); for (let x = -20; x < W + 20; x += cr.int(14, 26)) L.p.blob(x, y, cr.int(14, 26), cr.int(4, 8), c.cloudCols[1], { outline: false, hi: 0.2, lo: -0.15 }); L.rect(0, y, W, 10, c.cloudCols[1]); commit(c, L, 0, { grade: false }); void a; };
+  if (r.chance(0.6)) cloudBand(116, 1);
+  const L1 = lay(c);
+  mountains(L1, c, 130, r.int(36, 52), "#6a7090", { snow: 96, seed: "m1" });
+  for (let i = 0; i < 10; i++) plant(L1, pineSprite(r, r.int(10, 16), "#2a5a48"), r.int(0, W), r.int(124, 132));
+  commit(c, L1, 0.22);
+  const L3 = lay(c);
+  const p = r.next() * 9, top = (x: number) => 136 + Math.sin(x * 0.02 + p) * 5 + vnoise(x, 0, 7, 3) * 4;
+  ground(c, L3, 132, "rock", { top, tufts: 24, flowers: 0 });
+  for (let i = 0; i < 26; i++) { const x = r.int(0, W), y = r.int(140, 178); L3.rect(x, y, r.int(4, 12), 1, "#4a4a58"); }
+  if (!c.snow) for (let i = 0; i < 6; i++) { const x = r.int(0, W), y = r.int(140, 175); L3.ellipse(x, y, r.int(5, 12), 1, "#e8eef8"); }
+  for (let i = 0; i < 5; i++) rock(L3, r.int(0, W), r.int(140, 176), r.int(12, 28), r.int(7, 14), "#7a7a88", r, r.chance(0.4) ? "#5a8a4a" : undefined);
+  if (r.chance(0.6)) { const kx = r.int(30, 290), ky = Math.round(top(kx)) + 6; for (let k = 0; k < 5; k++) { const w = 9 - k * 2; L3.rect(kx - w / 2, ky - (k + 1) * 3, w, 3, k % 2 ? "#9a9aa4" : "#888894"); L3.px(kx - w / 2, ky - (k + 1) * 3, "#c8c8d0"); } }
+  for (const side of [0, 1]) if (r.chance(0.6)) { const T = pineSprite(r, r.int(40, 60), "#2a5a48"); plant(L3, T, side ? r.int(285, 315) : r.int(5, 35), Math.round(top(side ? 300 : 20)) + 4); }
+  commit(c, L3, 0);
+  anim(c, eagleFn(c));
+  if (!c.snow && (c.s.weather === "wind" || r.chance(0.5))) c.front.push(snowDriftFn(c));
+  frontFoliage(c, "#5a6a58", { kind: "rock" });
+  c.groundY = 156; c.slots = stdSlots(154, 3);
+}
+function snowDriftFn(c: C): Fn {
+  const r = seeded(c.s.seed + "drift");
+  const ps = Array.from({ length: 30 }, () => ({ x: r.next() * W, y: rng(r, 120, 178), ph: r.next() * 9, sp: rng(r, 0.03, 0.07) }));
+  return (g, t) => { g.fillStyle = "#f0f4ff"; for (const p of ps) { const x = ((p.x + t * p.sp * (1 + c.wind)) % (W + 20)) - 10, y = p.y + Math.sin(t * 0.003 + p.ph) * 2; g.globalAlpha = 0.5; g.fillRect(Math.round(x), Math.round(y), 1, 1); } g.globalAlpha = 1; };
+}
+
+// ------------------------------------------------------------ bridge
+function bBridge(c: C) {
+  const r = c.r; c.horizon = 98;
+  skyLayer(c);
+  countryBackdrop(c, { mtn: r.chance(0.6), snow: r.chance(0.4), base: 96 });
+  const L2 = lay(c);
+  // valley banks converging toward the river
+  for (let y = 112; y < 130; y++) { const f = (y - 112) / 18; L2.rect(0, y, 120 - f * 90, 1, hs("#4a8a3c", -f * 0.2)); L2.rect(200 + f * 90, y, W, 1, hs("#4a8a3c", -f * 0.2)); }
+  treeLine(L2, 114, "#3a7040", { seed: c.s.seed + "bt", h: [10, 20], step: [5, 10], pine: 0.5, fill: false });
+  commit(c, L2, 0.25);
+  water(c, 114, H, { col: "#3a74a4", amp: 1.4, glints: 40 });
+  const stone = r.chance(0.6);
+  const L3 = lay(c);
+  if (stone) {
+    const sc = r.pick(["#b0a898", "#a4a0a4", "#c0b4a0"]);
+    // far parapet
+    wallTex(L3.p, 0, 128, W, 10, sc, "stone", 4);
+    L3.rect(0, 127, W, 2, hs(sc, 0.25)); L3.rect(0, 137, W, 1, hs(sc, -0.4));
+    // deck
+    cobbles(L3, 138, hs(sc, -0.08), c.wet, c.sky[3]);
+    L3.g.clearRect(0, 156, W, H - 156);
+    // front face with arches showing the river below
+    wallTex(L3.p, 0, 156, W, 24, sc, "stone", 5);
+    L3.rect(0, 156, W, 2, hs(sc, 0.3)); L3.rect(0, 158, W, 1, hs(sc, -0.3));
+    for (let ax = 30; ax < W; ax += 100) {
+      for (let y = 164; y < H; y++) for (let x = ax - 30; x < ax + 30; x++) { const dx = (x - ax) / 30, dy = (y - 186) / 22; if (dx * dx + dy * dy < 1) L3.g.clearRect(x, y, 1, 1); }
+      for (let a = Math.PI; a < Math.PI * 2; a += 0.1) L3.rect(Math.round(ax + Math.cos(a) * 31) - 1, Math.round(186 + Math.sin(a) * 23) - 1, 3, 3, hs(sc, 0.12));
+    }
+    for (let x = 0; x < W; x += 2) if (hn(x, 77) > 0.6) L3.px(x, 157 + Math.floor(hn(x, 78) * 18), "#4a7a3a");
+  } else {
+    const wd = "#9a6a40";
+    for (let x = 0; x < W; x += 18) { L3.rect(x, 116, 3, 24, hs(wd, -0.2)); L3.px(x, 116, hs(wd, 0.3)); }
+    for (const ry of [120, 128]) { for (let x = 0; x < W; x++) L3.px(x, ry + Math.round(Math.sin((x % 18) / 18 * Math.PI) * 2), "#c8b080"); }
+    for (let y = 138; y < 158; y += 3) for (let x = 0; x < W; x += 1) { const cc = hs(wd, (hn(Math.floor(x / 26), y, 3) - 0.5) * 0.3 + (y - 138) * 0.004); L3.px(x, y, (x + y * 7) % 26 === 0 ? hs(wd, -0.4) : cc); L3.px(x, y + 1, cc); L3.px(x, y + 2, hs(cc, -0.3)); }
+    L3.rect(0, 158, W, 3, hs(wd, -0.35));
+    for (let x = 6; x < W; x += 40) { L3.rect(x, 158, 5, 22, "#5a3e28"); L3.rect(x, 158, 1, 22, "#7a5a3a"); }
+    L3.line(0, 162, W, 162, "#4a3020");
+  }
+  commit(c, L3, 0);
+  anim(c, fishFn(c, 120, 135));
+  if (!c.wet) anim(c, birdsFn(c, { y0: 20, y1: 60 }));
+  c.groundY = 150; c.slots = stdSlots(150, 1);
+}
+
+// ------------------------------------------------------------ camp
+function tent(L: Layer, x: number, base: number, w: number, h: number, col: string) {
+  const cx = x + w / 2;
+  L.tex([[x, base], [cx, base - h], [x + w, base]], (px, py) => {
+    const u = (px - x) / w;
+    const fold = Math.floor(u * 6) % 2;
+    let cc = u < 0.5 ? (fold ? col : hs(col, 0.08)) : fold ? hs(col, -0.2) : hs(col, -0.26);
+    if (py > base - 2) cc = hs(cc, -0.15);
+    return cc;
+  });
+  L.tex([[cx - w * 0.16, base], [cx, base - h * 0.55], [cx + w * 0.16, base]], () => "#2a1c18");
+  L.line(cx, base - h * 0.55, cx - w * 0.2, base, hs(col, 0.25));
+  L.rect(Math.round(cx), base - h - 4, 1, 5, "#6a4428");
+  L.line(x, base, x - 6, base, "#c8b890"); L.line(x + w, base, x + w + 6, base, "#c8b890");
+  L.line(cx, base - h, x - 6, base, "#a89870"); L.line(cx, base - h, x + w + 6, base, "#a89870");
+}
+function bCamp(c: C) {
+  const r = c.r; c.horizon = 100;
+  skyLayer(c);
+  countryBackdrop(c, { base: 98 });
+  const L2 = lay(c);
+  treeLine(L2, 118, "#2e5a40", { pine: 0.8, h: [22, 36], step: [6, 11], seed: c.s.seed + "cp" });
+  for (let x = -10; x < W + 10; x += r.int(18, 32)) plant(L2, pineSprite(r, r.int(40, 62), "#2f6a48"), x, 124 + r.int(0, 3));
+  commit(c, L2, 0.2);
+  const L3 = lay(c);
+  ground(c, L3, 126, "grass", { flowers: 10, tufts: 36 });
+  const fx = 160 + r.int(-8, 8), fy = 146;
+  for (let y = 130; y < H; y++) for (let x = 0; x < W; x++) { const d = Math.hypot((x - fx) / 1.0, (y - fy) * 2.4); if (d + vnoise(x, y, 7, 3) * 30 < 90) L3.px(x, y, c.snow ? "#d8e0ec" : vnoise(x, y * 2, 4, 1) > 0.6 ? "#9a7a50" : "#8a6a44"); }
+  tent(L3, r.int(20, 60), 138, r.int(34, 42), r.int(22, 28), r.pick(["#c8b490", "#8a9a6a", "#a8786a"]));
+  tent(L3, r.int(220, 250), 136, r.int(30, 38), r.int(20, 26), r.pick(["#c8b490", "#7a8aa0", "#b0906a"]));
+  // stone ring, logs and gear
+  for (let a = 0; a < Math.PI * 2; a += 0.5) { const sx = fx + Math.cos(a) * 9, sy = fy + Math.sin(a) * 3; L3.rect(Math.round(sx) - 1, Math.round(sy) - 1, 3, 2, "#8a8a90"); L3.px(Math.round(sx) - 1, Math.round(sy) - 1, "#b0b0b8"); }
+  L3.ellipse(fx, fy, 6, 2, "#2a1a14"); L3.line(fx - 5, fy, fx + 4, fy - 2, "#5a3a22"); L3.line(fx - 4, fy - 2, fx + 5, fy, "#4a3020");
+  L3.line(fx - 10, fy - 2, fx, fy - 20, "#4a3a2a"); L3.line(fx + 10, fy - 2, fx, fy - 20, "#4a3a2a"); L3.line(fx, fy - 20, fx, fy - 12, "#5a5a60");
+  L3.ellipse(fx, fy - 10, 4, 3, "#3a3a44"); L3.rect(fx - 4, fy - 13, 9, 1, "#5a5a68");
+  logAt(L3, fx - 46, 146, 22); logAt(L3, fx + 26, 148, 20);
+  for (let i = 0; i < 5; i++) L3.line(r.int(90, 110) + i, 138, r.int(96, 106) + i * 2, 130, "#7a5434");
+  L3.rect(r.int(270, 300), 140, 12, 4, r.pick(["#7a3a3a", "#3a5a7a"])); 
+  commit(c, L3, 0);
+  // firelight on the ground, flames, smoke, sparks
+  c.warm += 0.12;
+  anim(c, (g, t) => {
+    const f = flick(t, 1);
+    addGlow(g, fx, fy - 6, 90, "#ff8a30", 0.28 * f * (0.5 + c.dark * 0.7));
+    addGlow(g, fx, fy - 4, 30, "#ffc060", 0.45 * f);
+    flame(g, fx - 2, fy, 5, t, 1); flame(g, fx + 2, fy, 4.5, t, 2.7); flame(g, fx, fy + 1, 6.5, t, 5.1);
+    embers(g, fx, fy - 8, 14, 50, t, 1, c.wind);
+    smoke(g, fx, fy - 18, t, { col: c.dark > 0.6 ? "#6a6a7a" : "#c8c8d0", wind: 0.4 + c.wind * 1.4, rise: 50, a: 0.35, n: 9, per: 5200, size: 1.3 });
+  });
+  const L4 = lay(c);
+  const lx = r.int(16, 30);
+  L4.rect(lx, 112, 2, 36, "#6a4a2a"); L4.rect(lx, 112, 6, 1, "#6a4a2a"); L4.px(lx + 5, 113, IRON);
+  lanternAt(c, L4, lx + 5, 114);
+  commit(c, L4, 0);
+  if (c.dark >= 0.5 && !c.wet) anim(c, firefliesFn(14, 100, 140, c.s.seed));
+  else if (!c.wet) anim(c, birdsFn(c, { y0: 20, y1: 50 }));
+  frontFoliage(c, "#2f6a48");
+  c.groundY = 154; c.slots = stdSlots(152, 3, [34, 76, 118, 204, 246, 288]);
+}
+
+// ------------------------------------------------------------ sea, ship, coast
+/** Open sea from the horizon to y1: rows of waves in perspective, animated. */
+function seaFn(c: C, y0: number, y1: number, col: string, bob = 0): void {
+  // static base with reflection of the sky
+  water(c, y0, y1, { col, amp: 1.6, glints: 46, reflect: 0.35 });
+  const crest = gc(c, mix(col, "#ffffff", 0.55)), crest2 = gc(c, mix(col, "#ffffff", 0.3)), trough = gc(c, hs(col, -0.3));
+  const rows: { y: number; f: number }[] = [];
+  for (let y = y0 + 2; y < y1; y += Math.max(2, Math.round(2 + ((y - y0) / (y1 - y0)) * 7))) rows.push({ y, f: (y - y0) / (y1 - y0) });
+  const swell = c.storm ? 2.5 : c.wet || c.s.weather === "wind" ? 1.6 : 1;
+  anim(c, (g, t) => {
+    const by = Math.round(Math.sin(t * 0.0011) * bob);
+    for (const rw of rows) {
+      const len = Math.round(3 + rw.f * 14), gap = Math.round(10 + rw.f * 26), sp = 0.004 + rw.f * 0.01;
+      const off = (t * sp + rw.y * 17) % (len + gap);
+      const amp = Math.round((0.5 + rw.f * 2) * swell);
+      for (let x = -len - gap + off; x < W; x += len + gap) {
+        const k = Math.sin(t * 0.002 + x * 0.05 + rw.y);
+        const yy = rw.y + by + Math.round(k * amp * 0.5);
+        g.fillStyle = trough; g.fillRect(Math.round(x), yy + 1, len, 1);
+        g.fillStyle = k > 0 ? crest : crest2; g.fillRect(Math.round(x + 1), yy, len - 2, 1);
+        if (rw.f > 0.5 && k > 0.6) { g.fillStyle = crest; g.fillRect(Math.round(x + len / 2), yy - 1, 2, 1); }
+      }
+    }
+  });
+}
+function distantShipFn(c: C, x: number, y: number): Fn {
+  const L = new Layer(26, 24);
+  L.tex([[1, 18], [25, 18], [21, 23], [5, 23]], () => "#5a3e2c");
+  L.rect(9, 3, 1, 15, "#4a3020"); L.rect(17, 6, 1, 12, "#4a3020");
+  L.tex([[10, 4], [16, 5], [16, 15], [10, 16]], (px) => (px > 14 ? "#d8d0c0" : "#f0e8d8"));
+  L.tex([[4, 6], [8, 5], [8, 16], [4, 15]], () => "#e8e0d0"); L.tex([[18, 7], [23, 8], [23, 16], [18, 16]], () => "#e8e0d0");
+  L.rect(9, 1, 5, 2, "#c83a3a");
+  const img = prep(c, L, 0.35);
+  return (g, t) => { const dx = Math.round(Math.sin(t * 0.00006) * 30), dy = Math.round(Math.sin(t * 0.0013) * 0.7); g.drawImage(img, x + dx, y - 23 + dy); };
+}
+function deckPlanks(L: Layer, y0: number, col: string) {
+  for (let y = y0; y < H; y++) {
+    const f = (y - y0) / (H - y0);
+    for (let x = 0; x < W; x++) {
+      // planks converge toward a vanishing point above the horizon
+      const u = (x - 160) / (0.6 + f * 1.4), k = Math.floor(u / 9), within = ((u % 9) + 9) % 9;
+      let cc = hs(col, (hn(k, 3) - 0.5) * 0.2);
+      if (within < 0.7) cc = hs(col, -0.42);
+      else if (within < 1.6) cc = hs(cc, 0.15);
+      const seam = Math.floor((y - y0) / (3 + f * 10) + hn(k, 5) * 3);
+      if (hn(k, seam, 9) > 0.92 && (y - y0) % Math.round(3 + f * 10) === 0) cc = hs(col, -0.4);
+      if (hn(x >> 1, y, 4) > 0.97) cc = hs(cc, -0.2);
+      L.px(x, y, cc);
+    }
+  }
+}
+function bShip(c: C) {
+  const r = c.r; c.horizon = 104;
+  skyLayer(c);
+  const Lf = lay(c);
+  if (r.chance(0.5)) { const ix = r.int(20, 240); Lf.p.blob(ix + 30, 106, 34, 8, "#6a8a7a", { outline: false }); Lf.rect(ix, 104, 64, 3, "#5a7a6a"); }
+  commit(c, Lf, 0.5);
+  seaFn(c, 104, 140, c.storm ? "#2a4a5a" : "#2a6a9a", 1.5);
+  if (r.chance(0.6)) anim(c, distantShipFn(c, r.int(30, 260), 110));
+  const L = lay(c);
+  const wood = r.pick(["#9a6a40", "#8a5a38", "#a87a4a"]);
+  // bulwark (the ship's side rail behind the party)
+  for (let y = 124; y < 142; y++) for (let x = 0; x < W; x++) { const pl = Math.floor((y - 124) / 3); const cc = hs(wood, (hn(pl, Math.floor(x / 40), 3) - 0.5) * 0.2 - 0.12); L.px(x, y, (y - 124) % 3 === 2 ? hs(cc, -0.3) : cc); }
+  L.rect(0, 121, W, 3, hs(wood, 0.15)); L.rect(0, 121, W, 1, hs(wood, 0.4)); L.rect(0, 124, W, 1, hs(wood, -0.45));
+  for (let x = 8; x < W; x += 26) { L.rect(x, 118, 3, 24, hs(wood, -0.25)); L.rect(x, 118, 3, 1, hs(wood, 0.3)); }
+  deckPlanks(L, 142, wood);
+  L.g.fillStyle = "rgba(20,10,20,0.3)"; L.g.fillRect(0, 142, W, 3);
+  // mast, yard, sail, rigging
+  const mx = r.int(150, 210);
+  L.rect(mx - 3, 0, 6, 146, "#6a4428"); L.rect(mx - 3, 0, 2, 146, "#8a5a34"); L.rect(mx + 2, 0, 1, 146, "#4a2c18");
+  for (let y = 20; y < 146; y += 30) { L.rect(mx - 4, y, 8, 2, "#3a3030"); }
+  L.rect(mx - 70, 10, 140, 3, "#5a3a22"); L.rect(mx - 70, 10, 140, 1, "#7a5434");
+  for (const side of [-1, 1]) {
+    for (let k = 0; k < 3; k++) L.line(mx + side * 2, 16 + k * 3, mx + side * (60 + k * 16), 121, "#3a2a20");
+    for (let y = 40; y < 118; y += 8) { const f = (y - 16) / 105; L.line(mx + side * (2 + f * 60), y, mx + side * (2 + f * 92), y, "#4a3a2a"); }
+  }
+  barrelAt(L, r.int(20, 60), 146); barrelAt(L, r.int(20, 60) + 10, 146); crateAt(L, r.int(250, 290), 146, 11);
+  for (let k = 0; k < 3; k++) L.ellipse(r.int(90, 120), 148, 5 - k, 2 - (k > 1 ? 1 : 0), k % 2 ? "#c8b080" : "#a89060");
+  commit(c, L, 0);
+  // the sail billows: four pre-rendered shapes cycled
+  const sails: HTMLCanvasElement[] = [];
+  const sc0 = r.pick(["#f0e8d8", "#e8dcc0", "#d8c8a8"]), stripe = r.chance(0.5) ? r.pick(["#c83a3a", "#3a5ac8"]) : null;
+  for (let k = 0; k < 4; k++) {
+    const S = new Layer();
+    const bul = 4 + k * 2;
+    S.tex([[mx - 62, 13], [mx + 62, 13], [mx + 58 + bul, 70], [mx - 58 - bul, 70]], (px, py) => {
+      const v = (py - 13) / 57, u = (px - mx) / 62;
+      const sh = Math.sin(v * Math.PI) * bul;
+      let cc = u + v * 0.3 < -0.2 ? hs(sc0, 0.1) : u > 0.4 ? hs(sc0, -0.15) : sc0;
+      if (Math.abs(((px - mx) % 31 + 31) % 31) < 1) cc = hs(sc0, -0.22);
+      if (stripe && Math.abs(u) < 0.25) cc = u < 0 ? stripe : hs(stripe, -0.15);
+      if (py > 66 - sh * 0.3) cc = hs(cc, -0.2);
+      return cc;
+    });
+    for (let x = mx - 58 - bul; x < mx + 58 + bul; x++) { const u = (x - mx) / 62; const y = Math.round(70 + Math.cos(u * Math.PI / 2) * bul * 0.8); for (let yy = 70; yy < y; yy++) S.px(x, yy, hs(sc0, -0.2)); S.px(x, y, hs(sc0, -0.4)); }
+    sails.push(prep(c, S, 0));
+  }
+  anim(c, (g, t) => { const ph = (Math.sin(t * 0.0012 * (1 + c.wind)) + 1) / 2; g.drawImage(sails[Math.min(3, Math.floor(ph * 4))], 0, 0); });
+  const L2 = lay(c);
+  lanternAt(c, L2, mx + 6, 90); L2.rect(mx + 3, 89, 4, 1, IRON);
+  commit(c, L2, 0);
+  anim(c, birdsFn(c, { y0: 20, y1: 60, gull: true, n: 3 }));
+  c.groundY = 156; c.slots = stdSlots(154, 3, [40, 84, 128, 228, 260, 292]);
+}
+function bSea(c: C) {
+  const r = c.r; c.horizon = 110;
+  skyLayer(c);
+  const Lf = lay(c);
+  for (let i = 0; i < r.int(1, 3); i++) { const ix = r.int(0, 280), w = r.int(20, 60); mountains(Lf, c, 112, 0, "#000", { peaks: 1 }); Lf.g.clearRect(0, 0, W, H); Lf.p.blob(ix + w / 2, 111, w / 2, r.int(4, 10), "#6a8098", { outline: false }); }
+  Lf.g.clearRect(0, 112, W, H);
+  commit(c, Lf, 0.55);
+  seaFn(c, 110, 160, c.storm ? "#24485a" : "#2a669a", 1);
+  if (r.chance(0.7)) anim(c, distantShipFn(c, r.int(20, 270), 116));
+  if (r.chance(0.5)) anim(c, (g, t) => { // a whale's back now and then
+    const per = 16000, a = (t % per) / per, k = Math.floor(t / per);
+    if (a > 0.25) return;
+    const x = 40 + hn(k, 1) * 220, y = 128 + hn(k, 2) * 14, rise = Math.sin((a / 0.25) * Math.PI) * 4;
+    g.fillStyle = gc(c, "#2a3a4a"); g.fillRect(Math.round(x), Math.round(y - rise), 18, Math.ceil(rise)); g.fillRect(Math.round(x + 4), Math.round(y - rise - 1), 10, 1);
+    if (a > 0.08 && a < 0.16) { g.fillStyle = gc(c, "#e8f0f8"); for (let i = 0; i < 6; i++) g.fillRect(Math.round(x + 6 + (i - 3) * (a - 0.08) * 40), Math.round(y - rise - 3 - Math.sin(i) * 4 * (a - 0.08) * 12), 1, 1); }
+  });
+  // the bow of the party's ship
+  const L = lay(c), wood = "#8a5a38";
+  deckPlanks(L, 150, wood);
+  L.tex([[0, 150], [W, 150], [W, 158], [0, 158]], (px, py) => (py === 150 ? hs(wood, 0.35) : hs(wood, -0.2 + (py - 150) * 0.02)));
+  for (let x = 4; x < W; x += 22) { L.rect(x, 136, 3, 16, hs(wood, -0.2)); L.px(x, 136, hs(wood, 0.3)); }
+  L.rect(0, 136, W, 2, hs(wood, 0.25)); L.rect(0, 138, W, 1, hs(wood, -0.4));
+  L.g.clearRect(0, 158, W, 0);
+  commit(c, L, 0);
+  // spray when the bow dips
+  const spray = gc(c, "#e8f4ff");
+  anim(c, (g, t) => { const a = (t % 3800) / 3800; if (a > 0.3) return; g.fillStyle = spray; for (let i = 0; i < 16; i++) { const k = a / 0.3; g.globalAlpha = 1 - k; g.fillRect(Math.round(hn(i, 1) * W), Math.round(140 - Math.sin(k * Math.PI) * (6 + hn(i, 2) * 10)), 1, 1); } g.globalAlpha = 1; });
+  anim(c, birdsFn(c, { y0: 30, y1: 70, gull: true, n: 4 }));
+  c.groundY = 160; c.slots = stdSlots(160, 2);
+}
+function lighthouse(c: C, L: Layer, x: number, base: number) {
+  for (let y = base - 50; y < base; y++) {
+    const f = (base - y) / 50, w = Math.round(12 - f * 4);
+    for (let i = 0; i < w; i++) { const u = i / w; const band = Math.floor((base - y) / 8) % 2; const cc = band ? "#c83a3a" : "#f4f0e8"; L.px(x - w / 2 + i, y, u < 0.3 ? hs(cc, 0.1) : u > 0.7 ? hs(cc, -0.25) : cc); }
+  }
+  L.rect(x - 6, base - 52, 12, 2, "#3a3a44"); L.rect(x - 4, base - 60, 8, 8, "#ffe8a0"); L.rect(x - 4, base - 60, 1, 8, "#3a3a44"); L.rect(x + 3, base - 60, 1, 8, "#3a3a44");
+  L.tex([[x - 6, base - 60], [x, base - 67], [x + 1, base - 67], [x + 7, base - 60]], () => "#3a3a50");
+  const lx = x, ly = base - 56;
+  anim(c, (g, t) => {
+    if (c.dark < 0.3) return;
+    const a = (t * 0.0012) % (Math.PI * 2), sweep = Math.cos(a);
+    g.globalCompositeOperation = "lighter"; g.globalAlpha = 0.22 * c.dark * Math.max(0, Math.sin(a) * 0.5 + 0.5);
+    g.fillStyle = "#fff0b0";
+    g.beginPath(); g.moveTo(lx, ly); g.lineTo(lx + sweep * 320, ly - 14); g.lineTo(lx + sweep * 320, ly + 14); g.closePath(); g.fill();
+    g.globalCompositeOperation = "source-over"; g.globalAlpha = 1;
+    addGlow(g, lx, ly, 16, "#ffe8a0", 0.6 * c.dark);
+  });
+}
+function bCoast(c: C) {
+  const r = c.r; c.horizon = 100;
+  skyLayer(c);
+  const left = r.chance(0.5);
+  seaFn(c, 100, 140, "#2a72a4");
+  const L = lay(c);
+  // cliff headland on one side
+  const cx0 = left ? 0 : W - 110;
+  for (let x = cx0; x < cx0 + 110; x++) {
+    const u = left ? x / 110 : 1 - (x - cx0) / 110;
+    const top = Math.round(96 + Math.pow(u, 2.2) * 44 + vnoise(x, 0, 6, 1) * 4);
+    for (let y = top; y < 142; y++) {
+      const d = y - top;
+      let cc = d < 3 ? (c.snow ? "#eef2f8" : "#5aa046") : vnoise(x, y * 0.5, 5, 2) > 0.6 ? "#8a8070" : (x + y) % 9 === 0 ? "#6a6058" : "#a09482";
+      if (d >= 3 && (left ? (x > 100) : (x < cx0 + 10))) cc = hs(cc, -0.15);
+      L.px(x, y, cc);
+    }
+  }
+  const hasLight = r.chance(0.6);
+  if (hasLight) lighthouse(c, L, left ? r.int(22, 46) : r.int(W - 46, W - 22), 98);
+  // rocks in the surf
+  const rocks: [number, number][] = [];
+  for (let i = 0; i < 3; i++) { const x = left ? r.int(120, 300) : r.int(20, 200), y = r.int(122, 134); rock(L, x, y, r.int(8, 16), r.int(4, 8), "#6a6a74", r); rocks.push([x, y]); }
+  commit(c, L, 0);
+  const L3 = lay(c);
+  ground(c, L3, 140, "sand", { tufts: 0 });
+  for (let i = 0; i < 14; i++) { const x = r.int(0, W), y = r.int(148, 178); L3.px(x, y, r.pick(["#f8e8e0", "#e8c8b0", "#f0f0f0"])); L3.px(x + 1, y, "#c8a890"); }
+  for (let i = 0; i < 3; i++) { const x = r.int(0, W), y = r.int(150, 176); L3.line(x, y, x + r.int(10, 20), y - r.int(0, 3), "#a08a6a"); L3.line(x, y + 1, x + r.int(10, 20), y, "#6a5a48"); }
+  for (let i = 0; i < 4; i++) { const x = r.int(0, W), y = r.int(140, 148); for (let k = 0; k < 5; k++) L3.line(x, y, x + r.int(-5, 5), y - r.int(4, 8), "#8aa050"); }
+  commit(c, L3, 0);
+  // the surf washing up the beach and back
+  const foam = gc(c, "#f4faff"), wet = gc(c, "#a88a5a"), shallow = gc(c, "#4aa0c8");
+  anim(c, (g, t) => {
+    const a = Math.sin(t * 0.0009), reach = 141 + Math.round((a + 1) * 4);
+    for (let x = 0; x < W; x++) {
+      const e = reach + Math.round(Math.sin(x * 0.07 + t * 0.001) * 1.5 + Math.sin(x * 0.19) * 1);
+      g.fillStyle = wet; g.fillRect(x, 140, 1, Math.max(0, e - 140 + 3));
+      g.fillStyle = shallow; g.globalAlpha = 0.55; g.fillRect(x, 140, 1, Math.max(0, e - 140)); g.globalAlpha = 1;
+      if ((x + Math.floor(t / 120)) % 5 !== 0) { g.fillStyle = foam; g.fillRect(x, e, 1, 1); }
+      if (hn(x, Math.floor(t / 400)) > 0.8) g.fillRect(x, e - 2, 1, 1);
+    }
+    g.fillStyle = foam;
+    for (const [x, y] of rocks) for (let k = 0; k < 6; k++) { const ph = (t * 0.002 + k) % 6.28; g.globalAlpha = Math.max(0, Math.sin(ph)); g.fillRect(Math.round(x - 10 + k * 4), y + 1 - Math.round(Math.sin(ph) * 3), 2, 1); }
+    g.globalAlpha = 1;
+  });
+  const crab = gc(c, "#e0603a");
+  anim(c, (g, t) => { const x = Math.round(((t * 0.008) % (W + 40)) - 20), y = 166 + Math.round(Math.sin(t * 0.001) * 2), f = Math.floor(t / 150) % 2; g.fillStyle = crab; g.fillRect(x, y - 2, 4, 2); g.fillRect(x - 1, y - 3 - f, 1, 1); g.fillRect(x + 4, y - 3 - f, 1, 1); g.fillRect(x - 1, y, 1, 1); g.fillRect(x + 4, y, 1, 1); });
+  anim(c, birdsFn(c, { y0: 30, y1: 70, gull: true, n: 3 }));
+  frontFoliage(c, "#8aa050", { kind: "reed", corners: r.chance(0.5) });
+  c.groundY = 158; c.slots = stdSlots(156, 3);
+}
+
+// ------------------------------------------------------------ desert
+function dunes(L: Layer, base: number, amp: number, col: string, seed: number) {
+  const lit = hs(col, 0.14), sh = hs(col, -0.18), sh2 = hs(col, -0.3);
+  for (let x = 0; x < W; x++) {
+    const v = Math.sin(x * 0.012 + seed) * 0.6 + Math.sin(x * 0.031 + seed * 2) * 0.4;
+    const top = Math.round(base - amp * (0.5 + v * 0.5));
+    const slope = Math.cos(x * 0.012 + seed) * 0.6 * 0.012 + Math.cos(x * 0.031 + seed * 2) * 0.4 * 0.031;
+    for (let y = top; y < H; y++) {
+      const d = y - top;
+      let cc = slope > 0 ? (d < 6 ? sh : col) : d < 2 ? lit : col;
+      if (slope > 0.008 && d < 12) cc = sh2;
+      if ((y + Math.round(Math.sin(x * 0.2 + y * 0.3) * 1.5)) % 5 === 0 && d > 3 && bay(x, y) > 0.4) cc = hs(cc, -0.08);
+      L.px(x, y, cc);
+      if (d > 30) { L.rect(x, y, 1, H - y, cc); break; }
+    }
+  }
+}
+function bDesert(c: C) {
+  const r = c.r; c.horizon = 108;
+  if (c.s.time === "day") c.sky = c.sky.map((k, i) => mix(k, ["#3a80d0", "#68a8e0", "#a0d0f0", "#e0e8d0", "#f8f0d0"][i] ?? k, 0.5));
+  skyLayer(c);
+  // far mesas, shimmering in the heat
+  const L0 = new Layer();
+  for (let i = 0; i < r.int(2, 4); i++) { const x = r.int(0, 260), w = r.int(30, 70), h = r.int(14, 30); L0.tex([[x, 112], [x + 6, 112 - h], [x + w - 6, 112 - h], [x + w, 112]], (px, py) => (py < 112 - h + 2 ? "#d8a088" : px > x + w * 0.6 ? "#a87068" : "#c08878")); for (let y = 112 - h + 4; y < 112; y += 4) L0.rect(x + 4, y, w - 8, 1, "#a87068"); }
+  dunes(L0, 114, 6, "#e0b890", r.next() * 9);
+  gradeCanvas(L0.c, c.grade, c.haze, 0.45);
+  const far = finalize(L0.c);
+  c.compG.drawImage(far, 0, 0);
+  c.back.push((g, t) => { if (c.dark > 0.5) { g.drawImage(far, 0, 0); return; } for (let y = 60; y < 120; y++) g.drawImage(far, 0, y, W, 1, Math.round(Math.sin(t * 0.004 + y * 0.9) * 0.8), y, W, 1); g.drawImage(far, 0, 120, W, H - 120, 0, 120, W, H - 120); });
+  const L1 = lay(c);
+  dunes(L1, 124, 14, "#e8c088", r.next() * 9);
+  const feature = r.pick(["pyramid", "oasis", "obelisk", "none"]);
+  if (feature === "pyramid") { const px = r.int(60, 240); L1.tex([[px - 40, 122], [px, 86], [px + 40, 122]], (x, y) => ((y - 86) % 4 === 0 ? "#b89060" : x < px ? "#e8c890" : "#c09868")); }
+  if (feature === "obelisk") { const px = r.int(40, 280); L1.tex([[px - 4, 124], [px - 3, 90], [px, 86], [px + 3, 90], [px + 4, 124]], (x) => (x < px ? "#d8b890" : "#a88a68")); for (let y = 94; y < 120; y += 5) L1.px(px - 1, y, "#7a5a40"); }
+  commit(c, L1, 0.18);
+  const L3 = lay(c);
+  ground(c, L3, 132, "sand", { tufts: 0 });
+  for (let y = 134; y < H; y += 3) for (let x = 0; x < W; x++) if (Math.sin(x * 0.15 + y * 0.6 + Math.sin(x * 0.03) * 3) > 0.7) L3.px(x, y, "#c89a60");
+  if (feature === "oasis") {
+    const ox = r.int(60, 220);
+    L3.ellipse(ox, 138, 30, 4, "#3a8ab0"); L3.ellipse(ox - 4, 137, 20, 2, "#6ab0d0"); L3.ellipse(ox, 142, 32, 2, "#7aa048");
+    for (let k = 0; k < 3; k++) palm(L3, ox - 26 + k * 24 + r.int(-4, 4), 140 - r.int(0, 3), r.int(30, 42), r);
+  }
+  for (let i = 0; i < r.int(1, 3); i++) { const x = r.int(10, 310), y = r.int(140, 170); L3.rect(x, y - 14, 3, 14, "#5a9a50"); L3.rect(x - 4, y - 10, 2, 5, "#5a9a50"); L3.rect(x - 4, y - 6, 4, 2, "#5a9a50"); L3.rect(x + 4, y - 12, 2, 6, "#5a9a50"); L3.rect(x + 2, y - 7, 3, 2, "#5a9a50"); L3.px(x, y - 14, "#7aba70"); }
+  if (r.chance(0.6)) { const x = r.int(20, 300), y = r.int(150, 170); L3.ellipse(x, y - 3, 4, 3, "#f0e8d8"); L3.px(x - 2, y - 3, "#2a2020"); L3.px(x + 1, y - 3, "#2a2020"); L3.rect(x - 1, y, 3, 1, "#e0d8c8"); L3.line(x + 6, y, x + 16, y - 2, "#e8e0d0"); }
+  for (let i = 0; i < 5; i++) rock(L3, r.int(0, W), r.int(140, 176), r.int(6, 14), r.int(3, 6), "#b08a68", r);
+  commit(c, L3, 0);
+  anim(c, birdsFn(c, { y0: 30, y1: 60, n: 2, scale: 2, col: "#2a2020" }));
+  c.front.push(motesFn(30, 0, W, 120, 178, c.s.seed + "sand", "#f0d8a0", 0.6));
+  if (c.s.weather === "wind" || c.storm) c.front.push(fogFn(c, 110, 70, 0.8, 0.03, "#d8b080"));
+  c.groundY = 156; c.slots = stdSlots(154, 3);
+}
+function palm(L: Layer, x: number, y: number, h: number, r: R) {
+  const lean = (r.next() - 0.5) * 12;
+  for (let i = 0; i < h; i++) { const f = i / h, px = Math.round(x + lean * f * f); L.rect(px, y - i, 3, 1, i % 3 === 0 ? "#6a5030" : "#8a6a40"); L.px(px, y - i, "#a8885a"); }
+  const tx = Math.round(x + lean) + 1, ty = y - h;
+  for (let k = 0; k < 7; k++) {
+    const a = -Math.PI + (k / 6) * Math.PI + (r.next() - 0.5) * 0.3, len = r.int(12, 18);
+    for (let i = 0; i < len; i++) { const f = i / len, px = tx + Math.cos(a) * i, py = ty + Math.sin(a) * i * 0.6 + f * f * 8; L.px(px, py, "#3a8a3a"); if (i % 2 === 0) { L.px(px, py + 1, "#2a6a2a"); L.px(px, py - 1, "#5aaa4a"); } }
+  }
+  L.ellipse(tx, ty + 1, 2, 1, "#6a4a2a");
+}
+
+// ------------------------------------------------------------ sky
+function bSky(c: C) {
+  const r = c.r; c.horizon = 150;
+  skyLayer(c);
+  // a sea of cloud far below
+  const cloudRow = (y: number, sz: number, a: number, seed: string) => {
+    const L = lay(c), cr = seeded(c.s.seed + seed);
+    for (let x = -30; x < W + 30; x += cr.int(18, 30)) L.p.blob(x, y + cr.int(-3, 3), sz + cr.int(0, sz), sz * 0.6 + cr.int(0, 4), c.cloudCols[1], { outline: false, hi: 0.3, lo: -0.2 });
+    L.rect(0, y + 2, W, H - y, mix(c.cloudCols[1], c.cloudCols[2], 0.3));
+    commit(c, L, a, { grade: false, snow: false });
+  };
+  cloudRow(110, 10, 0.35, "c1");
+  // floating islands with waterfalls
+  const L = lay(c);
+  const isl: [number, number, number][] = [];
+  for (let i = 0; i < r.int(2, 3); i++) {
+    const x = r.int(30, 290), y = r.int(60, 100), w = r.int(20, 44);
+    isl.push([x, y, w]);
+    L.tex([[x - w / 2, y], [x + w / 2, y], [x + w * 0.2, y + w * 0.6], [x, y + w * 0.8], [x - w * 0.25, y + w * 0.5]], (px, py) => (py < y + 2 ? "#6ab050" : px > x + w * 0.1 ? "#6a5a5a" : "#8a7a72"));
+    for (let k = 0; k < 3; k++) plant(L, pineSprite(r, r.int(8, 14), "#2f6a48"), x - w / 3 + r.int(0, w * 0.6), y + 1);
+    if (r.chance(0.4)) { L.rect(x - 3, y - 14, 6, 14, "#d8d0c8"); L.tex([[x - 4, y - 14], [x, y - 20], [x + 4, y - 14]], () => "#5a5a8a"); }
+  }
+  commit(c, L, 0.35);
+  const fall = gc(c, "#d8f0ff", 0.3), fall2 = gc(c, "#90c8f0", 0.3);
+  anim(c, (g, t) => {
+    for (const [x, y, w] of isl) {
+      const fx = Math.round(x + w * 0.3);
+      for (let k = 0; k < 40; k++) { const yy = y + ((k * 3 + t * 0.03) % 70); g.fillStyle = k % 3 ? fall : fall2; g.globalAlpha = 1 - (yy - y) / 70; g.fillRect(fx + (k % 2), Math.round(yy), 1, 2); }
+    }
+    g.globalAlpha = 1;
+  });
+  cloudRow(128, 16, 0.15, "c2");
+  // the island the party stands on
+  const L3 = lay(c);
+  const top = (x: number) => 144 + Math.sin(x * 0.02 + 1) * 3;
+  ground(c, L3, 140, "meadow", { top, flowers: 30, tufts: 40 });
+  for (let x = 0; x < W; x++) { const b = 164 + Math.round(vnoise(x, 0, 9, 4) * 10); for (let y = b; y < H; y++) L3.g.clearRect(x, y, 1, 1); for (let y = b - 8; y < b; y++) L3.px(x, y, (y + x) % 7 === 0 ? "#5a4a48" : "#7a6a62"); }
+  for (let i = 0; i < 16; i++) { const x = r.int(0, W); for (let k = 0; k < r.int(4, 14); k++) L3.px(x + Math.round(Math.sin(k) * 0.6), 168 + k, "#5a4030"); }
+  commit(c, L3, 0);
+  anim(c, cloudDriftFn(c, 170, 0.5));
+  anim(c, birdsFn(c, { y0: 60, y1: 110, col: "#f4f4f4" }));
+  if (c.s.time !== "night") anim(c, shaftsFn(c, 4, "#fff0c0", -0.25, 0.12));
+  c.groundY = 156; c.slots = stdSlots(154, 3);
+}
+function cloudDriftFn(c: C, y: number, a: number): Fn {
+  const r = seeded(c.s.seed + "drift" + y);
+  const cl = Array.from({ length: 4 }, () => ({ img: cloudSprite(r, r.int(50, 90), r.int(10, 16), c.cloudCols), x: r.next() * W, v: rng(r, 0.006, 0.012) }));
+  return (g, t) => { g.globalAlpha = a; for (const k of cl) g.drawImage(k.img, Math.round(((k.x + t * k.v) % (W + 100)) - 100), y); g.globalAlpha = 1; };
+}

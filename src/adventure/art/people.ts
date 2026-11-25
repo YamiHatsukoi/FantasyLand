@@ -1749,3 +1749,774 @@ function drawBook(g: Grid, L: Look, at: V, view: View) {
   g.span(x - 1, x - 1 + w, y + 3, "#e8e0c8");
   g.px(x, y, bk.l);
 }
+
+// ------------------------------------------------------------------ effects
+const REACH: Record<WeaponKind, number> = { none: 2, sword: 13, broadsword: 15, shortsword: 9, dagger: 5.5, axe: 12.5, mace: 12, warhammer: 15, spear: 21, quarterstaff: 13, staff: 16, bow: 6 };
+
+function smear(g: Grid, c: V, r0: number, r1: number, a0: number, a1: number) {
+  const steps = Math.max(2, Math.ceil(Math.abs(a1 - a0) / 2.5));
+  for (let i = 0; i <= steps; i++) {
+    const k = i / steps, a = rad(a0 + (a1 - a0) * k);
+    for (let r = r0; r <= r1 + 0.01; r += 0.5) {
+      const q = (r - r0) / Math.max(0.01, r1 - r0);
+      g.glow(c[0] + Math.cos(a) * r, c[1] + Math.sin(a) * r, k > 0.7 && q > 0.6 ? "#ffffff" : "#dfe8ff", (0.06 + 0.55 * k * k) * (0.35 + 0.65 * q));
+    }
+  }
+}
+function sparkle(g: Grid, x: number, y: number, col: string, big: boolean) {
+  g.glow(x, y, "#ffffff", 0.95);
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) g.glow(x + dx, y + dy, col, 0.7);
+  if (big) for (const [dx, dy] of [[2, 0], [-2, 0], [0, 2], [0, -2]]) g.glow(x + dx, y + dy, col, 0.35);
+}
+function castFx(g: Grid, at: V, level: number, col: string, dir: V | null) {
+  g.halo(at[0], at[1], 2.5 + level * 1.6, col, 0.5 + level * 0.12);
+  g.halo(at[0], at[1], 1.3, "#ffffff", 0.95);
+  const n = 2 + level * 2;
+  for (let i = 0; i < n; i++) {
+    const a = rad(i * 137.5 + level * 47), r = 3 + ((i * 7) % 4) + level;
+    g.glow(at[0] + Math.cos(a) * r, at[1] + Math.sin(a) * r, i % 2 ? "#ffffff" : col, 0.85 - i * 0.05);
+  }
+  if (level >= 2 && dir) {
+    for (let t = 2; t < 26; t++) {
+      const x = at[0] + dir[0] * t, y = at[1] + dir[1] * t;
+      g.glow(x, y, col, 0.5 * (1 - t / 26));
+      g.glow(x - dir[1], y + dir[0], col, 0.22 * (1 - t / 26));
+      g.glow(x + dir[1], y - dir[0], col, 0.22 * (1 - t / 26));
+    }
+    sparkle(g, at[0] + dir[0] * 5, at[1] + dir[1] * 5, col, true);
+  }
+}
+
+// ------------------------------------------------------------------ composing a frame
+function paint(L: Look, facing: Facing, pose: Pose, frame: number): Grid {
+  if (pose === "dead") return paintDead(L);
+  const view: View = facing === "up" ? "back" : facing === "down" ? "front" : "side";
+  const D = dims(L);
+  const R = view === "side" ? rigSide(pose, frame, L.weapon) : rigFront(pose, frame, L.weapon);
+  const g = new Grid(32, 48);
+  const T = D.T + R.bob + R.breath + R.hdy;
+  const sy = D.sy + R.bob + R.breath, wy = D.wy + R.bob, hy = D.hy + R.bob;
+  const b: Body = { g, L, D, R, view, T, sy, wy, hy };
+  const flipEdge = view === "back" || (view === "side" && pose !== "attack");
+  const fist = L.weapon !== "none" || pose === "attack";
+  let castAt: V | null = null, castDir: V | null = null;
+  let tipFx: (() => void) | null = null;
+
+  if (view === "side") {
+    const ln = Math.round(R.lean);
+    const S: V = [15 + ln, sy + 2], Sf: V = [16 + ln, sy + 2];
+    const head: Head = { x0: 10 + R.hdx + ln + D.stoop, T: T + D.stoop, face: R.face, view };
+    cloakSideBehind(b);
+    hairSide(g, L, head, true);
+    const handR0 = add(S, R.hR), handL0 = add(Sf, R.hL);
+    const weapon = () => {
+      if (L.weapon === "bow") return;
+      drawWeapon(g, L, L.weapon, hR, R.wA, { flipEdge });
+    };
+    let hR: V = handR0;
+    const hL = arm(g, L, D, Sf, handL0, [-0.4, 1], true, L.weapon !== "none" && L.weapon !== "bow");
+    if (R.wBack) { hR = ik(S, handR0, D.arm[0], D.arm[1], [-0.4, 1]).end; weapon(); }
+    legsSide(b, true);
+    legsSide(b, false);
+    torsoSide(b);
+    if (L.off === "shield") drawShield(g, L, [Math.max(hL[0] + 1, 21 + ln), hL[1] - 2], "side");
+    if (L.off === "book" && !R.castR) drawBook(g, L, hL, "side");
+    mantleSide(b, S);
+    const sk = tone(L.skin);
+    for (let y = T + 14; y <= sy; y++) { g.px(14 + ln, y, sk.d); g.px(15 + ln, y, sk.b); g.px(16 + ln, y, sk.d); }
+    drawHead(g, L, head);
+    hR = arm(g, L, D, S, handR0, [-0.4, 1], false, fist);
+    if (!R.wBack) weapon();
+    if (L.weapon === "bow") {
+      const aim = R.draw !== undefined && (pose === "attack") ? R.wA : 0;
+      drawWeapon(g, L, "bow", hL, pose === "attack" ? aim : 0, { draw: R.draw ?? 0, hand2: pose === "attack" ? hR : undefined });
+      if (R.fx === "release") {
+        const ay = hL[1];
+        for (let x = Math.round(hL[0]) + 4; x <= Math.round(hL[0]) + 10; x++) g.px(x, ay, "#d8b880");
+        g.px(Math.round(hL[0]) + 11, ay, STEEL); g.px(Math.round(hL[0]) + 12, ay, "#eef2f8");
+        tipFx = () => { for (let x = Math.round(hL[0]) - 2; x < Math.round(hL[0]) + 4; x++) { g.glow(x, ay - 1, "#ffffff", 0.25); g.glow(x, ay + 1, "#ffffff", 0.18); } };
+      }
+    }
+    if (R.fx === "arc" || R.fx === "over") { const a = R.fxArc!; tipFx = () => smear(g, hR, REACH[L.weapon] * 0.45, REACH[L.weapon] + 0.5, a[0], a[1]); }
+    if (R.fx === "thrust") {
+      const u = dirOf(R.wA), len = REACH[L.weapon];
+      tipFx = () => {
+        for (const o of [-2, 0, 2]) for (let t = len - 9; t < len - 2; t++) g.glow(hR[0] + u[0] * t - u[1] * o, hR[1] + u[1] * t + u[0] * o - (o === 0 ? 2 : 0), "#e8f0ff", 0.12 + 0.3 * ((t - len + 9) / 7));
+        sparkle(g, hR[0] + u[0] * (len + 1), hR[1] + u[1] * (len + 1), "#fff4c8", false);
+      };
+    }
+    if (R.fx === "cast") {
+      castAt = R.castR ? (L.weapon === "staff" ? add(hR, [Math.cos(rad(R.wA)) * 16.4, Math.sin(rad(R.wA)) * 16.4]) : add(hR, [1, 0])) : add(hL, [1, 0]);
+      castDir = [1, 0];
+    }
+  } else {
+    const back = view === "back";
+    const mir = (v: V): V => (back ? [-v[0], v[1]] : v);
+    const wA = back ? 180 - R.wA : R.wA;
+    const SR: V = back ? [15 + D.sw + 0.5, sy + 2] : [16 - D.sw - 0.5, sy + 2];
+    const SL: V = back ? [16 - D.sw - 0.5, sy + 2] : [15 + D.sw + 0.5, sy + 2];
+    const hintR: V = back ? [1, 0.3] : [-1, 0.3], hintL: V = back ? [-1, 0.3] : [1, 0.3];
+    const tR = add(SR, mir(R.hR)), tL = add(SL, mir(R.hL));
+    const head: Head = { x0: 10 + R.hdx, T: T + D.stoop, face: R.face, view };
+    const handR = ik(SR, tR, D.arm[0], D.arm[1], hintR).end, handL = ik(SL, tL, D.arm[0], D.arm[1], hintL).end;
+    const raised = handR[1] < sy + 3;
+    const weapon = () => {
+      if (L.weapon === "bow") drawWeapon(g, L, "bow", handL, back ? 90 : pose === "attack" ? 90 : 0, { draw: R.draw ?? 0, hand2: pose === "attack" ? handR : undefined });
+      else drawWeapon(g, L, L.weapon, handR, wA, { flipEdge });
+    };
+    const offItem = () => {
+      if (L.off === "shield") drawShield(g, L, [handL[0] + (back ? -1 : 1), handL[1] - 3], back ? "back" : "front");
+      if (L.off === "book" && !(R.castR === false && R.fx === "cast")) drawBook(g, L, handL, view);
+    };
+    if (!back) {
+      cloakBehindFront(b);
+      hairBehindFront(g, L, head);
+      if (R.wBack) weapon();
+    } else {
+      if (!raised) weapon();
+      if (L.off === "book") offItem();
+    }
+    legsFront(b);
+    torsoFront(b);
+    if (!back) cloakCollarFront(b);
+    arm(g, L, D, SR, tR, hintR, false, fist);
+    arm(g, L, D, SL, tL, hintL, false, L.off === "shield" || L.weapon === "bow");
+    if (!back) mantleFront(b, SR, SL);
+    if (back) { cloakBackOver(b); }
+    const sk = tone(L.skin);
+    for (let y = T + 13; y <= sy; y++) for (let x = 14; x <= 17; x++) g.px(x + R.hdx, y, x === 17 ? sk.d2 : sk.d);
+    if (L.outfit === "noble") furCollar(b);
+    if (L.outfit === "armor") pauldrons(b, SR, SL);
+    drawHead(g, L, head);
+    if (back) hairBack(g, L, head, true);
+    if (!back && L.beard === "long") beardFront(g, L, head, true);
+    if (!back) { if (!R.wBack) weapon(); offItem(); }
+    else { if (raised) weapon(); if (L.off === "shield") offItem(); }
+    if (R.fx === "arc" || R.fx === "over") { const a = R.fxArc!; const aa: [number, number] = back ? [180 - a[0], 180 - a[1]] : a; tipFx = () => smear(g, handR, REACH[L.weapon] * 0.45, REACH[L.weapon] + 0.5, aa[0], aa[1]); }
+    if (R.fx === "thrust") tipFx = () => { const u = dirOf(wA), len = REACH[L.weapon]; sparkle(g, handR[0] + u[0] * (len + 1), handR[1] + u[1] * (len + 1), "#fff4c8", true); };
+    if (R.fx === "release") tipFx = () => sparkle(g, handL[0], handL[1] + (back ? -4 : 4), "#ffffff", false);
+    if (R.fx === "cast") {
+      castAt = R.castR ? (L.weapon === "staff" ? add(handR, [Math.cos(rad(wA)) * 16.4, Math.sin(rad(wA)) * 16.4]) : handR) : handL;
+      castDir = back ? null : [0, 1];
+    }
+  }
+  g.outline();
+  if (tipFx) (tipFx as () => void)();
+  if (castAt) {
+    castFx(g, castAt, R.glow ?? 0, L.magic, castDir);
+    // the mind glows too
+    const fx = view === "side" ? 18 + Math.round(R.lean) : 15.5;
+    if ((R.glow ?? 0) > 0) g.halo(fx, T + 6, 2 + (R.glow ?? 0), L.magic, 0.18 * (R.glow ?? 0));
+  }
+  if (pose === "hurt" && frame === 0) for (let i = 0; i < g.c.length; i++) { const v = g.c[i]; if (v) g.c[i] = mx(v, "#ff4a3a", 0.22); }
+  return facing === "left" ? g.flip() : g;
+}
+
+function furCollar(b: Body) {
+  const { g, L, D, sy, view } = b;
+  const f = tone(L.trim);
+  for (let x = Math.round(16 - D.sw - 1); x <= Math.round(15 + D.sw + 1); x++) {
+    const u = (x - 16 + D.sw + 1) / (2 * D.sw + 1);
+    for (let y = sy - 1; y <= sy + 2; y++) {
+      if (view === "front" && y > sy && x >= 14 && x <= 17) continue;
+      if (y === sy + 2 && (x % 2 === 0)) continue;
+      g.px(x, y, (x * 3 + y) % 4 === 0 ? f.l2 : u < 0.3 ? f.l : u > 0.75 ? f.d : f.b);
+    }
+  }
+}
+function pauldrons(b: Body, SR: V, SL: V) {
+  const { g, L, sy } = b;
+  const m = tone(L.metal), tr = tone(L.trim);
+  for (const S of [SR, SL]) {
+    const cx = S[0] + (S[0] < 16 ? 0.5 : -0.5);
+    for (let y = sy - 1; y <= sy + 3; y++) {
+      const w = y === sy - 1 ? 1.5 : 2.5;
+      for (let x = Math.round(cx - w); x <= Math.round(cx + w); x++) {
+        const u = (x - cx + w) / (2 * w);
+        g.px(x, y, y === sy + 3 ? tr.d : y === sy + 2 ? tr.b : u < 0.35 && y <= sy ? m.l2 : u < 0.4 ? m.l : u > 0.7 ? m.d : m.b);
+      }
+    }
+  }
+}
+
+/** Lying on the ground: the side figure, curled, turned on its side. */
+function paintDead(L: Look): Grid {
+  const D = dims(L);
+  const s = new Grid(32, 48);
+  const R = rigSide("dead", 0, L.weapon);
+  R.hdy = 3; R.lean = 2;
+  R.fR = [5, 9]; R.fL = [3, 8];
+  const T = D.T + R.hdy;
+  const b: Body = { g: s, L, D, R, view: "side", T, sy: D.sy + 1, wy: D.wy, hy: D.hy };
+  const ln = Math.round(R.lean);
+  const S: V = [15 + ln, b.sy + 2];
+  cloakSideBehind(b);
+  hairSide(s, L, { x0: 10 + ln + 1, T, face: "dead", view: "side" }, true);
+  arm(s, L, D, [16 + ln, b.sy + 2], add(S, [4, 7]), [-0.4, 1], true);
+  legsSide(b, true); legsSide(b, false);
+  torsoSide(b);
+  mantleSide(b, S);
+  const sk = tone(L.skin);
+  for (let y = T + 14; y <= b.sy; y++) { s.px(14 + ln, y, sk.d); s.px(15 + ln, y, sk.b); s.px(16 + ln, y, sk.d); }
+  drawHead(s, L, { x0: 10 + ln + 1, T, face: "dead", view: "side" });
+  arm(s, L, D, S, add(S, [6, 6]), [-0.4, 1], false);
+  const r = s.rotCW();
+  let x0 = 99, x1 = -1, y1 = -1;
+  for (let y = 0; y < r.h; y++) for (let x = 0; x < r.w; x++) if (r.get(x, y)) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+  const g = new Grid(32, 48);
+  // the dropped weapon lies behind the body
+  if (L.weapon !== "none") {
+    const len = L.weapon === "bow" ? 0 : REACH[L.weapon];
+    if (L.weapon === "bow") drawWeapon(g, L, "bow", [16, 43], -90, {});
+    else drawWeapon(g, L, L.weapon, [Math.round(16 - len / 2) + 2, 44], -4, { flipEdge: true });
+  }
+  if (L.off === "shield") drawShield(g, L, [25, 42], "front");
+  g.blit(r, Math.round((32 - (x1 - x0 + 1)) / 2) - x0, 46 - y1);
+  g.outline();
+  return g;
+}
+
+// ------------------------------------------------------------------ looks
+const BASE: Look = {
+  build: "normal", fem: false, skin: "#e9b994", eyes: "#4a6a8a", hair: "#6b4428", hairStyle: "short", beard: "none",
+  outfit: "tunic", main: "#7a6a4a", trim: "#a89060", shirt: "#d8ccb0", pants: "#5a4a3a", boots: "#4a3424", belt: "#5a3a22",
+  buckle: "#c9a040", metal: "#aeb6c4", hat: "none", hatCol: "#6a4a30", weapon: "none", off: "none", magic: "#9ad8ff",
+};
+
+const SKINS = ["#f1c9a5", "#e9b994", "#dca883", "#c98f68", "#b57a55", "#f4d3b8"];
+const HAIRS = ["#2a1e18", "#4a3020", "#6b4428", "#8a5a2e", "#a8763a", "#c8a060", "#3a2a24", "#5a2a1a"];
+const EYES = ["#3a5a7a", "#4a6a3a", "#5a3a22", "#2a2a3a", "#4a7a8a", "#6a5a3a"];
+const EARTH = ["#7a6a4a", "#6a5a3a", "#8a7a5a", "#5a6a4a", "#7a5a3a", "#6a6a5a", "#8a6a4a", "#5a5a6a", "#9a8a6a"];
+
+/** Sommerlund's soldiers: white tabards with a purple field and a golden device. */
+const SOMMER: Partial<Look> = {
+  outfit: "tabard", main: "#eeebe3", trim: "#d9a93a", metal: "#b8bfca", shirt: "#7a6a8a", pants: "#4e4458", boots: "#3e2e22",
+  belt: "#4a3020", buckle: "#d9a93a", hat: "helmet", device: ["#6a3a9a", "#f0c040"], gloves: "#5a3a24", offCol: "#6a3a9a",
+};
+const RANGER: Partial<Look> = {
+  outfit: "tunic", main: "#5e6b3a", trim: "#8a6a3a", shirt: "#c8b890", pants: "#5a4430", boots: "#4a3020", belt: "#4a3020",
+  cloak: "#4c5a30", lining: "#3a4424", hood: "up", weapon: "bow", pouch: true, gloves: "#6a4a2a",
+};
+const BANDIT: Partial<Look> = {
+  outfit: "leather", main: "#6a4a30", trim: "#8a2a2a", shirt: "#8a7a5a", pants: "#4a3a2a", boots: "#3a2a1e", belt: "#3a2618", buckle: "#9a8a70",
+  mask: "#8a2e2a", hat: "wrap", hatCol: "#4a3a2c", weapon: "sword", mood: "sly", beard: "stubble",
+};
+
+/** Hand-made looks for the story's characters (`vary`: face and hair picked per id). */
+const PRESETS: Record<string, Partial<Look> & { vary?: boolean }> = {
+  lonewolf: {
+    skin: "#f0c49e", hair: "#7a4824", hairStyle: "messy", eyes: "#3f6e8f", outfit: "tunic", main: "#4f8c3e", trim: "#d6c072",
+    shirt: "#e0d4b4", pants: "#6a5034", boots: "#5a3a22", belt: "#6e4424", buckle: "#ddb444", cloak: "#2f6a36", lining: "#234e2a",
+    hood: "down", pouch: true, weapon: "axe", mood: "kind", magic: "#a8f0ff",
+  },
+  "king-ulnar": {
+    build: "normal", hair: "#c4c0bc", hairStyle: "long", beard: "full", beardCol: "#d4d0cc", wrinkles: true, mood: "stern", eyes: "#4a5a7a",
+    outfit: "robe", main: "#f2efe8", trim: "#d9a93a", sash: "#d9a93a", cloak: "#6a3a92", lining: "#4a2a6a", hat: "crown", hatCol: "#e3b23c", boots: "#5a3a6a",
+  },
+  "royal-courtier": {
+    build: "slim", scar: true, mood: "sly", hair: "#2e2420", hairStyle: "short", beard: "goatee", skin: "#e2b892", eyes: "#3a3a2a",
+    outfit: "robe", main: "#ece9f0", trim: "#7a4aa6", sash: "#7a4aa6", boots: "#3a2a3a",
+  },
+  "prince-pelathar": {
+    hair: "#caa15a", hairStyle: "short", eyes: "#4a6a9a", outfit: "armor", metal: "#cdd3de", trim: "#e0b040", main: "#6a3a9a",
+    pants: "#3e3450", boots: "#4a3a5a", cloak: "#efebe3", lining: "#6a3a9a", hat: "circlet", hatCol: "#e3b23c", weapon: "sword", mood: "stern", magic: "#ff6a8a",
+  },
+  banedon: {
+    build: "slim", hair: "#ecd27e", hairStyle: "messy", eyes: "#4a8ac8", skin: "#f3cfae", outfit: "robe", main: "#7ab6e6", trim: "#f2f4ff",
+    sash: "#3e6ea8", boots: "#4a4a6a", weapon: "staff", magic: "#bfeaff", mood: "kind",
+  },
+  "young-wizard": { build: "slim", hair: "#8a5a2e", hairStyle: "short", outfit: "robe", main: "#4e5cb0", trim: "#e0c060", sash: "#e0c060", weapon: "staff", magic: "#c8a8ff" },
+  "theurgist-apprentice": { build: "slim", hair: "#3a2a24", hairStyle: "cropped", outfit: "robe", main: "#8a3a4a", trim: "#e3b23c", sash: "#5a2a3a", off: "book", offCol: "#3a4a8a", magic: "#ffd27a" },
+  guildmaster: {
+    build: "broad", hair: "#8a7a6a", hairStyle: "balding", beard: "short", beardCol: "#9a8a7a", wrinkles: true, outfit: "noble", main: "#34437a",
+    trim: "#e8dcc6", shirt: "#a8383a", pants: "#3a2a2a", chain: true, hat: "cap", hatCol: "#2a2a4a", mood: "stern", off: "book", offCol: "#6a2a2a",
+  },
+  sage: {
+    build: "old", hair: "#ecebe6", hairStyle: "balding", beard: "long", beardCol: "#f2f1ec", wrinkles: true, eyes: "#5a6a7a", outfit: "robe",
+    main: "#56638a", trim: "#d6c08a", sash: "#8a7a5a", weapon: "quarterstaff", mood: "kind",
+  },
+  hermit: {
+    build: "old", hair: "#bdb8ae", hairStyle: "wild", beard: "long", beardCol: "#c8c3ba", wrinkles: true, skin: "#c99a74", outfit: "rags",
+    main: "#7a6a4e", trim: "#a08a6a", pants: "#5a4a38", boots: "#6a5440", weapon: "quarterstaff", mood: "wild",
+  },
+  druid: {
+    skin: "#d8c4ae", eyes: "#c8402a", hair: "#2a2a22", hairStyle: "long", outfit: "robe", main: "#2c3326", trim: "#6a2a24", sash: "#4a1e1a",
+    cloak: "#232a1f", lining: "#141a12", hood: "up", weapon: "staff", magic: "#8aff5a", mood: "stern", boots: "#2a2420",
+  },
+  "druid-elder": {
+    build: "old", skin: "#cdb8a0", eyes: "#e04a2a", hair: "#7a7a70", hairStyle: "long", beard: "long", beardCol: "#8a8a80", wrinkles: true,
+    outfit: "robe", main: "#262b20", trim: "#7a2a22", sash: "#5a1e1a", cloak: "#1b2017", lining: "#0f130c", hood: "up", weapon: "staff", magic: "#b0ff4a", mood: "stern", boots: "#2a2420",
+  },
+  physician: {
+    hair: "#5a4a3a", hairStyle: "short", beard: "short", beardCol: "#6a5a48", wrinkles: true, outfit: "noble", main: "#3a3244", trim: "#d8d0bf",
+    shirt: "#e6decf", pants: "#2e2a30", hat: "cap", hatCol: "#2a2430", pouch: true, off: "book", offCol: "#5a3a2a", mood: "kind",
+  },
+  herbalist: {
+    fem: true, hair: "#8a5434", hairStyle: "braid", eyes: "#4a7a3a", outfit: "gown", main: "#5e7e44", trim: "#c8a868", sash: "#7a5a34",
+    apron: "#e8dcc0", hat: "wrap", hatCol: "#b89a5a", pouch: true, mood: "kind",
+  },
+  merchant: {
+    build: "broad", skin: "#efc09a", hair: "#4a3020", hairStyle: "short", beard: "short", outfit: "noble", main: "#a33a36", trim: "#e2d2b0",
+    shirt: "#e6c060", pants: "#4a2a30", chain: true, hat: "cap", hatCol: "#5e2a5a", mood: "sly", pouch: true,
+  },
+  ferryman: {
+    build: "broad", skin: "#c48c62", hair: "#6a5a4a", hairStyle: "cropped", beard: "full", beardCol: "#7a6a58", wrinkles: true, outfit: "peasant",
+    main: "#5e6e7e", shirt: "#c8b898", pants: "#4a4a4a", hat: "wrap", hatCol: "#7a5a3a", weapon: "quarterstaff",
+  },
+  refugee: {
+    vary: true, outfit: "rags", main: "#8a7a5a", trim: "#6a5a40", cloak: "#6a5a44", lining: "#4a3e30", hood: "up", pants: "#5a4a3a", boots: "#5a4434", mood: "kind",
+  },
+  refugees: { vary: true, outfit: "peasant", main: "#7a6a50", shirt: "#b8a888", cloak: "#5e5040", lining: "#43382c", hood: "down", mood: "kind" },
+  "young-woman": {
+    fem: true, hair: "#a8683a", hairStyle: "long", eyes: "#4a7a4a", skin: "#f3cfb0", outfit: "gown", main: "#b4584c", trim: "#e8d4a8",
+    sash: "#7a3a34", apron: "#ece2cc", mood: "kind",
+  },
+  madman: { hair: "#5a4a3a", hairStyle: "wild", beard: "stubble", skin: "#d8b08e", eyes: "#8a6a2a", outfit: "rags", main: "#6a6a52", trim: "#8a7a5a", mood: "wild", boots: "#5a4a3a" },
+  "old-madman": {
+    build: "old", hair: "#d0ccc4", hairStyle: "wild", beard: "long", beardCol: "#d8d4cc", wrinkles: true, skin: "#d0a684", eyes: "#9a7a2a",
+    outfit: "rags", main: "#5e5a48", trim: "#8a7a5a", mood: "wild", weapon: "quarterstaff",
+  },
+  bandit: { ...BANDIT, vary: true },
+  robber: { ...BANDIT, vary: true, mask: undefined, hat: "wrap", hatCol: "#2e2a26", main: "#4e3a2a", trim: "#3a3a3a", weapon: "dagger", beard: "short" },
+  "bandit-soldier": { ...BANDIT, vary: true, hat: "helmet", metal: "#8e8c86", mask: "#5a2a24", weapon: "spear", off: "shield", offCol: "#5a4a32" },
+  "holmgard-soldier": { ...SOMMER, vary: true, weapon: "spear" },
+  "holmgard-guard": { ...SOMMER, vary: true, weapon: "spear", off: "shield" },
+  "king-guard-soldier": { ...SOMMER, vary: true, weapon: "sword", off: "shield", plume: "#7a3aa8" },
+  "king-guard-cavalry": { ...SOMMER, vary: true, weapon: "broadsword", plume: "#7a3aa8", cloak: "#6a3a9a", lining: "#4a2a6a", hood: undefined },
+  "prince-soldier": { ...SOMMER, vary: true, weapon: "sword", off: "shield", device: ["#3a5aa8", "#f0c040"], offCol: "#3a5aa8" },
+  bodyguard: { ...SOMMER, vary: true, build: "broad", weapon: "broadsword", off: "shield", plume: "#e3b23c" },
+  "fake-soldier": { ...SOMMER, vary: true, device: ["#5a3a6a", "#b0a060"], trim: "#a8864a", mood: "sly", beard: "stubble", weapon: "sword" },
+  "border-ranger": { ...RANGER, vary: true, hood: "down" },
+  ranger: { ...RANGER, vary: true },
+  "red-stranger": {
+    skin: "#e0c4a8", eyes: "#2a1a1a", hair: "#1e1414", hairStyle: "short", outfit: "robe", main: "#a8262a", trim: "#3a1416", sash: "#3a1416",
+    cloak: "#8a1c22", lining: "#4a0e12", hood: "up", mood: "sly", magic: "#ff6a3a", boots: "#2a1414",
+  },
+};
+
+/** Generic looks picked by a keyword in an unknown id. */
+const KEYWORDS: [RegExp, Partial<Look>][] = [
+  [/king|queen/, { outfit: "robe", main: "#f0ece4", trim: "#d9a93a", cloak: "#6a3a92", lining: "#4a2a6a", hat: "crown", hatCol: "#e3b23c", mood: "stern" }],
+  [/prince/, { outfit: "armor", metal: "#cdd3de", trim: "#e0b040", main: "#6a3a9a", hat: "circlet", hatCol: "#e3b23c", weapon: "sword" }],
+  [/knight|paladin/, { outfit: "armor", metal: "#c0c6d0", trim: "#d9a93a", main: "#3a5aa8", hat: "helmet", plume: "#d83a3a", weapon: "sword", off: "shield", offCol: "#3a5aa8" }],
+  [/cavalry|rider/, { ...SOMMER, weapon: "broadsword", cloak: "#6a3a9a", lining: "#4a2a6a", plume: "#7a3aa8" }],
+  [/soldier|guard|warrior|sentry|captain|army|militia/, { ...SOMMER, weapon: "spear" }],
+  [/ranger|hunter|archer|scout|woodsman/, { ...RANGER }],
+  [/bandit|robber|thief|brigand|outlaw|cutthroat/, { ...BANDIT }],
+  [/pirate/, { ...BANDIT, mask: undefined, hat: "wrap", hatCol: "#b8302a", main: "#3a3a5a", weapon: "sword" }],
+  [/sailor|fisher|boatman|ferry/, { outfit: "peasant", main: "#4a6a8a", shirt: "#e0d8c8", hat: "wrap", hatCol: "#3a4a6a" }],
+  [/wizard|mage|magician|sorcer|theurg|apprentice/, { outfit: "robe", main: "#4e5cb0", trim: "#e0c060", weapon: "staff", magic: "#c8a8ff" }],
+  [/druid|cultist|warlock|necromancer/, { outfit: "robe", main: "#2c3326", trim: "#6a2a24", cloak: "#232a1f", lining: "#141a12", hood: "up", weapon: "staff", magic: "#8aff5a", eyes: "#c8402a" }],
+  [/priest|cleric|monk|friar|abbot|healer/, { outfit: "robe", main: "#8a6a44", trim: "#e8dcc0", sash: "#5a4024", hairStyle: "cropped" }],
+  [/physician|doctor|herbal|apothec/, { outfit: "noble", main: "#3a3244", trim: "#d8d0bf", hat: "cap", hatCol: "#2a2430", pouch: true }],
+  [/merchant|trader|innkeep|shopkeep|guild|noble|lord|baron|duke|courtier/, { outfit: "noble", main: "#7a2e3a", trim: "#e2d2b0", shirt: "#d8b860", chain: true, hat: "cap", hatCol: "#3a2a4a" }],
+  [/lady|princess/, { fem: true, outfit: "gown", main: "#8a4aa0", trim: "#e8c870", hat: "circlet", hatCol: "#e3b23c", hairStyle: "long" }],
+  [/hermit|beggar|madman|mad|refugee|prisoner|slave/, { outfit: "rags", main: "#7a6a4e", trim: "#a08a6a", hairStyle: "wild" }],
+  [/sage|elder|old|grand/, { build: "old", hair: "#dcdad4", beard: "long", beardCol: "#e8e6e0", wrinkles: true, outfit: "robe", main: "#5a6a7a", trim: "#c8b080" }],
+  [/child|boy|girl|kid|urchin/, { build: "child", outfit: "peasant" }],
+  [/woman|wife|maid|mother|widow|girl|daughter|sister|nurse|lady/, { fem: true, outfit: "gown", apron: "#e8dcc0" }],
+  [/villager|peasant|farmer|townsman|townsfolk|man|stranger|traveller|traveler|pilgrim/, { outfit: "peasant" }],
+];
+const HUMAN = /lonewolf|lone-wolf|kai|king|queen|prince|princess|knight|paladin|soldier|guard|warrior|captain|cavalry|ranger|hunter|archer|scout|bandit|robber|thief|brigand|pirate|sailor|fisher|ferry|wizard|mage|magician|sorcer|theurg|apprentice|druid|priest|cleric|monk|healer|physician|herbal|merchant|trader|innkeep|guild|noble|lord|lady|baron|duke|courtier|hermit|beggar|madman|refugee|prisoner|sage|elder|child|boy|girl|woman|man|villager|peasant|farmer|stranger|traveller|traveler|pilgrim|bodyguard|elf|human|person|people|crowd|messenger|herald|servant|smith|cook|woodsman|scholar|nomad|mercenary|sentry|militia|trimis|banedon|ulnar|pelathar/;
+const NOT_HUMAN = /kakarmi|giak|gourgaz|kraan|zlanbeast|vordak|helghast|doomwolf|wolf|bear|boar|snake|serpent|rat|dog|hound|horse|dragon|wyvern|zombie|skeleton|ghoul|ghost|spirit|wraith|spider|bat|troll|ogre|goblin|orc|lizard|crocodile|bird|eagle|hawk|beast|monster|creature|demon|daemon|darklord|gnaag|crypt|spawn|burrow|kalkoth|elemental|golem|slime|worm|insect|fish|shark|squid|plant|tree|vine|statue|undead|hellhound|automaton|construct/;
+
+/** True for human / elf / wizard actors (people), false for monsters and animals. */
+export function isPersonActor(actorId: string): boolean {
+  const id = actorId.toLowerCase();
+  if (id in PRESETS) return true;
+  if (NOT_HUMAN.test(id)) return false;
+  return HUMAN.test(id);
+}
+
+const looks = new Map<string, Look>();
+/** Preset look for a known id, or a deterministic villager-like look built from the id. */
+export function lookFor(actorId: string): Look {
+  const id = actorId.toLowerCase();
+  const hit = looks.get(id);
+  if (hit) return hit;
+  const r = seeded(id);
+  const p = PRESETS[id];
+  let L: Look;
+  const varied = (fem: boolean): Partial<Look> => ({
+    skin: r.pick(SKINS), hair: r.pick(HAIRS), eyes: r.pick(EYES),
+    hairStyle: fem ? r.pick<HairStyle>(["long", "braid", "bun", "ponytail"]) : r.pick<HairStyle>(["short", "messy", "cropped", "curly", "short"]),
+    beard: fem ? "none" : r.pick<Beard>(["none", "none", "stubble", "short", "moustache", "full", "goatee"]),
+  });
+  if (p) {
+    const { vary, ...rest } = p;
+    L = { ...BASE, ...(vary ? varied(!!rest.fem) : {}), ...rest };
+    if (vary && rest.hat === "helmet") L.beard = r.pick<Beard>(["none", "stubble", "short", "moustache", "full"]);
+  } else {
+    const kw = KEYWORDS.filter(([re]) => re.test(id)).map(([, v]) => v);
+    const fem = kw.some((k) => k.fem) || (!kw.length && r.chance(0.4));
+    L = { ...BASE, ...varied(fem), fem, main: r.pick(EARTH), shirt: r.pick(["#d8ccb0", "#c8b898", "#e0d6c0", "#b8a888"]), pants: r.pick(["#5a4a3a", "#4a4a4a", "#6a5a44", "#4a3e34"]), trim: r.pick(["#a89060", "#8a6a4a", "#b85a4a", "#5a7a9a"]), outfit: fem ? "gown" : r.pick<Outfit>(["peasant", "tunic", "peasant"]) };
+    if (fem) L.apron = r.chance(0.6) ? "#e8dcc0" : undefined;
+    for (const k of kw) Object.assign(L, k);
+    if (L.build === "old" && L.hair === BASE.hair) L.hair = "#d8d6d0";
+    if (L.build === "old" && !L.fem) L.hairStyle = r.pick<HairStyle>(["balding", "short", "wild"]);
+    if (L.fem) L.beard = "none";
+    if (L.outfit === "gown" && !L.fem) L.outfit = "peasant";
+  }
+  looks.set(id, L);
+  return L;
+}
+
+const resolve = (look: Look | string): Look => (typeof look === "string" ? lookFor(look) : look);
+
+/** Weapon kind for an item name (English or Vietnamese). */
+export function weaponKind(name?: string): WeaponKind {
+  if (!name) return "none";
+  const s = name.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d");
+  const has = (...w: string[]) => w.some((x) => new RegExp(`(^|[^a-z])${x}([^a-z]|$)`).test(s) || s.includes(x.replace(/ /g, "")) && x.length > 4);
+  if (has("broadsword", "broad sword", "dai kiem", "trong kiem")) return "broadsword";
+  if (has("short sword", "shortsword", "doan kiem")) return "shortsword";
+  if (has("dagger", "knife", "dao gam", "dao", "dao nho")) return "dagger";
+  if (has("warhammer", "war hammer", "hammer", "bua chien", "bua")) return "warhammer";
+  if (has("quarterstaff", "staff", "gay", "truong", "gay chien")) return "quarterstaff";
+  if (has("sword", "sommerswerd", "kiem", "guom")) return "sword";
+  if (has("axe", "riu")) return "axe";
+  if (has("mace", "chuy", "dui")) return "mace";
+  if (has("spear", "lance", "pike", "giao", "thuong", "mac")) return "spear";
+  if (has("bow", "cung")) return "bow";
+  return "none";
+}
+
+/** The look holding a given item (undefined / unknown = empty hands). The Sommerswerd shines gold. */
+export function withWeapon(look: Look | string, weapon?: string): Look {
+  const L = resolve(look);
+  const kind = weaponKind(weapon);
+  const gold = !!weapon && /sommerswerd/i.test(weapon);
+  return { ...L, weapon: kind, blade: gold ? "#f2d470" : undefined };
+}
+
+// ------------------------------------------------------------------ public drawing API
+const keyOf = (L: Look) => JSON.stringify(L);
+const lookByKey = new Map<string, Look>();
+const frames = memo((key: string) => {
+  const [k, facing, pose, frame] = key.split("\u0001");
+  return paint(lookByKey.get(k)!, facing as Facing, pose as Pose, Number(frame)).canvas();
+});
+
+/** One 32x48 frame (transparent, feet at the bottom centre). Cached. */
+export function personFrame(look: Look | string, facing: Facing, pose: Pose, frame: number): HTMLCanvasElement {
+  const L = resolve(look);
+  const k = keyOf(L);
+  if (!lookByKey.has(k)) lookByKey.set(k, L);
+  const n = PERSON_FRAMES[pose];
+  const f = ((Math.floor(frame) % n) + n) % n;
+  return frames([k, facing, pose, f].join("\u0001"));
+}
+
+// ------------------------------------------------------------------ portrait (32x32 bust)
+const PSKULL: [number, number][] = [
+  [4, 11], [2, 13], [1, 14], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15], [0, 15],
+  [1, 14], [1, 14], [2, 13], [3, 12], [5, 10],
+];
+/** Sprite fringe (12 columns, 15 rows) resampled for the 16-column, 21-row portrait head. */
+const pf = (arr: number[], i: number) => {
+  const t = (i * 11) / 15, a = Math.floor(t), b = Math.min(11, a + 1), v0 = arr[a], v1 = arr[b];
+  if (v0 < 0 && v1 < 0) return -1;
+  if (v0 < 0 || v1 < 0) return t - a < 0.5 ? (v0 < 0 ? -1 : Math.round(v0 * 1.4)) : v1 < 0 ? -1 : Math.round(v1 * 1.4);
+  return Math.round((v0 + (v1 - v0) * (t - a)) * 1.4);
+};
+
+function paintPortrait(L: Look): Grid {
+  const g = new Grid(32, 32);
+  const x0 = 8, T = 3;
+  const H = HAIR[L.hairStyle];
+  const sk = tone(L.skin), ht = tone(L.hair);
+  const ln = lineOf(L), br = browOf(L);
+  const child = L.build === "child";
+  const D = dims(L);
+  const wide = L.build === "broad" ? 1 : L.fem || L.build === "slim" || child ? -1 : 0;
+
+  // cloak / long hair behind the shoulders
+  if (L.cloak) {
+    const c = tone(L.cloak);
+    for (let y = 21; y < 32; y++) { const w = 11 + wide + (y - 21) * 0.6; for (let x = Math.round(16 - w); x <= Math.round(15 + w); x++) g.px(x, y, x < 9 ? c.l : x > 23 ? c.d : c.b); }
+  }
+  if (H.back > 13 && !H.bald) {
+    for (let x = x0 - 3; x <= x0 + 18; x++) {
+      const bottom = Math.min(31, T + Math.round(H.back * 1.15) - (x % 2) - (x < x0 - 1 || x > x0 + 16 ? 2 : 0));
+      for (let y = T + 5; y <= bottom; y++) g.px(x, y, y >= bottom - 1 ? ht.d2 : x > x0 + 11 ? ht.d : (x - x0) % 3 === 0 ? ht.d : ht.b);
+    }
+  }
+  // shoulders and clothes
+  const up = tone(bodyCol(L)), tr = tone(L.trim), m = tone(L.metal), bk = tone(L.buckle), main = tone(L.main);
+  for (let y = 25; y < 32; y++) {
+    const w = 7 + wide + (y - 25) * 1.4 + (y > 27 ? 1 : 0);
+    const a = Math.round(16 - w), b = Math.round(15 + w);
+    for (let x = a; x <= b; x++) {
+      const u = (x - a) / (b - a);
+      let c = shadeU(up, u);
+      if (L.outfit === "tabard") c = u < 0.13 ? m.l : (x + y) % 2 ? m.d : m.b;
+      if (L.outfit === "armor" && u > 0.15 && u < 0.35 && y < 28) c = m.l2;
+      g.px(x, y, c);
+    }
+  }
+  // neck
+  for (let y = T + 18; y <= 26; y++) for (let x = 12; x <= 19; x++) g.px(x, y, x >= 18 ? sk.d2 : y <= T + 19 ? sk.d2 : x <= 12 ? sk.b : sk.d);
+  switch (L.outfit) {
+    case "tabard": {
+      const tb = tone(L.main);
+      for (let y = 26; y < 32; y++) for (let x = 10; x <= 21; x++) g.px(x, y, x === 10 ? tb.l : x >= 20 ? tb.d : tb.b);
+      if (L.device) { const f = tone(L.device[0]), ch = tone(L.device[1]); for (let y = 27; y < 32; y++) for (let x = 12 + Math.max(0, y - 30); x <= 19 - Math.max(0, y - 30); x++) g.px(x, y, x === 12 ? f.l : x === 19 ? f.d : f.b); g.px(15, 28, ch.l2); g.px(16, 28, ch.l); g.px(14, 29, ch.b); g.px(15, 29, ch.b); g.px(16, 29, ch.d); g.px(17, 29, ch.d); g.px(15, 30, ch.d); g.px(16, 30, ch.d); g.px(15, 31, ch.d2); }
+      for (let x = 11; x <= 20; x++) g.px(x, 25, x < 14 ? m.l : m.d);
+      break;
+    }
+    case "armor":
+      for (let y = 26; y < 32; y++) { g.px(15, y, m.l2); g.px(16, y, m.l); }
+      for (const cx of [6, 25]) for (let y = 25; y < 31; y++) for (let x = cx - 4; x <= cx + 4; x++) { const d = Math.hypot((x - cx) / 4.5, (y - 27) / 3.2); if (d <= 1) g.px(x, y, y >= 29 ? tr.d : d > 0.8 ? tr.b : x < cx - 1 && y < 27 ? m.l2 : x < cx ? m.l : m.d); }
+      g.span(11, 20, 25, m.b); g.span(12, 19, 24, m.l);
+      break;
+    case "robe":
+      for (let y = 25; y < 32; y++) { const o = Math.max(0, 31 - y) * 0.6; g.px(Math.round(14 - o), y, tr.l); g.px(Math.round(17 + o), y, tr.d); g.px(Math.round(15 - o), y, tr.b); g.px(Math.round(16 + o), y, tr.b); }
+      break;
+    case "gown":
+      for (let x = 12; x <= 19; x++) g.px(x, 26, x >= 18 ? sk.d : sk.b);
+      g.span(11, 20, 27, tr.b); g.px(11, 27, tr.l); g.px(20, 27, tr.d);
+      break;
+    case "leather":
+      for (let y = 26; y < 32; y++) { g.px(Math.round(8 + (y - 26) * 1.6), y, tone(L.belt).b); g.px(Math.round(9 + (y - 26) * 1.6), y, tone(L.belt).d); }
+      for (const [x, y] of [[11, 28], [21, 28], [13, 31], [19, 30]] as V[]) g.px(x, y, bk.l);
+      g.span(14, 17, 26, main.d2);
+      break;
+    case "noble": {
+      const s = tone(L.shirt);
+      for (let y = 26; y < 32; y++) for (let x = 14; x <= 17; x++) g.px(x, y, x === 14 ? s.l : x === 17 ? s.d : s.b);
+      g.px(15, 28, bk.l); g.px(15, 30, bk.l);
+      const f = tone(L.trim);
+      for (let y = 24; y < 29; y++) for (let x = 3; x <= 28; x++) { if (x >= 12 && x <= 19 && y > 24) continue; if (!g.get(x, y + 1)) continue; if (y === 28 && x % 2) continue; g.px(x, y, (x * 3 + y) % 4 === 0 ? f.l2 : x < 12 ? f.l : x > 20 ? f.d : f.b); }
+      if (L.chain) { const gc = tone(GOLD); for (const [x, y] of [[10, 28], [11, 29], [12, 30], [13, 31], [18, 31], [19, 30], [20, 29], [21, 28]] as V[]) g.px(x, y, x % 2 ? gc.l : gc.b); }
+      break;
+    }
+    case "rags":
+      g.px(9, 29, mx(L.main, L.trim, 0.6)); g.px(10, 29, mx(L.main, L.trim, 0.6)); g.px(10, 30, mx(L.main, L.trim, 0.6)); g.px(21, 28, main.d2); g.px(22, 29, main.d2);
+      g.span(13, 18, 26, sk.d); g.span(14, 17, 27, sk.d2);
+      break;
+    default:
+      g.px(15, 26, sk.d); g.px(16, 26, sk.d2); g.px(15, 27, sk.d2); g.px(14, 26, tr.l); g.px(17, 26, tr.d); g.px(14, 27, tr.b); g.px(17, 27, tr.d); g.px(15, 28, tr.b); g.px(16, 28, tr.d);
+      g.px(11, 29, up.d); g.px(21, 30, up.d);
+  }
+  if (L.cloak && L.hood !== "up") {
+    const c = tone(L.cloak);
+    for (let x = 4; x <= 27; x++) { const y0 = 24 + Math.round(Math.abs(x - 15.5) * 0.15); for (let y = y0; y <= y0 + (L.hood === "down" ? 2 : 1); y++) if (x < 13 || x > 18 || y > y0) g.px(x, y, x < 9 ? c.l : x > 22 ? c.d : (x % 3 === 0 ? c.d : c.b)); }
+    for (const sx of [5, 26]) for (let y = 25; y <= 29; y++) for (let x = sx - 3; x <= sx + 3; x++) if (Math.hypot(x - sx, (y - 26) * 1.3) < 3.6) g.px(x, y, x < sx ? c.l : c.d);
+    g.px(15, 27, bk.l2); g.px(16, 27, bk.b); g.px(15, 28, bk.d); g.px(16, 28, bk.d2);
+  }
+  // ears
+  for (const [ex, c1, c2] of [[x0 - 1, sk.b, sk.d], [x0 + 16, sk.d, sk.d2]] as [number, string, string][]) for (let y = T + 10; y <= T + 14; y++) g.px(ex, y, y === T + 10 || y === T + 14 ? c2 : c1);
+  g.px(x0 - 2, T + 11, sk.b); g.px(x0 - 2, T + 12, sk.d); g.px(x0 + 17, T + 11, sk.d); g.px(x0 + 17, T + 12, sk.d2);
+  // face
+  PSKULL.forEach(([a, b], r) => {
+    for (let x = a; x <= b; x++) {
+      let c = sk.b;
+      if (x <= 1 && r >= 3 && r <= 14) c = sk.l;
+      if (r <= 2 && x <= 7) c = sk.l;
+      if (x >= 14 || (x >= 13 && r >= 15)) c = sk.d;
+      if (r >= 19 || (r === 18 && (x <= 3 || x >= 12))) c = sk.d;
+      if (x === b && r >= 4) c = sk.d2;
+      g.px(x0 + x, T + r, c);
+    }
+  });
+  if (child) { g.px(x0 + 1, T + 15, sk.b); }
+  // cheeks
+  const bl = blushOf(L);
+  for (const [x, y] of [[2, 14], [3, 14], [2, 15], [12, 14], [13, 14]] as V[]) g.px(x0 + x, T + y, x > 8 ? mx(bl, sk.d, 0.4) : bl);
+  g.px(x0 + 3, T + 16, sk.l);
+  // eyes
+  const ir = tone(L.eyes), pupil = mx(ir.d2, "#120a14", 0.5);
+  const mood = L.mood ?? "kind";
+  for (const e of [2, 10]) {
+    g.span(x0 + e, x0 + e + 3, T + 10, ln);
+    if (L.fem) { g.px(x0 + (e === 2 ? e - 1 : e + 4), T + 10, ln); g.px(x0 + (e === 2 ? e - 1 : e + 4), T + 9, ln); }
+    g.px(x0 + e, T + 11, SCLERA); g.px(x0 + e + 1, T + 11, "#ffffff"); g.px(x0 + e + 2, T + 11, pupil); g.px(x0 + e + 3, T + 11, e === 2 ? SCLERA : mx(SCLERA, sk.d, 0.4));
+    g.px(x0 + e, T + 12, sk.d); g.px(x0 + e + 1, T + 12, ir.b); g.px(x0 + e + 2, T + 12, ir.d); g.px(x0 + e + 3, T + 12, sk.d);
+    g.span(x0 + e, x0 + e + 3, T + 13, mx(sk.b, sk.d, 0.5));
+    if (L.eyes === "#c8402a" || L.eyes === "#e04a2a") { g.glow(x0 + e + 1, T + 12, L.eyes, 0.6); g.glow(x0 + e + 2, T + 11, L.eyes, 0.5); }
+    // brows
+    const inner = e === 2 ? e + 3 : e, outer = e === 2 ? e : e + 3;
+    const angry = mood === "stern" || mood === "sly";
+    const wild = mood === "wild";
+    for (let x = e; x <= e + 3; x++) {
+      const t = (x - outer) / (inner - outer); // 0 outer .. 1 inner
+      const y = T + 8 + (angry ? (t > 0.6 ? 1 : 0) : wild ? (t > 0.5 ? -1 : 0) : mood === "kind" ? (t < 0.3 ? 1 : 0) : 0);
+      g.px(x0 + x, y, t > 0.3 ? br : sh(br, 0.15));
+    }
+  }
+  // nose
+  g.px(x0 + 7, T + 12, sk.l); g.px(x0 + 7, T + 13, sk.l);
+  g.px(x0 + 8, T + 13, mx(sk.b, sk.d, 0.5)); g.px(x0 + 8, T + 14, sk.d);
+  g.px(x0 + 6, T + 15, sk.d); g.px(x0 + 7, T + 15, sk.l); g.px(x0 + 8, T + 15, sk.b); g.px(x0 + 9, T + 15, sk.d2);
+  g.span(x0 + 7, x0 + 8, T + 16, sk.d);
+  // mouth
+  const lip = lipOf(L);
+  g.span(x0 + 6, x0 + 9, T + 17, sh(lip, -0.15));
+  g.px(x0 + 5, T + 17, mx(lip, sk.b, mood === "kind" ? 0.5 : 0.75)); g.px(x0 + 10, T + 17, mx(lip, sk.b, mood === "kind" ? 0.5 : 0.75));
+  if (mood === "kind") { g.px(x0 + 5, T + 16, mx(lip, sk.b, 0.7)); g.px(x0 + 10, T + 16, mx(lip, sk.b, 0.7)); }
+  if (mood === "sly") g.px(x0 + 10, T + 16, mx(lip, sk.b, 0.4));
+  g.span(x0 + 7, x0 + 8, T + 18, L.fem ? sh(lip, 0.25) : mx(lip, sk.b, 0.6));
+  g.px(x0 + 7, T + 19, sk.d);
+  if (L.wrinkles) {
+    g.px(x0 + 1, T + 12, sk.d); g.px(x0 + 14, T + 12, sk.d2); g.px(x0 + 1, T + 11, sk.d);
+    g.px(x0 + 4, T + 15, sk.d); g.px(x0 + 4, T + 16, sk.d); g.px(x0 + 11, T + 15, sk.d); g.px(x0 + 11, T + 16, sk.d);
+    g.span(x0 + 5, x0 + 10, T + 6, mx(sk.b, sk.d, 0.6)); g.px(x0 + 2, T + 14, sk.d);
+  }
+  if (L.scar) for (const [x, y] of [[11, 8], [12, 9], [12, 11], [13, 13], [13, 14], [14, 15]] as V[]) g.px(x0 + x, T + y, y % 2 ? "#c47a72" : "#b0605c");
+
+  // beard
+  if (L.beard !== "none") {
+    const bt = tone(L.beardCol ?? L.hair);
+    if (L.beard === "stubble") for (let r = 15; r <= 20; r++) { const [a, b] = PSKULL[r]; for (let x = a; x <= b; x++) if ((x + r) % 2 === 0 && !(r === 17 && x >= 5 && x <= 10)) g.px(x0 + x, T + r, mx(L.skin, bt.d, 0.4)); }
+    else {
+      const mo = () => { g.span(x0 + 4, x0 + 11, T + 16, bt.b); g.px(x0 + 4, T + 17, bt.d); g.px(x0 + 11, T + 17, bt.d); g.span(x0 + 5, x0 + 7, T + 16, bt.l); g.px(x0 + 3, T + 17, bt.d); g.px(x0 + 12, T + 17, bt.d2); };
+      if (L.beard === "moustache") mo();
+      else if (L.beard === "goatee") { mo(); for (let r = 18; r <= 22; r++) for (let x = 6; x <= 9; x++) if (r < 22 || (x > 6 && x < 9)) g.px(x0 + x, T + r, x === 9 ? bt.d : r === 22 ? bt.d2 : bt.b); }
+      else {
+        const extra = L.beard === "short" ? 1 : L.beard === "full" ? 3 : 12;
+        for (let r = 11; r <= 20 + extra; r++) {
+          const [a, b] = r <= 20 ? PSKULL[r] : [Math.min(7, 4 + Math.floor((r - 20) / 2)), Math.max(8, 11 - Math.floor((r - 20) / 2))];
+          for (let x = a; x <= b; x++) {
+            if (r <= 15 && x > (r <= 13 ? 0 : 2) && x < (r <= 13 ? 15 : 13)) continue;
+            if (r === 16 && x > 3 && x < 12) continue;
+            if (L.beard === "short" && r <= 17 && x > 3 && x < 12) continue;
+            if (r === 17 && x >= 6 && x <= 9) continue;
+            if (r >= 32 - T) continue;
+            const c = r >= 20 + extra - 1 ? bt.d2 : x > 11 ? bt.d : (x + r) % 3 === 0 ? bt.l : (x * 2 + r) % 5 === 0 ? bt.d : bt.b;
+            g.px(x0 + x, T + r, c);
+          }
+        }
+        mo();
+        g.span(x0 + 6, x0 + 9, T + 17, sh(lip, -0.3)); g.span(x0 + 7, x0 + 8, T + 18, mx(lip, bt.b, 0.5));
+      }
+    }
+  }
+  // hair over the head
+  if (L.hairStyle === "bald" || L.hairStyle === "balding") { g.px(x0 + 4, T + 1, sk.l2); g.px(x0 + 5, T + 1, sk.l2); g.px(x0 + 3, T + 2, sk.l2); g.px(x0 + 6, T + 2, sk.l); }
+  if (H.side > 0) {
+    const sideB = T + Math.round(H.side * 1.4);
+    for (const x of [x0 - 1, x0 + 16, x0 - 2, x0 + 17]) {
+      const far = x === x0 - 2 || x === x0 + 17;
+      for (let y = T + 3 + (far ? 2 : 0); y <= sideB - (far ? 2 : 0); y++) {
+        if (H.side <= 11 && y >= T + 10 && y <= T + 14) continue;
+        g.px(x, y, y >= sideB - 1 ? ht.d2 : x > x0 ? ht.d : ht.b);
+      }
+    }
+  }
+  for (let i = 0; i < 16; i++) {
+    const v = pf(H.fringe, i);
+    if (v < 0) continue;
+    const x = x0 + i;
+    const sk0 = PSKULL[0];
+    const top = L.hairStyle === "balding" ? T + 4 : i >= sk0[0] && i <= sk0[1] ? T - 1 : i >= 1 && i <= 14 ? T : T + 2;
+    const bottom = T + v;
+    const prev = pf(H.fringe, Math.max(0, i - 1)), next = pf(H.fringe, Math.min(15, i + 1));
+    for (let y = top; y <= bottom; y++) {
+      const strand = (y > T + Math.min(prev, next) && i % 3 === 1) || (!!H.curly && (x + y) % 3 === 0) || (y > top + 3 && i % 4 === 2);
+      g.px(x, y, hairShade(ht, i / 15, y, top, bottom, strand));
+    }
+    if (bottom >= T + 4 && bottom + 1 < T + 17 && g.get(x, bottom + 1)) g.px(x, bottom + 1, i >= 13 ? sk.d2 : sk.d);
+  }
+  // highlight sheen across the crown
+  if (!H.bald) for (const [x, y] of [[4, 0], [5, 0], [3, 1], [6, 1], [7, 1], [9, 0]] as V[]) if (g.get(x0 + x, T + y - 1)) g.px(x0 + x, T + y - 1, y === 0 && x < 6 ? ht.l2 : ht.l);
+  if (H.tufts) for (const i of H.tufts) { const x = x0 + Math.round(i * 1.36); g.px(x, T - 2, ht.b); g.px(x + 1, T - 2, ht.d); if (H.wild) g.px(x - 1, T - 3, ht.d); }
+  if (H.wild) for (const [x, y] of [[-3, 6], [-3, 11], [18, 7], [18, 13], [-3, 15], [18, 16]] as V[]) g.px(x0 + x, T + y, ht.d);
+  if (H.tail === "bun") { g.ellipse(x0 + 7.5, T - 3, 3.5, 2.2, ht.b); g.px(x0 + 5, T - 4, ht.l); g.px(x0 + 6, T - 5, ht.l2); g.span(x0 + 6, x0 + 10, T - 1, ht.d); }
+  if (H.tail === "braid") for (let y = T + 14; y < 32; y++) { const x = x0 + 16 + ((y >> 1) % 2); g.px(x, y, y % 2 ? ht.b : ht.l); g.px(x + 1, y, ht.d); }
+
+  // masks, hoods and hats
+  if (L.mask) { const c = tone(L.mask); for (let r = 15; r <= 22; r++) { const [a, b] = r <= 20 ? PSKULL[r] : [3, 12]; for (let x = a - 1; x <= b + 1; x++) g.px(x0 + x, T + r, (x - r) % 4 === 0 ? c.d : x <= a ? c.l : x >= b - 1 ? c.d : c.b); } }
+  if (L.hood === "up" && L.cloak) {
+    const c = tone(L.cloak);
+    const open = (x: number, y: number) => { const r = y - T, i = x - x0; if (r < 4 || r > 22) return false; const a = r === 4 ? 4 : r === 5 ? 2 : r > 20 ? 3 : 1; return i >= a && i <= 15 - a; };
+    for (let y = T - 3; y < 32; y++) {
+      const r = y - (T - 3);
+      const w = r === 0 ? 5 : r === 1 ? 7 : r === 2 ? 8.5 : y > 24 ? 13 : 10.5;
+      for (let x = Math.round(15.5 - w); x <= Math.round(15.5 + w); x++) {
+        if (open(x, y)) continue;
+        const u = (x - 15.5 + w) / (2 * w);
+        let k = u < 0.2 ? c.l : u > 0.8 ? c.d : c.b;
+        if (r <= 2 && u > 0.25 && u < 0.5) k = c.l2;
+        if (y > 24 && Math.abs(x - 15.5) < 3) k = c.d;
+        g.px(x, y, k);
+      }
+    }
+    for (let y = T + 4; y <= T + 22; y++) for (let x = x0; x <= x0 + 15; x++) { if (!open(x, y)) continue; if (!open(x - 1, y) || !open(x + 1, y) || !open(x, y - 1)) tint(g, x, y, c.d2, 0.55); else if (!open(x - 2, y) || !open(x + 2, y) || !open(x, y - 2)) tint(g, x, y, c.d2, 0.25); }
+  }
+  const hc = tone(L.hatCol);
+  switch (L.hat) {
+    case "crown": {
+      const gt = tone(L.hatCol);
+      for (let x = 0; x <= 15; x++) { g.px(x0 + x, T + 3, x < 4 ? gt.l : x > 12 ? gt.d : gt.b); g.px(x0 + x, T + 4, x > 12 ? gt.d2 : gt.d); }
+      for (const p of [0, 4, 11, 15]) { g.px(x0 + p, T + 2, gt.b); g.px(x0 + p, T + 1, gt.l); g.px(x0 + p, T, gt.l2); }
+      for (let y = T - 1; y <= T + 2; y++) { g.px(x0 + 7, y, gt.l); g.px(x0 + 8, y, gt.b); }
+      g.px(x0 + 7, T - 2, gt.l2);
+      g.px(x0 + 7, T + 3, "#e04a5a"); g.px(x0 + 8, T + 3, "#d8344a"); g.px(x0 + 7, T + 4, "#8a1a30"); g.px(x0 + 8, T + 4, "#8a1a30");
+      g.px(x0 + 3, T + 3, "#6a9ae8"); g.px(x0 + 12, T + 3, "#4a7ad8");
+      g.glow(x0 + 7, T + 3, "#ffffff", 0.4);
+      break;
+    }
+    case "circlet": {
+      const gt = tone(L.hatCol);
+      for (let x = 0; x <= 15; x++) g.px(x0 + x, T + 5, x < 4 ? gt.l : x > 12 ? gt.d : gt.b);
+      g.px(x0 + 7, T + 5, L.magic); g.px(x0 + 8, T + 5, sh(L.magic, -0.3)); g.px(x0 + 7, T + 4, gt.b); g.px(x0 + 8, T + 4, gt.d); g.glow(x0 + 7, T + 5, "#ffffff", 0.45);
+      break;
+    }
+    case "helmet": {
+      for (let y = T - 3; y <= T + 6; y++) {
+        const r = y - (T - 3);
+        const inset = r === 0 ? 5 : r === 1 ? 3 : r === 2 ? 1 : 0;
+        for (let x = -1 + inset; x <= 16 - inset; x++) {
+          const u = (x + 1) / 17;
+          let c = u < 0.3 ? m.l : u > 0.72 ? m.d : m.b;
+          if (r <= 3 && u > 0.2 && u < 0.42) c = m.l2;
+          if (y === T + 6) c = u < 0.5 ? m.l : m.d;
+          if (y === T + 5) c = m.d;
+          g.px(x0 + x, y, c);
+        }
+      }
+      for (let y = T - 3; y <= T + 4; y++) g.px(x0 + 7, y, y < T ? m.l2 : m.l);
+      for (const rx of [0, 4, 11, 15]) g.px(x0 + rx, T + 6, m.l2);
+      for (let y = T + 7; y <= T + 14; y++) { g.px(x0 + 7, y, m.l); g.px(x0 + 8, y, m.d); }
+      g.px(x0 + 7, T + 15, m.d); g.px(x0 + 8, T + 15, m.d2);
+      for (const x of [-2, -1, 16, 17]) for (let y = T + 6; y <= T + 13; y++) g.px(x0 + x, y, x < 0 ? (x === -2 ? m.l : m.b) : (x === 17 ? m.d2 : m.d));
+      if (L.plume) { const p = tone(L.plume); for (let y = T - 8; y <= T - 3; y++) { g.px(x0 + 7, y, y < T - 6 ? p.l2 : p.l); g.px(x0 + 8, y, p.b); g.px(x0 + 6, y, p.d); g.px(x0 + 9, y, p.d); } g.px(x0 + 9, T - 8, p.b); g.px(x0 + 10, T - 7, p.d); }
+      break;
+    }
+    case "cap": {
+      for (let y = T - 3; y <= T + 3; y++) {
+        const r = y - (T - 3);
+        const inset = r === 0 ? 4 : r === 1 ? 2 : 0;
+        for (let x = -1 + inset; x <= 16 - inset; x++) { const u = (x + 1) / 17; g.px(x0 + x, y, u < 0.3 ? hc.l : u > 0.72 ? hc.d : (x + y) % 4 === 0 ? hc.d : hc.b); }
+      }
+      for (let x = -2; x <= 17; x++) { g.px(x0 + x, T + 4, x < 3 ? tr.l : x > 13 ? tr.d : tr.b); g.px(x0 + x, T + 5, tr.d); }
+      g.px(x0 + 14, T - 4, "#ece8dc"); g.px(x0 + 15, T - 5, "#ece8dc"); g.px(x0 + 16, T - 6, "#d8d0c0"); g.px(x0 + 15, T - 4, "#c8c0b0");
+      break;
+    }
+    case "wrap": {
+      for (let y = T - 2; y <= T + 5; y++) {
+        const r = y - (T - 2);
+        const inset = r === 0 ? 4 : r === 1 ? 2 : r === 2 ? 1 : 0;
+        for (let x = inset - 1; x <= 16 - inset; x++) { const u = (x + 1) / 17; g.px(x0 + x, y, y === T + 5 ? hc.d : u < 0.3 ? hc.l : u > 0.75 ? hc.d : (x - y) % 4 === 0 ? hc.d : hc.b); }
+      }
+      g.px(x0 + 17, T + 4, hc.b); g.px(x0 + 18, T + 5, hc.d); g.px(x0 + 18, T + 6, hc.b); g.px(x0 + 19, T + 7, hc.d);
+      break;
+    }
+    default: break;
+  }
+  g.outline();
+  void D;
+  return g;
+}
+
+const portraits = memo((key: string) => paintPortrait(lookByKey.get(key)!).canvas());
+/** 32x32 head-and-shoulders bust for dialogue boxes. Cached. */
+export function portrait(look: Look | string): HTMLCanvasElement {
+  const L = resolve(look);
+  const k = keyOf(L);
+  if (!lookByKey.has(k)) lookByKey.set(k, L);
+  return portraits(k);
+}
+
+/** Ids with hand-made looks (for previews and tests). */
+export const PERSON_PRESETS = Object.keys(PRESETS);
