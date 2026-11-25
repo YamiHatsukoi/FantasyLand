@@ -1,5 +1,5 @@
 /** Lone Wolf rules of Adventure (Kai, Magnakai, Grand Master, New Order). Pure functions: no DOM. */
-import type { AdvState, Book, Choice, Combat, Cond, Disc, Effect, FoeDef, ItemDef, ItemType, Offer, RandomPick, Section, Stash, StashPart } from "./types";
+import type { AdvState, Book, Choice, Combat, Cond, Disc, Effect, FoeDef, ItemDef, ItemType, LoseKind, Offer, RandomPick, Section, Stash, StashPart } from "./types";
 import { DISCS_BY_RULES } from "./types";
 
 export type Rng = () => number;
@@ -324,6 +324,7 @@ export function drop(book: Book, s: AdvState, id: string): boolean {
     if (i >= 0) {
       list.splice(i, 1);
       s.ep = Math.min(s.ep, epMax(book, s));
+      if (s.doses && id in s.doses && !has(s, id)) delete s.doses[id];
       return true;
     }
   }
@@ -334,12 +335,39 @@ export function itemName(book: Book, id: string, s?: Pick<AdvState, "items">) {
   return id === "Meal" ? "Phần Ăn" : itemDef(book, s, id)?.name ?? id;
 }
 
+/**
+ * What the player may pick from when giving something up (loseChoice): weapons, the Backpack (Meals
+ * included), Special Items, or weapons and Backpack ("any"). Items with `keep` are never offered.
+ */
+export function losePool(book: Book | undefined, s: AdvState, kind: LoseKind): string[] {
+  const meals = s.meals > 0 ? ["Meal"] : [];
+  const pool = kind === "weapon" ? s.weapons : kind === "backpack" ? [...s.backpack, ...meals] : kind === "special" ? s.special : [...s.weapons, ...s.backpack, ...meals];
+  return [...new Set(pool)].filter((id) => id === "Meal" || !(book?.items[id] ?? s.items?.[id])?.keep);
+}
+
+/** Doses left of a carried item (`uses`, default 1). */
+export function dosesLeft(book: Book, s: AdvState, id: string): number {
+  const it = itemDef(book, s, id);
+  if (!it || !has(s, id)) return 0;
+  return s.doses?.[id] ?? Math.max(1, it.uses ?? 1);
+}
+
+/** Takes one dose of an item: the item goes with its last dose. */
+function takeDose(book: Book, s: AdvState, id: string, it: ItemDef) {
+  const left = dosesLeft(book, s, id) - 1;
+  if (left > 0 && (it.uses ?? 1) > 1) { (s.doses ??= {})[id] = left; return; }
+  if (s.doses) delete s.doses[id];
+  drop(book, s, id);
+}
+
 // ------------------------------------------------------------------ conditions & effects
 
-export function check(s: AdvState, c: Cond | undefined): boolean {
+/** Does the condition hold? `book` tells which items cannot be given up (for `hasAny`). */
+export function check(s: AdvState, c: Cond | undefined, book?: Book): boolean {
   if (!c) return true;
-  if ("all" in c) return c.all.every((x) => check(s, x));
-  if ("any" in c) return c.any.some((x) => check(s, x));
+  if ("all" in c) return c.all.every((x) => check(s, x, book));
+  if ("any" in c) return c.any.some((x) => check(s, x, book));
+  if ("hasAny" in c) return losePool(book, s, c.hasAny).length > 0;
   if ("notDisc" in c) return !knows(s, c.notDisc);
   if ("disc" in c) return knows(s, c.disc);
   if ("mastered" in c) return masters(s, c.mastered);
@@ -380,9 +408,9 @@ export function condText(book: Book, c: Cond | undefined): string {
 }
 
 /** A choice the player can pick, one shown locked (a missing discipline...), or one not shown. */
-export function choiceState(s: AdvState, c: { if?: Cond }): "ok" | "locked" | "hidden" {
-  if (check(s, c.if)) return "ok";
-  const negative = (x: Cond): boolean => "notDisc" in x || "goldBelow" in x || "notItem" in x || "notFlag" in x || "epBelow" in x || "notRank" in x || "noWeapon" in x || ("all" in x && x.all.some(negative)) || ("any" in x && x.any.every(negative));
+export function choiceState(s: AdvState, c: { if?: Cond }, book?: Book): "ok" | "locked" | "hidden" {
+  if (check(s, c.if, book)) return "ok";
+  const negative = (x: Cond): boolean => "hasAny" in x || "notDisc" in x || "goldBelow" in x || "notItem" in x || "notFlag" in x || "epBelow" in x || "notRank" in x || "noWeapon" in x || ("all" in x && x.all.some(negative)) || ("any" in x && x.any.every(negative));
   return c.if && negative(c.if) ? "hidden" : "locked";
 }
 
@@ -404,7 +432,7 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined): Change
   const out: Change[] = [];
   for (const e of fx ?? []) {
     const when = (e as { if?: Cond }).if;
-    if (when && !check(s, when)) continue;
+    if (when && !check(s, when, book)) continue;
     if ("ep" in e) out.push(...changeEp(book, s, e.ep));
     else if ("restoreHalf" in e) out.push(...changeEp(book, s, Math.floor((epMax(book, s) - s.ep) / 2)));
     else if ("epMax" in e) { s.epBase += e.epMax; out.push(...changeEp(book, s, e.epMax > 0 ? e.epMax : 0)); out.push({ kind: "ep", label: `Sức Bền tối đa ${e.epMax > 0 ? "+" : ""}${e.epMax}`, good: e.epMax > 0 }); }
@@ -425,6 +453,7 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined): Change
     } else if ("gain" in e) {
       const n = e.n ?? 1;
       if (e.optional) { s.offers.push({ gain: e.gain, type: e.type, n, desc: e.desc }); continue; }
+      freshDoses(s, e.gain);
       const left = give(book, s, e.gain, e.type, n);
       if (n - left > 0) out.push({ kind: e.type === "meal" ? "meal" : "item", label: `Nhận ${itemName(book, e.gain)}${n - left > 1 ? ` ×${n - left}` : ""}`, good: true, item: e.gain });
       if (left > 0) s.offers.push({ gain: e.gain, type: e.type, n: left, desc: e.desc });
@@ -471,6 +500,11 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined): Change
     }
   }
   return out;
+}
+
+/** A newly found item comes with all its doses (what is left of an old one is forgotten once it is gone). */
+function freshDoses(s: AdvState, id: string) {
+  if (s.doses && id in s.doses && !has(s, id)) delete s.doses[id];
 }
 
 /**
@@ -584,7 +618,7 @@ export function randomResult(book: Book, sec: Section, s: AdvState, nums: number
 /** The outcome of a random number table for the number(s) picked. */
 export function tableResult(book: Book, r: RandomPick, s: AdvState, nums: number | number[]) {
   const n = typeof nums === "number" ? nums : nums.reduce((a, x) => a + x, 0);
-  let add = (r.mods ?? []).reduce((a, m) => a + (check(s, m.if) ? m.add : 0), 0);
+  let add = (r.mods ?? []).reduce((a, m) => a + (check(s, m.if, book) ? m.add : 0), 0);
   if (r.bow && s.weapons.some((w) => weaponKind(book, s, w) === "Bow")) {
     const p = profile(book).weapon;
     if (masters(s, "Bow")) add += p.bonus;
@@ -619,9 +653,10 @@ export function useItem(book: Book, s: AdvState, id: string, rng: Rng = Math.ran
   const it = itemDef(book, s, id);
   if (it?.use && has(s, id)) return useDose(book, s, id, it, rng);
   if (!it?.heal || !has(s, id) || s.ep >= epMax(book, s)) return [];
-  drop(book, s, id);
+  takeDose(book, s, id, it);
   if (/laumspur/i.test(id)) delete s.flags.bleeding;
-  return [{ kind: "item", label: `Dùng ${it.name}`, good: true, item: id }, ...changeEp(book, s, it.heal)];
+  const left = has(s, id) && (it.uses ?? 1) > 1 ? dosesLeft(book, s, id) : 0;
+  return [{ kind: "item", label: `Dùng ${it.name}${left ? ` (còn ${left} lần)` : ""}`, good: true, item: id }, ...changeEp(book, s, it.heal)];
 }
 
 /** Can the item be used now (a potion when hurt, a fight drug at any time)? */
@@ -638,7 +673,7 @@ export const addictFlag = (id: string) => `addict:${id}`;
 function useDose(book: Book, s: AdvState, id: string, it: ItemDef, rng: Rng): Change[] {
   const u = it.use!;
   const hooked = !!s.flags[addictFlag(id)];
-  drop(book, s, id);
+  takeDose(book, s, id, it);
   const cs = hooked && u.addict ? u.addict.cs : u.cs;
   s.csNext += cs;
   const out: Change[] = [{ kind: "item", label: `Dùng ${it.name}`, good: true, item: id }, { kind: "cs", label: `Kỹ Năng Chiến Đấu +${cs} (trận tới)`, good: true }];
@@ -661,11 +696,12 @@ export function takeOffer(book: Book, s: AdvState, i: number, choice?: string): 
   if (!o) return [];
   if ("gold" in o) { s.offers.splice(i, 1); return changeGold(s, o.gold); }
   if ("loseChoice" in o) {
-    if (!choice || !drop(book, s, choice)) return [];
+    if (!choice || !losePool(book, s, o.loseChoice).includes(choice) || !drop(book, s, choice)) return [];
     o.n--;
     if (o.n <= 0) s.offers.splice(i, 1);
     return [{ kind: "item", label: `Mất ${itemName(book, choice)}`, good: false, item: choice }];
   }
+  freshDoses(s, o.gain);
   const left = give(book, s, o.gain, o.type, o.n);
   const got = o.n - left;
   if (left > 0) o.n = left;
@@ -714,11 +750,23 @@ export const mindBlocked = (foe: FoeDef, m: MindOpt) => (foe.immune ?? []).some(
 /** The mind attack that works this round against the foe (none when immune or not allowed). */
 export function mindUsed(book: Book, s: AdvState, c: Combat, foe: FoeDef, idx: number) {
   const m = activeMind(book, s, idx);
-  return m && !c.noMindblast && !mindBlocked(foe, m) ? m : null;
+  return m && mindAllowed(c) && !mindBlocked(foe, m) ? m : null;
 }
 
-/** How many times the ENDURANCE the hero loses counts in this fight right now (combat.heroLossMul). */
+/** How many times the ENDURANCE the hero loses counts in this fight right now (combat.heroLossMul: 2, 3, or 0.5). */
 export const heroLossMul = (s: AdvState, c: Combat) => (c.heroLossMul && check(s, c.heroLossMul.if) ? c.heroLossMul.n : 1);
+
+/** ENDURANCE lost from the Combat Results Table after heroLossMul (halving rounds down). */
+export const scaledHeroLoss = (s: AdvState, c: Combat, hl: number) => Math.floor(hl * heroLossMul(s, c));
+
+/** Is `round` (0 = the first) one of the fight's firstRound rounds, its condition holding? */
+export const inFirstRounds = (s: AdvState, c: Combat, round: number) => !!c.firstRound && round < (c.firstRound.rounds ?? 1) && check(s, c.firstRound.if);
+
+/** Mind attacks add nothing in a psychic duel (combat.heroCs) or where the book forbids them. */
+export const mindAllowed = (c: Combat) => !c.noMindblast && c.heroCs === undefined;
+
+/** COMBAT SKILL a mind attack adds in this fight (combat.mindBonusMul: the Taan-spider triples it). */
+export const mindCs = (c: Combat, m: MindOpt) => m.cs * (c.mindBonusMul ?? 1);
 
 /** Mind attacks as the hero's rank has them (Archmaster: Psi-surge +6 for 1 ENDURANCE, down to 5; Mindblast +3). */
 export function mindOpts(book: Book, s: AdvState): MindOpt[] {
@@ -749,16 +797,20 @@ export function activeMind(book: Book, s: AdvState, idx: number): (MindOpt & { i
 const MIND_NAMES: Partial<Record<Disc, string>> = { mindblast: "Tâm Lực Kích", psisurge: "Psi-surge", kaisurge: "Kai-surge" };
 export const mindName = (book: Book, o: MindOpt) => book.names.disc[o.as ?? o.disc] ?? MIND_NAMES[o.as ?? o.disc] ?? o.as ?? o.disc;
 
-/** Weapons this fight does not allow (combat.forbid: by item key or weapon kind). */
-const forbidden = (book: Book, s: AdvState, c: Combat | undefined, id: string) => !!c?.forbid?.some((f) => f === id || f === weaponKind(book, s, id));
+/** Weapons and items this fight does not allow (combat.forbid: by item key or weapon kind; "all": every one). */
+const forbidden = (book: Book, s: AdvState, c: Combat | undefined, id: string) => !!c?.forbid?.some((f) => f === "all" || f === id || f === weaponKind(book, s, id));
 
-/** Weapons usable in this fight, the Sommerswerd first. */
-export const fightWeapons = (book: Book, s: AdvState, c?: Combat) => meleeWeapons(book, s).filter((id) => !forbidden(book, s, c, id));
+/**
+ * Weapons usable in this fight, the Sommerswerd first. With `round` (0 = the first), none in the
+ * firstRound rounds the hero must fight unarmed.
+ */
+export const fightWeapons = (book: Book, s: AdvState, c?: Combat, round?: number) =>
+  c && round !== undefined && c.firstRound?.unarmed && inFirstRounds(s, c, round) ? [] : meleeWeapons(book, s).filter((id) => !forbidden(book, s, c, id));
 
-export function weaponBonus(book: Book, s: AdvState, c?: Combat): { label: string; v: number } | null {
+export function weaponBonus(book: Book, s: AdvState, c?: Combat, round?: number): { label: string; v: number } | null {
   const p = profile(book).weapon;
   if (!s.disciplines.includes(p.disc)) return null;
-  const w = fightWeapons(book, s, c).find((x) => masters(s, weaponKind(book, s, x)));
+  const w = fightWeapons(book, s, c, round).find((x) => masters(s, weaponKind(book, s, x)));
   // Scion-kai: +4 instead of +3 with a mastered weapon
   const v = p.bonus + (mkRank(book, s) >= MK.scion ? 1 : 0);
   return w ? { label: `${book.names.disc[p.disc]} (${itemName(book, w, s)})`, v } : null;
@@ -772,23 +824,28 @@ export function unarmedPenalty(book: Book, s: AdvState) {
 
 /** Hero COMBAT SKILL for this fight, with its parts (shown on the battle screen). */
 export function heroCs(book: Book, s: AdvState, c: Combat, foe: FoeDef, mind = -1, round = 0): CsBreakdown {
-  const parts: { label: string; v: number }[] = [{ label: "Cơ bản", v: s.cs }];
-  for (const lc of loreCircles(book, s)) if (lc.cs) parts.push({ label: lc.name, v: lc.cs });
-  if (!fightWeapons(book, s, c).length) parts.push({ label: "Tay không", v: unarmedPenalty(book, s) });
-  else { const w = weaponBonus(book, s, c); if (w) parts.push(w); }
-  if (c.firstRound && round < (c.firstRound.rounds ?? 1) && check(s, c.firstRound.if)) parts.push({ label: round ? `Hiệp ${round + 1}` : "Hiệp đầu", v: c.firstRound.cs });
+  // a psychic duel: the book sets the hero's COMBAT SKILL; only the fight's own modifiers add to it
+  const duel = c.heroCs !== undefined;
+  const parts: { label: string; v: number }[] = [duel ? { label: "Đấu tâm lực", v: c.heroCs! } : { label: "Cơ bản", v: s.cs }];
+  if (!duel) {
+    for (const lc of loreCircles(book, s)) if (lc.cs) parts.push({ label: lc.name, v: lc.cs });
+    if (!fightWeapons(book, s, c, round).length) parts.push({ label: "Tay không", v: unarmedPenalty(book, s) });
+    else { const w = weaponBonus(book, s, c, round); if (w) parts.push(w); }
+  }
+  const first = inFirstRounds(s, c, round);
+  if (first && c.firstRound!.cs) parts.push({ label: round ? `Hiệp ${round + 1}` : "Hiệp đầu", v: c.firstRound!.cs });
   const amb = profile(book).ambush;
   if (c.ambush && !(amb && s.disciplines.includes(amb))) parts.push({ label: "Bị đánh úp", v: c.ambush });
   const m = mindUsed(book, s, c, foe, mind);
-  if (m) parts.push({ label: `${mindName(book, m)}${m.cost ? ` (−${m.cost} Sức Bền/hiệp)` : ""}`, v: m.cs });
-  for (const id of s.special) {
+  if (m) parts.push({ label: `${mindName(book, m)}${c.mindBonusMul && c.mindBonusMul !== 1 ? ` ×${c.mindBonusMul}` : ""}${m.cost ? ` (−${m.cost} Sức Bền/hiệp)` : ""}`, v: mindCs(c, m) });
+  if (!duel) for (const id of s.special) {
     const cs = itemDef(book, s, id)?.cs;
     if (cs && !forbidden(book, s, c, id)) parts.push({ label: itemName(book, id, s), v: cs });
   }
   if (c.mods?.cs) parts.push({ label: "Hoàn cảnh", v: c.mods.cs });
-  for (const m2 of c.csIf ?? []) if (check(s, m2.if)) parts.push({ label: "Hoàn cảnh", v: m2.add });
-  if (s.csNext) parts.push({ label: "Tạm thời", v: s.csNext });
-  if (s.csBook) parts.push({ label: "Cả cuốn", v: s.csBook });
+  for (const m2 of c.csIf ?? []) if (check(s, m2.if, book)) parts.push({ label: "Hoàn cảnh", v: m2.add });
+  if (!duel && s.csNext) parts.push({ label: "Tạm thời", v: s.csNext });
+  if (!duel && s.csBook) parts.push({ label: "Cả cuốn", v: s.csBook });
   return { total: parts.reduce((a, p) => a + p.v, 0), parts };
 }
 
@@ -823,14 +880,16 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
   const ratio = heroCs(book, s, c, foe.def, b.mind, b.round).total - foe.def.cs;
   const n = pick10(rng);
   const [fl, hl] = book.crt[n][crtColumnOf(ratio)];
+  // "you lose no ENDURANCE in the first rounds" (firstRound.noHeroLoss): this round is spared
+  const spared = !!c.firstRound?.noHeroLoss && inFirstRounds(s, c, b.round);
+  const sommer = c.heroCs === undefined && fightWeapons(book, s, c, b.round).includes("Sommerswerd") && foe.def.undead;
   b.round++;
   const mindCost = am ? am.cost : 0;
-  const sommer = fightWeapons(book, s, c).includes("Sommerswerd") && foe.def.undead;
   const hit = fl === KILL ? foe.ep : (fl + (c.foeExtraLoss ?? 0)) * (sommer ? 2 : 1) * (foe.def.double ? 2 : 1) * (am && c.mindMul ? c.mindMul : 1);
   const foeLoss = evade || (c.foeHoldLoss ?? 0) >= b.round ? 0 : hit;
   const held = (foe.def.holdRounds ?? 0) >= b.round;
   const drain = (c.heroDrain && check(s, c.heroDrain.if) ? c.heroDrain.ep : 0) + (c.mindforce && !knows(s, profile(book).shield) ? c.mindforce : 0);
-  const heroLoss = (held ? 0 : hl === KILL ? s.ep : hl * heroLossMul(s, c)) + mindCost + drain;
+  const heroLoss = spared ? mindCost : (held ? 0 : hl === KILL ? s.ep : scaledHeroLoss(s, c, hl)) + mindCost + drain;
   if (!evade) foe.ep = Math.max(0, foe.ep - foeLoss);
   s.ep = Math.max(0, s.ep - heroLoss);
   if (heroLoss > 0) s.hurt = true;

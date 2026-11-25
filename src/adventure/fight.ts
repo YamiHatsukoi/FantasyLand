@@ -23,7 +23,7 @@ import { creatureFrame, creatureKey, creatureSize, type CPose } from "./art/crea
 import { arrowHead, darkOrbHead, digitsSprite, disc, ease, FxLayer, ring, type Ease } from "./art/fx";
 import { iconEl, uiIcon } from "./art/icons";
 import { lookFor, personFrame, portrait, withWeapon, type Look, type Pose, type WeaponKind } from "./art/people";
-import { activeMind, battleExit, canEvade, check, epMax, fightWeapons, heroCs, heroLossMul, itemName, mindBlocked, mindChoices, mindName, mindUsed, playRound, startBattle, unarmedPenalty, type Battle, type RoundResult } from "./engine";
+import { activeMind, battleExit, canEvade, check, epMax, fightWeapons, heroCs, heroLossMul, itemName, mindAllowed, mindBlocked, mindChoices, mindCs, mindName, mindUsed, playRound, startBattle, unarmedPenalty, type Battle, type RoundResult } from "./engine";
 import { isMonster, OUT, Stage, H as SH, W as SW } from "./stage";
 import type { AdvState, Book, FoeDef } from "./types";
 import { bump, calmMotion, gameBtn, StageFit } from "./ui";
@@ -863,7 +863,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
     // ---------------------------------------------------------------- mind attacks
     function mindSpec() {
       const m = activeMind(book, s, b.mind);
-      return m && !c.noMindblast ? m : null;
+      return m && mindAllowed(c) ? m : null;
     }
     const MIND_COL: Record<string, [string, string]> = { mindblast: ["#c9a2ff", "#f4ecff"], psisurge: ["#ff7ae0", "#ffe4f8"], kaisurge: ["#ffe27a", "#fffbe8"] };
 
@@ -1338,13 +1338,15 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
         ...cs.parts.slice(1).map((p) => h("span", { class: p.v >= 0 ? "good" : "bad" }, `${p.label} ${p.v > 0 ? "+" : ""}${p.v}`)),
         // ENDURANCE the hero loses counts n times in this fight (wounds, poison…)
         heroLossMul(s, c) > 1 ? h("span", { class: "bad adv-lossmul" }, `Sức Bền mất ×${heroLossMul(s, c)}`) : null,
+        heroLossMul(s, c) < 1 ? h("span", { class: "good adv-lossmul" }, heroLossMul(s, c) === 0.5 ? "Sức Bền mất một nửa" : `Sức Bền mất ×${heroLossMul(s, c)}`) : null,
+        c.firstRound?.noHeroLoss && b.round < (c.firstRound.rounds ?? 1) && check(s, c.firstRound.if) ? h("span", { class: "good" }, "Không mất Sức Bền") : null,
         c.mindMul && mindUsed(book, s, c, foe.def, b.mind) ? h("span", { class: "good" }, `Tâm lực: địch mất ×${c.mindMul}`) : null));
-      const minds = mindChoices(book, s);
+      const minds = mindAllowed(c) ? mindChoices(book, s) : [];
       const cur = activeMind(book, s, b.mind);
       const evadeOk = c.evade ? canEvade(book, s, b) : false;
       actions.replaceChildren(...nn(
         minds.length || c.evade ? h("div", { class: "adv-fsub" }, ...nn(
-          minds.length ? gameBtn(cur ? `${mindName(book, cur)} +${cur.cs}${cur.cost ? ` (−${cur.cost})` : ""}` : "Không dùng tâm lực", () => {
+          minds.length ? gameBtn(cur ? `${mindName(book, cur)} +${mindCs(c, cur)}${cur.cost ? ` (−${cur.cost})` : ""}` : "Không dùng tâm lực", () => {
             // cycle: each mind option (Psi-surge, then Mindblast…), then none
             const order = [...minds, -1];
             b.mind = order[(order.indexOf(b.mind) + 1) % order.length];
@@ -1439,7 +1441,9 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
 
     // ---------------------------------------------------------------- start
     say(b.foes.length > 1 ? `${b.foes.length} kẻ thù lần lượt xông vào bạn.` : `${b.foes[0].def.name} chặn đường bạn!`);
-    if (!fightWeapons(book, s, c).length) say(`Bạn không có vũ khí cận chiến: đánh tay không (${unarmedPenalty(book, s)}).`, "bad");
+    if (c.heroCs !== undefined) say(`Đấu tâm lực: Kỹ Năng Chiến Đấu của bạn là ${c.heroCs}, không dùng được vũ khí hay vật phẩm.`, "bad");
+    else if (c.firstRound?.unarmed && check(s, c.firstRound.if) && fightWeapons(book, s, c).length) say(`Bạn phải đánh tay không ${(c.firstRound.rounds ?? 1) > 1 ? `${c.firstRound.rounds} hiệp đầu` : "hiệp đầu"} (${unarmedPenalty(book, s)}).`, "bad");
+    else if (!fightWeapons(book, s, c).length) say(`Bạn không có vũ khí cận chiến: đánh tay không (${unarmedPenalty(book, s)}).`, "bad");
     else if (s.weapons[0]) say(`Bạn cầm ${itemName(book, s.weapons[0])}.`);
     busy = true;
     render();

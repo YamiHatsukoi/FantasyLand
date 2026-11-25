@@ -8,9 +8,9 @@
 import { describe, expect, it } from "vitest";
 import {
   battleExit, canEvade, choiceState, continueRun, discsOf, enter, newRun, phase, playRound, randomResult,
-  startBattle, takeOffer, apply, visibleChoices, rollRandom, carryNeeds, playChoice, heroCs, answerRiddle,
+  startBattle, takeOffer, apply, visibleChoices, rollRandom, carryNeeds, playChoice, heroCs, answerRiddle, check,
 } from "../src/adventure/engine";
-import type { AdvState, Book, Disc } from "../src/adventure/types";
+import type { AdvState, Book, Choice, Cond, Disc } from "../src/adventure/types";
 
 // node APIs without @types/node in this project
 const env = (globalThis as unknown as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {};
@@ -46,16 +46,24 @@ function hero(book: Book, rng: () => number): AdvState {
   return newRun(book, { name: "Thử", csRoll: Math.floor(rng() * 10), epRoll: Math.floor(rng() * 10), disciplines: discs, weaponskillRoll: Math.floor(rng() * 10), goldRoll: Math.floor(rng() * 10), mastered, picks });
 }
 
-/** Sections from which every way forward ends in death (book traps a careful reader avoids). */
+/** Does this condition depend only on what a hero cannot change within the book (disciplines, rank)? */
+const fixedCond = (c: Cond): boolean => "all" in c ? c.all.every(fixedCond) : "any" in c ? c.any.every(fixedCond) : "disc" in c || "notDisc" in c || "rank" in c || "notRank" in c;
+
+/**
+ * Sections from which every way forward ends in death (book traps a careful reader avoids). With a
+ * hero, ways the hero's disciplines rule out do not count ("use Psi-surge or be eaten").
+ */
 const doomedCache = new Map<string, Set<string>>();
-function doomed(book: Book): Set<string> {
-  const hit = doomedCache.get(book.id);
+function doomed(book: Book, hero?: AdvState): Set<string> {
+  const key = `${book.id}|${hero ? [...hero.disciplines].sort().join(",") : ""}`;
+  const hit = doomedCache.get(key);
   if (hit) return hit;
   const out = new Set<string>();
+  const open = (y: Choice) => !hero || !y.if || !fixedCond(y.if) || check(hero, y.if);
   const links = (id: string) => {
     const x = book.sections[id];
     const c = x.combat;
-    return [...[...(x.choices ?? []), ...(c?.instead ?? [])].flatMap((y) => [y.to, y.fail]), c?.skipIf?.to, ...(x.random?.out ?? []).map((o) => o.to ?? (o.end === "death" ? "†" : "")),
+    return [...[...(x.choices ?? []), ...(c?.instead ?? [])].filter(open).flatMap((y) => [y.to, y.fail]), c?.skipIf?.to, ...(x.random?.out ?? []).map((o) => o.to ?? (o.end === "death" ? "†" : "")),
       c?.win, c?.lose, c?.onHurt, c?.stopAt?.to, c?.evade?.to, c?.maxRounds?.to, ...Object.values(c?.winBy ?? {}), ...Object.values(c?.compare ?? {})].filter((t): t is string => typeof t === "string" && !!t);
   };
   let changed = true;
@@ -68,7 +76,7 @@ function doomed(book: Book): Set<string> {
       if (l.length && l.every((t) => t === "†" || out.has(t))) { out.add(id); changed = true; }
     }
   }
-  doomedCache.set(book.id, out);
+  doomedCache.set(key, out);
   return out;
 }
 
@@ -139,7 +147,7 @@ function playOnce(book: Book, s: AdvState, rng: () => number, r: Report, careful
       r.deadEnds.set(s.section, (r.deadEnds.get(s.section) ?? 0) + 1);
       return;
     }
-    const safe = careful ? moves.filter((m) => !doomed(book).has(m.to)) : moves;
+    const safe = careful ? moves.filter((m) => !doomed(book, s).has(m.to)) : moves;
     const pool = safe.length ? safe : moves;
     const c = pool[Math.floor(rng() * pool.length)];
     if (c.roll) {
@@ -164,27 +172,31 @@ const files = DIR ? fs.readdirSync(DIR).filter((f) => f.endsWith(".json")).sort(
 
 describe.skipIf(!DIR)("adventure book packages (random play-throughs)", () => {
   const books = new Map<string, Book>(files.map((f) => [f, JSON.parse(fs.readFileSync(`${DIR}/${f}`, "utf8")) as Book]));
-  const finishedHeroes = new Map<number, AdvState>();
+  // heroes who won each book (a few of them, so the next book is met with different disciplines and kit)
+  const finishedHeroes = new Map<number, AdvState[]>();
   for (const [f, book] of books) {
     it(`${f}: ${RUNS} random play-throughs`, () => {
       const r: Report = { crashes: [], deadEnds: new Map(), reached: new Set(), endings: { victory: 0, death: 0, steps: [] }, deaths: new Map(), carefulDeaths: new Map(), carefulWins: 0, wanderers: 0 };
       for (let i = 0; i < RUNS; i++) {
         const rng = seeded(i * 7919 + book.num);
-        const prev = finishedHeroes.get(book.num - 1);
+        const won = finishedHeroes.get(book.num - 1) ?? [];
+        const prev = won.length ? won[Math.floor(rng() * won.length)] : undefined;
+        const shuffle = <T,>(xs: readonly T[]) => [...xs].sort(() => rng() - 0.5);
         let s: AdvState;
         try {
           const need = prev ? carryNeeds(book, prev) : null;
-          const newDisc = need && !need.fresh ? discsOf(book).find((d) => !prev!.disciplines.includes(d)) : undefined;
+          const newDisc = need && !need.fresh ? shuffle(discsOf(book)).find((d) => !prev!.disciplines.includes(d)) : undefined;
           const extra = prev ? carryNeeds(book, prev, newDisc) : null;
           s = prev && i % 2 ? continueRun(book, prev, {
-            newDisc, newDiscs: need?.fresh ? discsOf(book).slice(0, book.discCount) : undefined,
-            mastered: book.weaponskill.filter((w) => !(prev.mastered ?? []).includes(w)).slice(0, extra?.masteryCap ?? 0),
+            newDisc, newDiscs: need?.fresh ? shuffle(discsOf(book)).slice(0, book.discCount) : undefined,
+            mastered: shuffle([...new Set(book.weaponskill)].filter((w) => !(prev.mastered ?? []).includes(w))).slice(0, extra?.masteryCap ?? 0),
             picks: book.kit.picks.map((p) => p.mode === "random" ? [Math.floor(rng() * p.options.length)] : [...p.options.keys()].sort(() => rng() - 0.5).slice(0, p.count)), goldRoll: 3,
           }) : hero(book, rng);
           const careful = i % 4 === 3;
           if (careful) { s.cs = Math.max(s.cs, 19); s.epBase = Math.max(s.epBase, 29); s.ep = s.epBase; }
           playOnce(book, s, rng, r, careful);
-          if (s.ended === "victory" && !finishedHeroes.has(book.num)) finishedHeroes.set(book.num, JSON.parse(JSON.stringify(s)) as AdvState);
+          const list = finishedHeroes.get(book.num) ?? [];
+          if (s.ended === "victory" && list.length < 16) finishedHeroes.set(book.num, [...list, JSON.parse(JSON.stringify(s)) as AdvState]);
         } catch (e) {
           r.crashes.push(`run ${i}: ${(e as Error).message}`);
         }

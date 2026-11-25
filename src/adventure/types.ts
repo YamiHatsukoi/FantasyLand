@@ -32,10 +32,15 @@ export type Cond =
   | { arrows: number }
   /** Weaponskill / Weaponmastery / Grand Weaponmastery with this weapon (item key: "Bow", "Sword"…). */
   | { mastered: string }
+  /** Carries at least one item of that kind that could be given up (items with `keep` do not count). */
+  | { hasAny: LoseKind }
   | { all: Cond[] }
   | { any: Cond[] };
 
 export type ItemType = "weapon" | "backpack" | "special" | "meal";
+
+/** What a `loseChoice` lets the player pick from ("any": weapons and Backpack, Meals included). */
+export type LoseKind = "weapon" | "backpack" | "special" | "any";
 
 /** Any effect may carry `if`: it applies only when the condition holds. */
 export type Effect = EffectBase & { if?: Cond };
@@ -47,7 +52,7 @@ type EffectBase =
   | { cs: number; for?: "combat" | "book" }
   | { gold: number; optional?: boolean }
   | { arrows: number }
-  | { loseChoice: "weapon" | "backpack" | "any"; n?: number }
+  | { loseChoice: LoseKind; n?: number }
   | { epMax: number }
   | { csBase: number }
   | { gain: string; type: ItemType; n?: number; optional?: boolean; desc?: string }
@@ -103,8 +108,12 @@ export interface Combat {
   noMindblast?: boolean;
   csIf?: { if: Cond; add: number }[];
   onHurt?: string;
-  /** COMBAT SKILL change in the first `rounds` rounds (default 1); with `if`, only when it holds (e.g. no Huntmastery). */
-  firstRound?: { cs: number; rounds?: number; if?: Cond };
+  /**
+   * The first `rounds` rounds (default 1), when `if` holds (e.g. no Huntmastery): COMBAT SKILL changed
+   * by `cs`; `noHeroLoss`: the hero loses no ENDURANCE in them; `unarmed`: the hero fights bare-handed
+   * in them (no weapon, no Weaponmastery bonus), armed again afterwards.
+   */
+  firstRound?: { cs?: number; rounds?: number; if?: Cond; noHeroLoss?: boolean; unarmed?: boolean };
   foeExtraLoss?: number;
   heroDrain?: { ep: number; if?: Cond };
   /** One-round fight decided by who lost more ENDURANCE (hero more / less / equal). */
@@ -116,14 +125,28 @@ export interface Combat {
   foeHoldLoss?: number;
   /** COMBAT SKILL lost to a surprise attack or ambush (negative); Huntmastery ignores it. */
   ambush?: number;
-  /** Weapons that cannot be used in this fight (item keys or weapon kinds, e.g. ["Bow"], ["Sommerswerd"]). */
+  /**
+   * Weapons that cannot be used in this fight (item keys or weapon kinds, e.g. ["Bow"], ["Sommerswerd"]).
+   * ["all"]: no weapon, Special Item or Backpack Item is usable (no weapon bonus, no item COMBAT SKILL).
+   */
   forbid?: string[];
   /** The foe attacks with Mindforce: ENDURANCE lost every round unless shielded (Mindshield / Psi-screen / Kai-screen). */
   mindforce?: number;
-  /** ENDURANCE the hero loses from the Combat Results Table is multiplied by n while `if` holds (wounded, poisoned…). */
+  /**
+   * ENDURANCE the hero loses from the Combat Results Table is multiplied by n while `if` holds (wounded,
+   * poisoned…: 2, 3; an ally taking half the blows: 0.5). Fractions are rounded down.
+   */
   heroLossMul?: { n: number; if?: Cond };
   /** ENDURANCE the foe loses is multiplied by n in rounds the hero fights with a mind attack. */
   mindMul?: number;
+  /** The COMBAT SKILL bonus of a mind attack (Mindblast, Psi-surge, Kai-surge) is multiplied by n in this fight. */
+  mindBonusMul?: number;
+  /**
+   * The hero's COMBAT SKILL is n for this fight (a psychic duel): it replaces the basic score, Lore-circles,
+   * weapons, items and the next-fight / whole-book changes; no mind attack adds to it. The fight's own
+   * modifiers (mods, csIf, firstRound, ambush) still apply.
+   */
+  heroCs?: number;
   /** Choices offered on the fight-start screen instead of fighting ("use the Fireseed instead"). */
   instead?: Choice[];
   /** The fight does not happen when `if` holds: the section offers one way on, to `to` (button `text`, default "Đi tiếp"). */
@@ -250,6 +273,10 @@ export interface ItemDef {
   cs?: number;
   /** Usable item: restores ENDURANCE when used outside combat (Healing Potion: 4). */
   heal?: number;
+  /** Doses of a usable item (heal / use): each use takes one; the item is gone after the last (default 1). */
+  uses?: number;
+  /** Never offered when the player picks something to give up (loseChoice). */
+  keep?: boolean;
   /**
    * Usable before a fight (a drug such as Adgana): +cs COMBAT SKILL in the next fight. With `addict`,
    * each dose taken while not addicted picks a number 0-9: in [min, max] the hero becomes addicted,
@@ -300,7 +327,7 @@ export interface Book {
 export type Offer =
   | { gain: string; type: ItemType; n: number; desc?: string }
   | { gold: number }
-  | { loseChoice: "weapon" | "backpack" | "any"; n: number };
+  | { loseChoice: LoseKind; n: number };
 
 export interface Stash { weapons: string[]; backpack: string[]; special: string[]; meals: number; gold: number; arrows: number }
 
@@ -327,6 +354,8 @@ export interface AdvState {
   items?: Record<string, ItemDef>;
   /** ENDURANCE lost in the current section's combat (for "onHurt"). */
   hurt?: boolean;
+  /** Doses left of carried items with `uses` that have been used (item key → doses left); absent = all of them. */
+  doses?: Record<string, number>;
   /** Gear taken away (confiscated) by name, to be given back later. */
   stashes?: Record<string, Stash>;
   flags: Record<string, boolean>;

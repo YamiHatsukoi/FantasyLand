@@ -20,7 +20,7 @@ import { portrait, withWeapon, type Look } from "./art/people";
 import { makeScene, type SceneSpec } from "./art/scene";
 import { Performance } from "./director";
 import {
-  choiceState, condText, discsOf, drop, enter, epMax, itemName, newRun, pendingLoss, phase, pick10,
+  choiceState, condText, discsOf, dosesLeft, drop, enter, itemDef, losePool, epMax, itemName, newRun, pendingLoss, phase, pick10,
   profile, randomResult, playChoice, retry, takeOffer, useItem, usable, answerRiddle, apply, continueRun, visibleChoices, type Change,
   baseCs, randomPicks, carryNeeds, loreCircles, masteryCount, newSeries, ownDiscs, rankName, tierOf,
 } from "./engine";
@@ -753,7 +753,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       const list = visibleChoices(sec, s);
       const spots: { key: number; label: string; via: NonNullable<Choice["via"]>; locked?: string; toLoc?: string }[] = [];
       list.forEach((c, i) => {
-        const cs = choiceState(s, c);
+        const cs = choiceState(s, c, book);
         if (cs === "hidden" || !c.via || c.riddle) return;
         spots.push({ key: i, label: c.text, via: c.via, locked: cs === "locked" ? condText(book, c.if) : undefined, toLoc: book.sections[c.to]?.scene.loc });
       });
@@ -867,7 +867,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
         if (!reuse) sceneBox.append(holder);
         const v = mod.mountExplore({
           host: holder, seed: `${book.id}-${sec.scene.place}`, scene: sec.scene, heroLook: heroLook(), entryFrom, spots: ex.spots,
-          onPick: (key) => { const c = ex.list[key]; if (c && choiceState(s, c) === "ok" && s.section === sid) pick(c); },
+          onPick: (key) => { const c = ex.list[key]; if (c && choiceState(s, c, book) === "ok" && s.section === sid) pick(c); },
           loc: loc ? book.locations?.[loc] : undefined, locId: loc, fromLoc, locations: book.locations, locSides: loc ? locSides(loc) : undefined,
           keepFrom: keep,
         }) as ExploreView;
@@ -910,7 +910,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
           gameBtn("Vào trận", () => void fight(), { kind: "red", icon: "cs", cls: "block big" }));
         // "instead of fighting…": choices offered before the fight starts
         for (const alt of c.instead ?? []) {
-          const st = choiceState(s, alt);
+          const st = choiceState(s, alt, book);
           if (st === "hidden") continue;
           dock.append(h("button", { class: `adv-choice ${st === "locked" ? "locked fr-slot" : "fr-btn"}`, type: "button", disabled: st === "locked", onclick: () => { sfx("click"); pick(alt); } },
             h("span", { class: "adv-choice-k" }, st === "locked" ? ui("lock", 1) : ui("flee", 1)),
@@ -939,7 +939,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       }
       let k = 0;
       for (const c of visibleChoices(sec, s)) {
-        const st = choiceState(s, c);
+        const st = choiceState(s, c, book);
         if (st === "hidden") continue;
         if (exploring && c.via && !c.riddle) continue;
         k++;
@@ -1023,11 +1023,11 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
         const take = (id?: string) => { showChanges(takeOffer(book, s, i, id)); save(); render(); };
         if ("gold" in o) return h("div", { class: "adv-loot fr-parch" }, h("span", { class: "adv-loot-ic" }, ui("gold", 2)), h("div", { class: "adv-loot-t" }, h("b", null, `${o.gold} Vương Miện Vàng`)), gameBtn("Nhặt", () => take(), { kind: "gold", cls: "small" }));
         if ("loseChoice" in o) {
-          const pool = o.loseChoice === "weapon" ? s.weapons : o.loseChoice === "backpack" ? [...s.backpack, ...(s.meals ? ["Meal"] : [])] : [...s.weapons, ...s.backpack, ...(s.meals ? ["Meal"] : [])];
+          const pool = losePool(book, s, o.loseChoice);
           if (!pool.length) { s.offers.splice(i, 1); return null; }
           return h("div", { class: "adv-loot lose fr-parch" },
-            h("div", { class: "adv-loot-h" }, ui("skull", 2), h("b", null, `Phải bỏ lại ${o.n} món${o.loseChoice === "weapon" ? " vũ khí" : o.loseChoice === "backpack" ? " trong Ba Lô" : ""}`)),
-            h("div", { class: "adv-opt-grid" }, ...[...new Set(pool)].map((id) => h("button", { class: "adv-opt fr-btn", type: "button", onclick: () => { sfx("debuff"); take(id); } }, h("span", { class: "adv-item-l" }, iconEl(itemIcon(id), 2), h("b", null, itemName(book, id)))))));
+            h("div", { class: "adv-loot-h" }, ui("skull", 2), h("b", null, `Phải bỏ lại ${o.n} món${o.loseChoice === "weapon" ? " vũ khí" : o.loseChoice === "backpack" ? " trong Ba Lô" : o.loseChoice === "special" ? " Vật Phẩm Đặc Biệt" : ""}`)),
+            h("div", { class: "adv-opt-grid" }, ...pool.map((id) => h("button", { class: "adv-opt fr-btn", type: "button", onclick: () => { sfx("debuff"); take(id); } }, h("span", { class: "adv-item-l" }, iconEl(itemIcon(id), 2), h("b", null, itemName(book, id)))))));
         }
         const full = o.type !== "special" && (o.type === "weapon" ? s.weapons.length >= 2 : s.backpack.length + s.meals >= 8);
         return h("div", { class: "adv-loot fr-parch" }, h("span", { class: "adv-loot-ic" }, iconEl(itemIcon(o.gain, o.type), 2)),
@@ -1090,11 +1090,13 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
 
         if (sel) {
           const { id, type } = sel;
-          const def = book.items[id];
+          const def = itemDef(book, s, id);
           const canUse = type === "backpack" && (def?.heal || def?.use) && !s.ended;
+          const doses = canUse && (def?.uses ?? 1) > 1 ? dosesLeft(book, s, id) : 0;
           detail.append(h("span", { class: "adv-detail-ic fr-slot" }, iconEl(itemIcon(id, type as never), 3)),
             h("div", { class: "adv-detail-t" }, h("b", null, type === "meal" ? `Phần Ăn ×${s.meals}` : itemName(book, id)),
-              h("small", null, type === "meal" ? "Mỗi Phần Ăn chiếm một chỗ trong Ba Lô. Chỉ ăn khi sách yêu cầu." : def?.desc ?? (type === "weapon" ? "Vũ khí" : type === "special" ? "Vật Phẩm Đặc Biệt" : "Đồ trong Ba Lô"))),
+              h("small", null, type === "meal" ? "Mỗi Phần Ăn chiếm một chỗ trong Ba Lô. Chỉ ăn khi sách yêu cầu." : def?.desc ?? (type === "weapon" ? "Vũ khí" : type === "special" ? "Vật Phẩm Đặc Biệt" : "Đồ trong Ba Lô")),
+              doses ? h("small", null, `Còn ${doses} lần dùng`) : null),
             h("div", { class: "adv-detail-b" }, ...nn(
               canUse ? gameBtn("Dùng", () => { showChanges(useItem(book, s, id)); save(); renderChips(); if (!s.backpack.includes(id)) sel = null; draw(); }, { kind: "gold", cls: "small", disabled: !usable(book, s, id), icon: def?.use ? "cs" : "heal" }) : null,
               s.ended ? null : gameBtn(type === "meal" ? "Bỏ 1" : "Bỏ", async () => {
