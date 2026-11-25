@@ -1325,7 +1325,7 @@ function beastman(): Def {
 function batWing(s: Spr, m: Mat, sh: P, u: number, span: number, far: boolean, root?: P) {
   const a1 = lerp(-4.0, -2.15, u), a2 = a1 + lerp(0.2, 0.95, u);
   const E = add(sh, dir(a1, span * 0.3)), Wr = add(E, dir(a2, span * 0.28));
-  const tips: P[] = [0, 1, 2, 3].map((k) => add(Wr, dir(a2 - 0.15 - k * lerp(0.42, 0.62, u), span * (0.5 - k * 0.05))));
+  const tips: P[] = [0, 1, 2, 3].map((k) => add(Wr, dir(a2 - lerp(0.15, 0.45, u) - k * lerp(0.42, 0.58, u), span * (0.5 - k * 0.06))));
   const back = root ?? add(sh, dir(a1 + PI * 0.75, span * 0.12));
   const poly: P[] = [sh, E, Wr, tips[0]];
   for (let k = 1; k < 4; k++) {
@@ -1864,15 +1864,17 @@ function drawFly(s: Spr, a: A, f: FSpec) {
 
 // ============================================================ Kraan
 function kraan(rider: boolean): Def {
-  const HIDE = mat("#2c2832", { rim: "#8a6aa0" }), MEM = mat("#3e2c3a", { rim: "#a06a8a" }), BEAK = mat("#b4aa98"), BELLY = mat("#4a3e46");
+  const HIDE = mat("#2c2832", { rim: "#8a6aa0" }), MEM = mat("#3e2c3a", { rim: "#a06a8a" }), BEAK = mat("#6e665e"), BELLY = mat("#4a3e46");
   const rid = rider ? giakSpec({ skin: "#76707e", armour: "#26222e" }) : null;
   const f: FSpec = {
-    hover: 34, lie: 6,
+    hover: 22, lie: 4.5,
     draw(s, j, a) {
-      const u = j.u, dead = a.dead;
+      const K = 1.4;
+      s.save(); s.scale(K, K);
+      const u = j.u * 0.82, dead = a.dead;
       const sh: P = [4, -5], root: P = [-9, -1];
       // far wing, tail, far leg
-      batWing(s, dim(MEM, 0.3), add(sh, [2, -1.5]), clamp(u + 0.08, 0, 1), dead ? 40 : 44, true, add(root, [1, -1]));
+      batWing(s, dim(MEM, 0.3), add(sh, [2, -1.5]), clamp(u + 0.08, 0, 1), dead ? 27 : 29, true, add(root, [1, -1]));
       const t = j.tail;
       s.fill(HIDE, (b) => b.chain([[-8, 0, 4.4], [-16, 2 + t * 4, 2.8], [-24, 4 + t * 8, 1.6], [-31, 5 + t * 12 + (dead ? 3 : 0), 0.8]]));
       const tip: P = [-31, 5 + t * 12 + (dead ? 3 : 0)];
@@ -1912,11 +1914,13 @@ function kraan(rider: boolean): Def {
       });
       legs(1);
       if (rid) {
-        const seat: P = [2, -7.5];
-        drawRider(s, a, rid, seat, 0);
+        s.save(); s.scale(1 / K, 1 / K);
+        drawRider(s, a, rid, [1 * K, -6.4 * K], 0);
+        s.restore();
       }
       // near wing over everything
-      batWing(s, MEM, sh, u, dead ? 42 : 46, false, root);
+      batWing(s, MEM, sh, u, dead ? 28 : 31, false, root);
+      s.restore();
       const iv = inv(s.m);
       return [iv[0] * mouth[0] + iv[2] * mouth[1] + iv[4], iv[1] * mouth[0] + iv[3] * mouth[1] + iv[5]];
     },
@@ -1926,25 +1930,35 @@ function kraan(rider: boolean): Def {
 
 // ============================================================ bats and birds
 function bat(): Def {
-  const FUR = mat("#3a2a2a", { rim: "#9a6a6a" }), MEM = mat("#4a3034", { rim: "#b07070" });
+  const FUR = mat("#3e2c2c", { rim: "#a07070" }), MEM = mat("#4e3236", { rim: "#c07a70" }), EAR = mat("#8a5a5a");
+  // seen from the front: both wings spread in the picture plane
   const f: FSpec = {
-    hover: 20, lie: 3,
-    draw(s, j) {
-      const sh: P = [1, -2];
-      batWing(s, dim(MEM, 0.3), add(sh, [1, -1]), clamp(j.u + 0.08, 0, 1), 24, true, [-4, 1]);
-      s.fill(FUR, (b) => { b.ell(0, 0, 5, 3.6); b.ell(4.4, -1.4, 2.8, 2.6); b.poly([[3, -3], [3.6, -8.4], [5.4, -3.6]]); b.poly([[4.6, -3], [6.6, -7.6], [6.6, -2.6]]); }, { tex: furTex(0.6) });
-      s.fill(mat("#8a5a5a"), (b) => b.poly([[3.8, -3.6], [4, -7], [4.8, -4]]), { cast: false });
-      s.fill(FUR, (b) => b.poly([[6, -2.4], [8.6, -1.2], [6.6, 0.4]]));
-      s.dot(8.4, -1.2, "#1a1010");
-      if (j.jaw > 0.2) { s.fill(flatMat("#5a1020"), (b) => b.poly([[6, -0.4], [8.4, -0.8], [7, 1.6]]), { cast: false }); }
-      s.dot(6.8, 0, "#fff8e0"); s.dot(7.6, -0.2, "#fff8e0");
-      if (j.ex !== "dead") s.glow(5.8, -2.2, "#ff4030", 1.6);
-      for (const x of [-1.5, 1]) s.fill(FUR, (b) => b.cap(x, 3, x - 0.6, 5.6, 0.7));
-      batWing(s, MEM, sh, j.u, 26, false, [-4, 1.5]);
-      return [8, 0];
+    hover: 22, lie: 3,
+    draw(s, j, a) {
+      s.rotate(-j.pitch * 0.5);
+      const u = j.u;
+      for (const side of [-1, 1]) {
+        s.save(); s.scale(side, 1);
+        batWing(s, side < 0 ? dim(MEM, 0.08) : MEM, [-2, -2.4], u * 0.9 + 0.05, 22, false, [-1.4, 3.4]);
+        s.restore();
+      }
+      s.fill(FUR, (b) => { b.ell(0, 0.4, 3.6, 4.6); b.ell(0, -5, 3.4, 3); }, { tex: furTex(0.6) });
+      // big ears
+      for (const side of [-1, 1]) {
+        s.fill(FUR, (b) => b.poly([[side * 1, -6.6], [side * 4.4, -12.4], [side * 3.6, -5.6]]));
+        s.fill(EAR, (b) => b.poly([[side * 1.8, -7], [side * 3.8, -11], [side * 3.2, -6.4]]), { cast: false });
+      }
+      s.fill(mat("#6a4a4a"), (b) => b.ell(0, -3.8, 1.6, 1.2), { cast: false });
+      s.dot(-0.6, -4, "#1a1010"); s.dot(0.6, -4, "#1a1010");
+      if (j.jaw > 0.2) s.fill(flatMat("#4a0c18"), (b) => b.ell(0, -2.2, 1.6, 1.2), { cast: false });
+      s.dot(-1, -2.4, "#fff8e0"); s.dot(1, -2.4, "#fff8e0");
+      if (j.ex !== "dead") for (const x of [-1.6, 1.6]) { s.dot(x, -5.6, "#ff6040"); s.glow(x, -5.5, "#ff3020", 1.5); }
+      for (const x of [-1.6, 1.6]) s.fill(FUR, (b) => b.cap(x, 4, x * 1.3, 6.6, 0.7));
+      void a;
+      return [0, -2];
     },
   };
-  return { w: 52, h: 44, flying: true, ox: 0, draw: (s, a) => drawFly(s, a, f) };
+  return { w: 56, h: 46, flying: true, ox: 0, draw: (s, a) => drawFly(s, a, f) };
 }
 
 function bird(o: { body: string; wing: string; beak: string; eye: string; size: number; raven?: boolean }): Def {
@@ -2170,7 +2184,7 @@ function spider(): Def {
   const CH = mat("#2e2630", { rim: "#9a6aa0", rough: 0.15 }), MARK = "#b02a2a";
   const draw = (s: Spr, a: A) => {
     const st = a.st, hu = a.hu;
-    let cx = 0, cy = -10, pitch = 0, fang = 0;
+    let cx = 0, cy = -9, pitch = 0, fang = 0;
     if (a.pose === "idle") cy += (1 - a.c) * 0.5;
     if (st === 0) { cx = -3; cy = -13; pitch = -0.25; fang = 0.6; }
     if (st === 1) { cx = 6; cy = -9; pitch = 0.15; fang = 1; }
@@ -2181,14 +2195,15 @@ function spider(): Def {
     const body: P = [cx, cy];
     const legs = (far: boolean) => {
       for (let i = 0; i < 4; i++) {
-        const root = add(body, rot([4.4 - i * 1.6, 0.4], pitch));
-        let ft: P = [cx + 15 - i * 8.6 + (far ? -2 : 0), 0];
+        const root = add(body, rot([4.4 - i * 1.7, 0.6], pitch));
+        let ft: P = [cx + 21 - i * 11.5 + (far ? 3 : 0), 0];
         if (a.pose === "move") ft = add(ft, [Math.sin(a.t * 6.28 + i * 1.6 + (far ? PI : 0)) * 2.4, -Math.max(0, Math.cos(a.t * 6.28 + i * 1.6 + (far ? PI : 0))) * 2]);
         if ((st === 1 || st === 2) && i === 0 && !far) ft = [cx + 22, -9];
         if (st === 0 && i < 2) ft = add(ft, [0, -4 + i * 2]);
         if (a.dead) ft = [root[0] + (i - 1.5) * 4.6, root[1] - 7 + Math.abs(i - 1.5) * 2];
         const len = Math.hypot(ft[0] - root[0], ft[1] - root[1]);
-        const [kn] = ik(root, ft, Math.max(9, len * 0.62), Math.max(9, len * 0.62), a.dead ? 1 : i < 2 ? -1 : 1);
+        const L1 = Math.max(10, len * 0.7);
+        const [kn] = ik(root, ft, L1, L1 * 1.05, a.dead ? 1 : i < 2 ? -1 : 1);
         const m = far ? dim(CH, 0.3) : CH;
         s.fill(m, (b) => { b.capP(root, kn, 1.3, 1); b.capP(kn, ft, 1, 0.4); }, { tex: (x, y, t) => (hash(x, y, 1) < 0.15 ? t - 1 : t) });
         if (!far) s.fill(mat("#6a2a2a"), (b) => b.ell(kn[0], kn[1], 1, 1), { cast: false });
@@ -2208,41 +2223,46 @@ function spider(): Def {
     legs(false);
     if (st === 1 || st === 2) { s.smear(cx + 4, cy - 2, 14, -1.3, 0.4, 2); if (st === 2) s.spark(cx + 17, cy + 2, 4); }
   };
-  return { w: 68, h: 40, flying: false, ox: 0, draw };
+  return { w: 72, h: 44, flying: false, ox: 0, draw };
 }
 
 // ============================================================ ghost
 function ghost(): Def {
-  const SP = mat("#a8d8e0", { rim: "#ffffff" }), CORE = "#e8fcff";
+  const SP = mat("#9ccad8", { rim: "#e8ffff" }), DEEP = mat("#5a8aa8"), CORE = "#e8fcff";
   const draw = (s: Spr, a: A) => {
-    s.alpha = 0.86;
+    s.alpha = 0.88;
     const st = a.st, hu = a.hu;
-    let cx = 0, cy = -24 + (a.pose === "idle" || a.pose === "move" ? a.s * 1.5 : 0), lean = 0.1, reach = 0;
+    let cx = 0, cy = -30 + (a.pose === "idle" || a.pose === "move" ? a.s * 1.5 : 0), lean = 0.08, reach = 0;
     if (st === 0) { cx = -3; lean = -0.2; reach = -1; }
-    if (st === 1) { cx = 6; lean = 0.4; reach = 1; }
-    if (st === 2) { cx = 7; lean = 0.45; reach = 1; }
+    if (st === 1) { cx = 6; lean = 0.35; reach = 1; }
+    if (st === 2) { cx = 7; lean = 0.4; reach = 1; }
     if (hu >= 0) { cx = -3; lean = -0.35; }
-    if (a.dead) { cy = -6; lean = 0.2; }
+    if (a.dead) { cy = -10; lean = 0.9; }
+    const w = a.t * PI * 2;
     s.at([cx, cy], lean, () => {
-      const w = a.t * PI * 2;
-      // wispy tail trailing down and back
-      const tail: [number, number, number][] = [];
-      for (let k = 0; k <= 6; k++) tail.push([-k * 2.2 + Math.sin(w + k) * 1.2, k * 3.4, 7 - k * 1.05]);
-      s.fill(SP, (b) => { b.chain(tail); b.ell(0, -4, 6.4, 7.6); }, { hi: 0.4, mid: 0.8, tex: (x, y, t) => (hash(x, y + Math.floor(a.t * 4), 3) < 0.08 ? t + 1 : t) });
+      // tattered shroud: several wisps streaming down and back
+      for (let k = 0; k < 4; k++) {
+        const pts: [number, number, number][] = [];
+        for (let n = 0; n <= 6; n++) pts.push([3 - k * 2.6 - n * (1.2 + k * 0.35) + Math.sin(w + n * 0.9 + k) * (0.5 + n * 0.25), n * 3.4 + k * 0.6, Math.max(0.4, 3.2 - n * 0.42)]);
+        s.fill(k % 2 ? DEEP : SP, (b) => b.chain(pts), { hi: 0.35, mid: 0.8 });
+      }
+      s.fill(SP, (b) => { b.poly([[-5, -6], [5, -6], [7, 6], [2, 4], [-1, 8], [-4, 4], [-7, 6]]); b.ell(0, -6, 5, 3.6); }, { hi: 0.35, mid: 0.8 });
+      // far arm
+      s.fill(DEEP, (b) => b.cap(-2, -5, -5 + reach * 4, 3 - reach * 2, 2, 1.2));
       // hood and hollow face
-      s.fill(mat("#8ab8c8"), (b) => { b.ell(0.6, -11, 5, 5.2); b.poly([[-4, -12], [-6.4, -4], [-2, -8]]); });
-      s.fill(flatMat("#1a3040"), (b) => b.ell(2.4, -10.4, 3, 3.6), { cast: false });
-      if (!a.dead) for (const x of [1.6, 3.6]) s.glow(x, -11, "#80ffff", st === 1 || st === 2 ? 2.6 : 2);
-      if (st >= 0 && st <= 2 || hu >= 0) s.fill(flatMat("#0a1a24"), (b) => b.ell(2.8, -8.2, 1, 1.2 + (st === 1 ? 0.6 : 0)), { cast: false });
-      // reaching arms with long fingers
-      const hand: P = add([6 + reach * 6, -2 - reach * 2], [0, 0]);
-      s.fill(SP, (b) => { b.cap(1, -6, hand[0], hand[1], 2.4, 1.2); for (const k of [-0.5, 0, 0.5]) b.capP(hand, add(hand, dir(0.2 + k + reach * 0.3, 3.6)), 0.6, 0.3); });
-      s.fill(dim(SP, 0.2), (b) => b.cap(-1, -6, -4 + reach * 3, 0, 2, 1));
+      s.fill(mat("#86b4c8"), (b) => { b.ell(0.4, -11.4, 4.8, 5.2); b.poly([[-3.6, -13], [-6.6, -5], [-2, -9]]); });
+      s.fill(flatMat("#14283a"), (b) => b.ell(2.4, -10.6, 2.8, 3.6), { cast: false });
+      if (!a.dead) for (const x of [1.6, 3.6]) s.glow(x, -11.2, "#80ffff", st === 1 || st === 2 ? 2.6 : 2);
+      if ((st >= 0 && st <= 2) || hu >= 0) s.fill(flatMat("#06121c"), (b) => b.ell(2.8, -8.4, 1, 1.2 + (st === 1 ? 0.6 : 0)), { cast: false });
+      // near arm: long sleeve and skeletal fingers reaching out
+      const hand: P = [7 + reach * 6, -1 - reach * 3];
+      s.fill(SP, (b) => { b.cap(1, -6, hand[0] - 1, hand[1], 2.6, 2); });
+      s.fill(mat("#d8f4f8"), (b) => { b.ell(hand[0], hand[1], 1.2, 1); for (const k of [-0.5, 0, 0.5]) b.capP(hand, add(hand, dir(0.2 + k - reach * 0.3, 3.8)), 0.5, 0.3); });
     });
-    s.glow(cx + 1, cy - 4, CORE, 4);
-    if (st === 1 || st === 2) { s.smear(cx, cy - 4, 14, -1, 0.6, 2, "#c0ffff"); if (st === 2) s.spark(cx + 15, cy - 2, 4, "#e0ffff", "#60e0ff"); }
+    s.glow(cx + 1, cy - 3, CORE, 5);
+    if (st === 1 || st === 2) { s.smear(cx, cy - 4, 15, -1, 0.6, 2, "#c0ffff"); if (st === 2) s.spark(cx + 16, cy - 2, 4, "#e0ffff", "#60e0ff"); }
   };
-  return { w: 44, h: 56, flying: true, ox: 0, draw };
+  return { w: 48, h: 60, flying: true, ox: 0, draw };
 }
 
 // ============================================================ registry
@@ -2278,8 +2298,8 @@ const DEFS: Record<string, () => Def> = {
   kraan: () => kraan(false),
   "kraan-rider": () => kraan(true),
   bat: bat,
-  raven: () => bird({ body: "#1e1e2a", wing: "#22222e", beak: "#3a3a44", eye: "#ffd040", size: 0.85, raven: true }),
-  bird: () => bird({ body: "#7a5232", wing: "#6a4a30", beak: "#e0b040", eye: "#ffb020", size: 1 }),
+  raven: () => bird({ body: "#24243a", wing: "#26263a", beak: "#4a4a58", eye: "#ffd040", size: 1.05, raven: true }),
+  bird: () => bird({ body: "#7a5232", wing: "#6a4a30", beak: "#e0b040", eye: "#ffb020", size: 1.2 }),
   "winged-serpent": wingedSerpent,
   marshviper: () => snake({ body: "#4a5a2a", belly: "#c0b070", blot: "#2a3418", size: 1.15, eye: "#ffe040", name: "marshviper" }),
   snake: () => snake({ body: "#6a5a3a", belly: "#d0c090", blot: "#3a2a1a", size: 0.9, eye: "#ff8030", name: "snake" }),

@@ -101,6 +101,16 @@ function tone(c: string): Tone {
   return t;
 }
 const mx = (a: string, b: string, t: number) => mix(a, b, t);
+const SKT = new Map<string, Tone>();
+/** Skin gets its own ramp: shadows drift to a soft rose-violet instead of saturated orange. */
+function skinTone(c: string): Tone {
+  let t = SKT.get(c);
+  if (!t) {
+    t = { d2: mix(c, "#5a2c3c", 0.48), d: mix(c, "#9a5866", 0.3), b: c, l: mix(c, "#fff3e2", 0.32), l2: mix(c, "#ffffff", 0.6) };
+    SKT.set(c, t);
+  }
+  return t;
+}
 
 // ------------------------------------------------------------------ pixel grid
 type Cell = string | null;
@@ -557,7 +567,7 @@ const PROFILE: [number, number][] = [
 
 function faceFront(g: Grid, L: Look, h: Head) {
   const { x0, T } = h;
-  const sk = tone(L.skin);
+  const sk = skinTone(L.skin);
   // ears
   for (const [ex, c1, c2] of [[x0 - 1, sk.b, sk.d], [x0 + 12, sk.d, sk.d2]] as [number, string, string][]) {
     g.px(ex, T + 8, c1); g.px(ex, T + 9, c2); g.px(ex, T + 10, c1);
@@ -566,7 +576,7 @@ function faceFront(g: Grid, L: Look, h: Head) {
     for (let x = a; x <= b; x++) {
       let c = sk.b;
       if (x <= 1 && r >= 3 && r <= 11) c = sk.l;
-      if (x >= 10 || (x === 9 && r >= 12)) c = sk.d;
+      if (x >= 11 || (x === 10 && r >= 11)) c = sk.d;
       if (r === 14 || (r === 13 && (x === 1 || x === 10))) c = sk.d;
       if (r <= 1 && x <= 5) c = sk.l;
       g.px(x0 + x, T + r, c);
@@ -645,7 +655,7 @@ function faceFront(g: Grid, L: Look, h: Head) {
 
 function faceSide(g: Grid, L: Look, h: Head) {
   const { x0, T } = h;
-  const sk = tone(L.skin);
+  const sk = skinTone(L.skin);
   PROFILE.forEach(([a, b], r) => {
     for (let x = a; x <= b; x++) {
       let c = sk.b;
@@ -694,14 +704,14 @@ function faceSide(g: Grid, L: Look, h: Head) {
 
 function headBack(g: Grid, L: Look, h: Head) {
   const { x0, T } = h;
-  const sk = tone(L.skin);
+  const sk = skinTone(L.skin);
   g.px(x0 - 1, T + 8, sk.d); g.px(x0 - 1, T + 9, sk.d2); g.px(x0 - 1, T + 10, sk.d);
   g.px(x0 + 12, T + 8, sk.b); g.px(x0 + 12, T + 9, sk.d); g.px(x0 + 12, T + 10, sk.b);
   SKULL.forEach(([a, b], r) => { for (let x = a; x <= b; x++) g.px(x0 + x, T + r, r >= 12 ? sk.d : x >= 9 ? sk.d : sk.b); });
 }
 
 /** Hair colour at a pixel, given its position in the hairdo. */
-function hairShade(t: Tone, u: number, y: number, top: number, bottom: number, strand: boolean): string {
+function hairShade(t: Tone, u: number, y: number, top: number, bottom: number, strand: boolean | undefined): string {
   const depth = y - top;
   if (y === bottom && bottom - top > 1) return t.d;
   if (depth <= 1 && u >= 0.15 && u <= 0.6) return depth === 0 && u > 0.25 && u < 0.5 ? t.l2 : t.l;
@@ -734,7 +744,7 @@ function hairFront(g: Grid, L: Look, h: Head) {
   const H = HAIR[L.hairStyle];
   const t = tone(L.hair);
   const { x0, T } = h;
-  const sk = tone(L.skin);
+  const sk = skinTone(L.skin);
   if (L.hairStyle === "bald" || L.hairStyle === "balding") {
     // scalp shine
     g.px(x0 + 3, T + 1, sk.l2); g.px(x0 + 4, T + 1, sk.l2); g.px(x0 + 2, T + 2, sk.l);
@@ -770,7 +780,7 @@ function hairBack(g: Grid, L: Look, h: Head, overCloak: boolean) {
   const H = HAIR[L.hairStyle];
   const t = tone(L.hair);
   const { x0, T } = h;
-  if (H.bald && L.hairStyle === "bald") { const sk = tone(L.skin); g.px(x0 + 4, T + 1, sk.l2); g.px(x0 + 5, T + 1, sk.l); return; }
+  if (H.bald && L.hairStyle === "bald") { const sk = skinTone(L.skin); g.px(x0 + 4, T + 1, sk.l2); g.px(x0 + 5, T + 1, sk.l); return; }
   const len = L.hairStyle === "balding" ? 11 : Math.max(H.back, 11);
   for (let x = x0 - 1; x <= x0 + 12; x++) {
     const i = x - x0;
@@ -814,7 +824,7 @@ function hairSide(g: Grid, L: Look, h: Head, behind: boolean) {
     if (H.tail === "braid") for (let y = T + 9; y <= T + 22; y++) { g.px(x0 + 1, y, y % 2 ? t.b : t.l); g.px(x0 + 2, y, t.d); }
     return;
   }
-  const sk = tone(L.skin);
+  const sk = skinTone(L.skin);
   if (H.bald && L.hairStyle === "bald") { g.px(x0 + 5, T, sk.l2); g.px(x0 + 6, T, sk.l2); g.px(x0 + 4, T + 1, sk.l); return; }
   // columns over the skull, back of the head to the forehead
   for (let i = -1; i <= 11; i++) {
@@ -1345,7 +1355,7 @@ function torsoFront(b: Body) {
 }
 
 function sideRows(b: Body): [number, number, number][] {
-  const { D, sy, wy, R, L } = b;
+  const { sy, wy, R, L } = b;
   const rows: [number, number, number][] = [];
   const big = L.build === "broad" ? 1 : 0;
   for (let y = sy; y <= wy + 1; y++) {
@@ -1363,7 +1373,7 @@ function sideRows(b: Body): [number, number, number][] {
 }
 
 function torsoSide(b: Body) {
-  const { g, L, D, R, sy, wy, hy } = b;
+  const { g, L, R, sy, wy, hy } = b;
   const o = L.outfit;
   const up = tone(bodyCol(L)), main = tone(L.main), tr = tone(L.trim), bt = tone(L.belt), bk = tone(L.buckle), m = tone(L.metal);
   const hem = hemOf(b);
@@ -1449,7 +1459,7 @@ function torsoSide(b: Body) {
 interface ArmLook { upper: Tone; fore: Tone; cuff?: string; bell: boolean; skin: Tone }
 function armLook(L: Look, far: boolean): ArmLook {
   const dk = (c: string) => tone(far ? sh(c, -0.22) : c);
-  const skin = dk(L.skin);
+  const skin = far ? skinTone(sh(L.skin, -0.18)) : skinTone(L.skin);
   const glove = L.gloves ? dk(L.gloves) : skin;
   switch (L.outfit) {
     case "tabard": return { upper: dk(L.metal), fore: L.gloves ? glove : dk(L.shirt), cuff: L.gloves ? sh(L.gloves, 0.2) : undefined, bell: false, skin: glove };
@@ -1489,7 +1499,7 @@ function cloakBehindFront(b: Body) {
   const top = sy + 1, hem = D.fy - (L.build === "child" ? 2 : 3);
   for (let y = top; y <= hem; y++) {
     const k = (y - top) / (hem - top);
-    const x0 = Math.round(16 - D.sw - 1 - k * 2.5 + s * k), x1 = Math.round(15 + D.sw + 1 + k * 2.5 + s * k);
+    const x0 = Math.round(16 - D.sw - 0.5 - k * 1.5 + s * k), x1 = Math.round(15 + D.sw + 0.5 + k * 1.5 + s * k);
     for (let x = x0; x <= x1; x++) {
       if (y === hem && (x + s) % 3 === 0) continue;
       let col = x === x0 ? c.b : x === x1 ? c.d : x === x0 + 1 ? li.b : li.d;
@@ -1822,7 +1832,7 @@ function paint(L: Look, facing: Facing, pose: Pose, frame: number): Grid {
     if (L.off === "shield") drawShield(g, L, [Math.max(hL[0] + 1, 21 + ln), hL[1] - 2], "side");
     if (L.off === "book" && !R.castR) drawBook(g, L, hL, "side");
     mantleSide(b, S);
-    const sk = tone(L.skin);
+    const sk = skinTone(L.skin);
     for (let y = T + 14; y <= sy; y++) { g.px(14 + ln, y, sk.d); g.px(15 + ln, y, sk.b); g.px(16 + ln, y, sk.d); }
     drawHead(g, L, head);
     hR = arm(g, L, D, S, handR0, [-0.4, 1], false, fist);
@@ -1883,7 +1893,7 @@ function paint(L: Look, facing: Facing, pose: Pose, frame: number): Grid {
     arm(g, L, D, SL, tL, hintL, false, L.off === "shield" || L.weapon === "bow");
     if (!back) mantleFront(b, SR, SL);
     if (back) { cloakBackOver(b); }
-    const sk = tone(L.skin);
+    const sk = skinTone(L.skin);
     for (let y = T + 13; y <= sy; y++) for (let x = 14; x <= 17; x++) g.px(x + R.hdx, y, x === 17 ? sk.d2 : sk.d);
     if (L.outfit === "noble") furCollar(b);
     if (L.outfit === "armor") pauldrons(b, SR, SL);
@@ -1956,7 +1966,7 @@ function paintDead(L: Look): Grid {
   legsSide(b, true); legsSide(b, false);
   torsoSide(b);
   mantleSide(b, S);
-  const sk = tone(L.skin);
+  const sk = skinTone(L.skin);
   for (let y = T + 14; y <= b.sy; y++) { s.px(14 + ln, y, sk.d); s.px(15 + ln, y, sk.b); s.px(16 + ln, y, sk.d); }
   drawHead(s, L, { x0: 10 + ln + 1, T, face: "dead", view: "side" });
   arm(s, L, D, S, add(S, [6, 6]), [-0.4, 1], false);
@@ -2224,7 +2234,7 @@ function paintPortrait(L: Look): Grid {
   const g = new Grid(32, 32);
   const x0 = 8, T = 3;
   const H = HAIR[L.hairStyle];
-  const sk = tone(L.skin), ht = tone(L.hair);
+  const sk = skinTone(L.skin), ht = tone(L.hair);
   const ln = lineOf(L), br = browOf(L);
   const child = L.build === "child";
   const D = dims(L);
