@@ -4241,10 +4241,15 @@ export function mountExplore(o: ExploreOpts): ExploreHandle {
 
   // ---- camera
   const camT = () => ({ x: hero.x - (bw - 2) / 2, y: hero.y - 22 - (bh - 2) / 2 });
-  const clampCam = (c: Pt) => ({
-    x: MW <= bw - 2 ? (MW - (bw - 2)) / 2 : clamp(c.x, 0, MW - (bw - 2)),
-    y: MH <= bh - 2 ? (MH - (bh - 2)) / 2 : clamp(c.y, 0, MH - (bh - 2)),
-  });
+  // The camera follows the hero past the map edges (by up to half a view), so exits near an
+  // edge are never hidden under the HUD or the bottom panel.
+  const clampCam = (c: Pt) => {
+    const mx = (bw - 2) / 2, my = (bh - 2) / 2;
+    return {
+      x: clamp(c.x, -mx, Math.max(-mx, MW - (bw - 2) + mx)),
+      y: clamp(c.y, -my, Math.max(-my, MH - (bh - 2) + my)),
+    };
+  };
   let cam = clampCam(camT());
 
   // ---- labels and prompt
