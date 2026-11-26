@@ -1,5 +1,5 @@
 /** Lone Wolf rules of Adventure (Kai, Magnakai, Grand Master, New Order). Pure functions: no DOM. */
-import type { AdvState, Book, Choice, Combat, Cond, Disc, Effect, FoeDef, ItemDef, ItemType, ListKind, LoseKind, NthPick, Offer, PickItem, RandomPick, Section, Stash, StashPart } from "./types";
+import type { AdvState, Book, Choice, ChoiceRoll, Combat, CompareGame, Cond, Disc, Effect, FoeDef, ItemDef, ItemType, ListKind, LoreCircleId, LoseKind, NthPick, Offer, PickItem, RandomPick, Section, Stash, StashPart } from "./types";
 import { DISCS_BY_RULES } from "./types";
 
 export type Rng = () => number;
@@ -107,7 +107,7 @@ export const MK = { tutelary: 5, mentora: 7, scion: 8, archmaster: 9 } as const;
 const mkRank = (book: Book, s: AdvState) => (book.rules === "magnakai" && tierOf(s) === "magnakai" ? rankOf(s) : 0);
 
 /** Lore-circles of the Magnakai: all their disciplines learnt add to the basic COMBAT SKILL and ENDURANCE. */
-export const LORE_CIRCLES: { id: string; name: string; discs: Disc[]; cs: number; ep: number }[] = [
+export const LORE_CIRCLES: { id: LoreCircleId; name: string; discs: Disc[]; cs: number; ep: number }[] = [
   { id: "fire", name: "Vòng Lửa", discs: ["weaponmastery", "huntmastery"], cs: 1, ep: 2 },
   { id: "light", name: "Vòng Ánh Sáng", discs: ["animalcontrol", "curing"], cs: 0, ep: 3 },
   { id: "solaris", name: "Vòng Solaris", discs: ["invisibility", "huntmastery", "pathsmanship"], cs: 1, ep: 3 },
@@ -120,6 +120,18 @@ export function loreCircles(book: Book, s: Pick<AdvState, "disciplines">) {
   return LORE_CIRCLES.filter((c) => c.discs.every((d) => s.disciplines.includes(d)))
     .map((c) => ({ ...c, name: (book.names.circle as Record<string, string> | undefined)?.[c.id] ?? c.name }));
 }
+
+/**
+ * Has the hero completed this Lore-circle (all its disciplines known)? Unlike `loreCircles`, this holds
+ * in any book: a Grand Master has completed them all.
+ */
+export function hasLoreCircle(s: Pick<AdvState, "disciplines">, id: LoreCircleId): boolean {
+  const c = LORE_CIRCLES.find((x) => x.id === id);
+  return !!c && c.discs.every((d) => knows(s, d));
+}
+
+/** The Lore-circle's name in the book (names.circle) or the engine's own. */
+export const loreCircleName = (book: Book, id: LoreCircleId) => (book.names.circle as Record<string, string> | undefined)?.[id] ?? LORE_CIRCLES.find((x) => x.id === id)?.name ?? id;
 
 /** COMBAT SKILL before fight modifiers: the basic score plus Lore-circle bonuses. */
 export const baseCs = (book: Book, s: AdvState) => s.cs + loreCircles(book, s).reduce((a, c) => a + c.cs, 0);
@@ -368,6 +380,8 @@ export function check(s: AdvState, c: Cond | undefined, book?: Book): boolean {
   if ("all" in c) return c.all.every((x) => check(s, x, book));
   if ("any" in c) return c.any.some((x) => check(s, x, book));
   if ("hasAny" in c) return losePool(book, s, c.hasAny).length > 0;
+  if ("notLoreCircle" in c) return !hasLoreCircle(s, c.notLoreCircle);
+  if ("loreCircle" in c) return hasLoreCircle(s, c.loreCircle);
   if ("notDisc" in c) return !knows(s, c.notDisc);
   if ("disc" in c) return knows(s, c.disc);
   if ("mastered" in c) return masters(s, c.mastered);
@@ -408,13 +422,14 @@ export function condText(book: Book, c: Cond | undefined): string {
   if ("rank" in c) return `cần ${c.rank} kỹ năng`;
   if ("arrows" in c) return `cần ${c.arrows} mũi tên`;
   if ("lune" in c) return `cần ${c.lune} Lune`;
+  if ("loreCircle" in c) return `cần ${loreCircleName(book, c.loreCircle)}`;
   return "";
 }
 
 /** A choice the player can pick, one shown locked (a missing discipline...), or one not shown. */
 export function choiceState(s: AdvState, c: { if?: Cond }, book?: Book): "ok" | "locked" | "hidden" {
   if (check(s, c.if, book)) return "ok";
-  const negative = (x: Cond): boolean => "hasAny" in x || "notDisc" in x || "goldBelow" in x || "notItem" in x || "notFlag" in x || "epBelow" in x || "notRank" in x || "noWeapon" in x || "arrowsBelow" in x || "luneBelow" in x || ("all" in x && x.all.some(negative)) || ("any" in x && x.any.every(negative));
+  const negative = (x: Cond): boolean => "hasAny" in x || "notDisc" in x || "goldBelow" in x || "notItem" in x || "notFlag" in x || "epBelow" in x || "notRank" in x || "noWeapon" in x || "arrowsBelow" in x || "luneBelow" in x || "notLoreCircle" in x || ("all" in x && x.all.some(negative)) || ("any" in x && x.any.every(negative));
   return c.if && negative(c.if) ? "hidden" : "locked";
 }
 
@@ -457,8 +472,13 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined, rng: Rn
       if (x) out.push(...removeEntries(book, s, [x]));
     } else if ("loseRandom" in e) {
       out.push(...removeEntries(book, s, randomEntries(listEntries(book, s, e.loseRandom.kind), e.loseRandom.n, rng)));
+    } else if ("loseHalf" in e && (e.loseHalf === "gold" || e.loseHalf === "lune")) {
+      // half the Belt Pouch: the number lost is rounded down (`up`: rounded up)
+      const have = e.loseHalf === "gold" ? s.gold : s.lune ?? 0;
+      const lost = e.up ? Math.ceil(have / 2) : Math.floor(have / 2);
+      if (lost) out.push(...(e.loseHalf === "gold" ? changeGold(s, -lost) : changeLune(s, -lost)));
     } else if ("loseHalf" in e) {
-      const all = listEntries(book, s, e.loseHalf);
+      const all = listEntries(book, s, e.loseHalf as ListKind);
       out.push(...removeEntries(book, s, randomEntries(all, e.up ? Math.ceil(all.length / 2) : Math.floor(all.length / 2), rng)));
     } else if ("arrows" in e) {
       const before = s.arrows;
@@ -695,11 +715,42 @@ export function answerRiddle(c: Choice, answer: string | number): string | null 
   return c.fail ?? null;
 }
 
-/** How many random numbers a table adds together (a section's, or a choice's game of chance). */
-export const randomPicks = (x: Section | RandomPick) => Math.max(1, ("out" in x ? x : x.random)?.picks ?? 1);
+/** Numbers each player picks in a dice-comparison game, and how many opponents there are. */
+export const compareShape = (g: CompareGame) => ({ picks: Math.max(1, g.picks ?? 2), opponents: Math.max(1, g.opponents ?? 1) });
+
+/**
+ * How many random numbers a table adds together (a section's, or a choice's game of chance). A
+ * dice-comparison game: all the numbers picked, every opponent's and then the hero's.
+ */
+export function randomPicks(x: Section | ChoiceRoll): number {
+  if ("compare" in x) { const g = compareShape(x.compare); return g.picks * (g.opponents + 1); }
+  return Math.max(1, ("out" in x ? x : x.random)?.picks ?? 1);
+}
 
 /** Picks the random number(s) 0-9 of a section's table or of a game of chance (picks of them). */
-export const rollRandom = (x: Section | RandomPick, rng: Rng = Math.random) => Array.from({ length: randomPicks(x) }, () => pick10(rng));
+export const rollRandom = (x: Section | ChoiceRoll, rng: Rng = Math.random) => Array.from({ length: randomPicks(x) }, () => pick10(rng));
+
+/**
+ * The outcome of a dice-comparison game for the numbers picked (in `rollRandom` order: each
+ * opponent's picks in turn, then the hero's). Missing numbers count 0.
+ */
+export function compareResult(book: Book, g: CompareGame, s: AdvState, nums: number[]) {
+  const { picks, opponents } = compareShape(g);
+  const part = (i: number) => Array.from({ length: picks }, (_, j) => nums[i * picks + j] ?? 0);
+  const foes = Array.from({ length: opponents }, (_, i) => part(i));
+  const hero = part(opponents);
+  const sum = (ns: number[]) => ns.reduce((a, x) => a + x, 0);
+  const add = (g.mods ?? []).reduce((a, m) => a + (check(s, m.if, book) ? m.add : 0), 0);
+  const heroTotal = sum(hero) + add;
+  const foeTotals = foes.map(sum);
+  // all noughts ("Bullseyes!") beat any total
+  const score = (ns: number[], total: number) => (g.zerosWin && ns.every((x) => x === 0) ? Infinity : total);
+  const mine = score(hero, heroTotal);
+  const best = Math.max(...foes.map((ns, i) => score(ns, foeTotals[i])));
+  const result: "win" | "tie" | "lose" = mine > best ? "win" : mine < best ? "lose" : "tie";
+  const o = g[result] ?? {};
+  return { result, hero, foes, add, heroTotal, foeTotals, to: o.to ?? "", end: o.end, fx: o.fx };
+}
 
 /** The random number(s) picked for the section's table (summed), with modifiers, and where it leads. */
 export function randomResult(book: Book, sec: Section, s: AdvState, nums: number | number[]) {
@@ -727,10 +778,18 @@ export function tableResult(book: Book, r: RandomPick, s: AdvState, nums: number
  */
 export function playChoice(book: Book, s: AdvState, c: Choice, nums: number | number[]) {
   const changes = c.fx ? apply(book, s, c.fx) : [];
-  const res = tableResult(book, c.roll!, s, nums);
+  const r = c.roll!;
+  if ("compare" in r) {
+    // a dice-comparison game: the hero's total against the opponents'
+    const cmp = compareResult(book, r.compare, s, typeof nums === "number" ? [nums] : nums);
+    if (cmp.fx) changes.push(...apply(book, s, cmp.fx));
+    if (cmp.end) s.ended = cmp.end;
+    return { n: cmp.heroTotal - cmp.add, add: cmp.add, value: cmp.heroTotal, to: cmp.to, end: cmp.end, fx: cmp.fx, changes, compare: cmp };
+  }
+  const res = tableResult(book, r, s, nums);
   if (res.fx) changes.push(...apply(book, s, res.fx));
   if (res.end) s.ended = res.end;
-  return { ...res, changes };
+  return { ...res, changes, compare: undefined };
 }
 
 export function eatMeal(book: Book, s: AdvState): Change[] {
@@ -860,8 +919,17 @@ export const inFirstRounds = (s: AdvState, c: Combat, round: number) => !!c.firs
 /** Mind attacks add nothing in a psychic duel (combat.heroCs) or where the book forbids them. */
 export const mindAllowed = (c: Combat) => !c.noMindblast && c.heroCs === undefined;
 
-/** COMBAT SKILL a mind attack adds in this fight (combat.mindBonusMul: the Taan-spider triples it). */
-export const mindCs = (c: Combat, m: MindOpt) => m.cs * (c.mindBonusMul ?? 1);
+/**
+ * How many times a mind attack's COMBAT SKILL bonus counts in this fight: the first `mindBonusMulIf`
+ * entry that holds, else `mindBonusMul` (the Taan-spider triples it), else 1.
+ */
+export function mindBonusMulOf(c: Combat, s?: AdvState, book?: Book): number {
+  const hit = s ? c.mindBonusMulIf?.find((x) => check(s, x.if, book)) : undefined;
+  return hit ? hit.n : c.mindBonusMul ?? 1;
+}
+
+/** COMBAT SKILL a mind attack adds in this fight (combat.mindBonusMul / mindBonusMulIf). */
+export const mindCs = (c: Combat, m: MindOpt, s?: AdvState, book?: Book) => m.cs * mindBonusMulOf(c, s, book);
 
 /** Mind attacks as the hero's rank has them (Archmaster: Psi-surge +6 for 1 ENDURANCE, down to 5; Mindblast +3). */
 export function mindOpts(book: Book, s: AdvState): MindOpt[] {
@@ -897,10 +965,14 @@ const forbidden = (book: Book, s: AdvState, c: Combat | undefined, id: string) =
 
 /**
  * Weapons usable in this fight, the Sommerswerd first. With `round` (0 = the first), none in the
- * firstRound rounds the hero must fight unarmed.
+ * firstRound rounds the hero must fight unarmed. combat.unarmedUnless "weaponLike": only weapon-like
+ * Special Items (no Bow).
  */
-export const fightWeapons = (book: Book, s: AdvState, c?: Combat, round?: number) =>
-  c && round !== undefined && c.firstRound?.unarmed && inFirstRounds(s, c, round) ? [] : meleeWeapons(book, s).filter((id) => !forbidden(book, s, c, id));
+export function fightWeapons(book: Book, s: AdvState, c?: Combat, round?: number): string[] {
+  if (c && round !== undefined && c.firstRound?.unarmed && inFirstRounds(s, c, round)) return [];
+  const pool = c?.unarmedUnless === "weaponLike" ? s.special.filter((id) => weaponLike(book, s, id) && weaponKind(book, s, id) !== "Bow") : meleeWeapons(book, s);
+  return pool.filter((id) => !forbidden(book, s, c, id));
+}
 
 export function weaponBonus(book: Book, s: AdvState, c?: Combat, round?: number): { label: string; v: number } | null {
   const p = profile(book).weapon;
@@ -932,7 +1004,7 @@ export function heroCs(book: Book, s: AdvState, c: Combat, foe: FoeDef, mind = -
   const amb = profile(book).ambush;
   if (c.ambush && !(amb && s.disciplines.includes(amb))) parts.push({ label: "Bị đánh úp", v: c.ambush });
   const m = mindUsed(book, s, c, foe, mind);
-  if (m) parts.push({ label: `${mindName(book, m)}${c.mindBonusMul && c.mindBonusMul !== 1 ? ` ×${c.mindBonusMul}` : ""}${m.cost ? ` (−${m.cost} Sức Bền/hiệp)` : ""}`, v: mindCs(c, m) });
+  if (m) { const k = mindBonusMulOf(c, s, book); parts.push({ label: `${mindName(book, m)}${k !== 1 ? ` ×${k}` : ""}${m.cost ? ` (−${m.cost} Sức Bền/hiệp)` : ""}`, v: mindCs(c, m, s, book) }); }
   if (!duel) for (const id of s.special) {
     const cs = itemDef(book, s, id)?.cs;
     if (cs && !forbidden(book, s, c, id)) parts.push({ label: itemName(book, id, s), v: cs });
@@ -1033,6 +1105,10 @@ export function battleExit(book: Book, s: AdvState, b: Battle): string | null {
 
 // ------------------------------------------------------------------ book checks
 
+/** Sections a choice's game of chance can lead to. */
+const rollLinks = (r: ChoiceRoll | undefined): (string | undefined)[] =>
+  !r ? [] : "compare" in r ? [r.compare.win.to, r.compare.lose.to, r.compare.tie?.to] : r.out.map((o) => o.to);
+
 /** Problems in a book package (used by the import screen and the tests). */
 export function validateBook(book: Book): string[] {
   const errs: string[] = [];
@@ -1041,7 +1117,7 @@ export function validateBook(book: Book): string[] {
   if (!Array.isArray(book.crt) || book.crt.length !== 10 || book.crt.some((r) => r.length !== 13)) errs.push("Bảng Kết Quả Chiến Đấu không hợp lệ (cần 10 × 13 ô)");
   for (const [id, sec] of Object.entries(book.sections ?? {})) {
     const c = sec.combat;
-    const links = [...[...(sec.choices ?? []), ...(c?.instead ?? [])].flatMap((x) => [x.to, x.fail]), ...(sec.random?.out ?? []).map((o) => o.to), ...(sec.choices ?? []).flatMap((x) => (x.roll?.out ?? []).map((o) => o.to)),
+    const links = [...[...(sec.choices ?? []), ...(c?.instead ?? [])].flatMap((x) => [x.to, x.fail]), ...(sec.random?.out ?? []).map((o) => o.to), ...(sec.choices ?? []).flatMap((x) => rollLinks(x.roll)),
       c?.win, c?.skipIf?.to, c?.lose, c?.winBy?.fast, c?.winBy?.slow, c?.evade?.to, ...(c?.evade?.alt ?? []).map((a) => a.to), c?.maxRounds?.to, c?.stopAt?.to, c?.onHurt, c?.compare?.more, c?.compare?.less, c?.compare?.equal].filter((x): x is string => !!x);
     for (const t of links) if (!book.sections[t]) errs.push(`§${id} → §${t}: không có đoạn này`);
     if (!links.length && !sec.end && !(sec.random?.out ?? []).some((o) => o.end)) errs.push(`§${id}: ngõ cụt`);

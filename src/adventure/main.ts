@@ -23,7 +23,7 @@ import {
   choiceState, condText, discsOf, dosesLeft, drop, enter, itemDef, losePool, epMax, itemName, newRun, pendingLoss, phase, pick10,
   profile, randomResult, playChoice, retry, takeOffer, useItem, usable, answerRiddle, apply, continueRun, visibleChoices, type Change,
   offerOpen, openChoicePick,
-  baseCs, randomPicks, carryNeeds, loreCircles, masteryCount, newSeries, ownDiscs, rankName, tierOf,
+  baseCs, randomPicks, compareShape, carryNeeds, loreCircles, masteryCount, newSeries, ownDiscs, rankName, tierOf,
 } from "./engine";
 import { runFight } from "./fight";
 import { importBook, listBooks, loadBook, newShelfLink, removeBook, saveShelfLink, shelfLink, syncShelf, type BookEntry } from "./library";
@@ -1014,12 +1014,32 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       const wheel = h("div", { class: "adv-wheel-box" });
       dock.replaceChildren(h("div", { class: "adv-roll fr-chip" }, c.text), wheel);
       const nums: number[] = [];
-      for (let i = 0; i < randomPicks(c.roll!); i++) { if (i) await sleep(350); nums.push(await wheelRoll(wheel)); }
+      const r = c.roll!;
+      // a dice-comparison game: each opponent's numbers, then the hero's, one total line per player
+      const cmp = "compare" in r ? compareShape(r.compare) : null;
+      const lines = h("div", { class: "adv-roll-lines" });
+      if (cmp) dock.append(lines);
+      const who = (p: number) => (cmp && p < cmp.opponents ? `Đối thủ${cmp.opponents > 1 ? ` ${p + 1}` : ""}` : "Bạn");
+      for (let i = 0; i < randomPicks(r); i++) {
+        if (i) await sleep(350);
+        nums.push(await wheelRoll(wheel));
+        if (cmp && (i + 1) % cmp.picks === 0) {
+          const part = nums.slice(i + 1 - cmp.picks, i + 1);
+          lines.append(h("div", { class: "adv-roll fr-chip" }, `${who(Math.floor(i / cmp.picks))}: ${part.join(" + ")} = ${part.reduce((a, x) => a + x, 0)}`));
+        }
+      }
       const res = playChoice(book, s, c, nums);
       save(!!res.end);
       if (!view.isConnected) return;
       showChanges(res.changes);
       renderChips();
+      if (res.compare) {
+        const k = res.compare;
+        dock.append(h("div", { class: `adv-roll fr-chip ${k.result === "win" ? "good" : k.result === "lose" ? "bad" : ""}` },
+          `${k.add ? `Bạn ${k.heroTotal - k.add} ${k.add > 0 ? "+" : ""}${k.add} = ${k.heroTotal} · ` : ""}${k.result === "win" ? "Bạn thắng" : k.result === "lose" ? "Bạn thua" : "Hoà"}`),
+          gameBtn("Tiếp tục", () => (res.end || !res.to ? render() : void goTo(res.to)), { kind: "gold", cls: "block big" }));
+        return;
+      }
       dock.append(h("div", { class: "adv-roll fr-chip" }, `Số ${nums.length > 1 ? `${nums.join(" + ")} = ${res.n}` : res.n}${res.add ? ` ${res.add > 0 ? "+" : ""}${res.add} = ${res.value}` : ""}`),
         gameBtn("Tiếp tục", () => (res.end || !res.to ? render() : void goTo(res.to)), { kind: "gold", cls: "block big" }));
     }

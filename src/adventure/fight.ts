@@ -262,7 +262,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
   const sec = book.sections[s.section];
   const c = sec.combat!;
   const b = startBattle(book, s, sec);
-  const heroLook = withWeapon("lonewolf", fightWeapons(book, s, c)[0] ?? s.weapons[0]);
+  const heroLook = withWeapon("lonewolf", fightWeapons(book, s, c)[0] ?? (c.unarmedUnless ? undefined : s.weapons[0]));
   const heroStyle = styleOf(heroLook.weapon);
   const golden = !!heroLook.blade;
   // "Giảm rung màn hình" / reduced motion: no screen shake, no zoom punches
@@ -1346,7 +1346,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       const evadeOk = c.evade ? canEvade(book, s, b) : false;
       actions.replaceChildren(...nn(
         minds.length || c.evade ? h("div", { class: "adv-fsub" }, ...nn(
-          minds.length ? gameBtn(cur ? `${mindName(book, cur)} +${mindCs(c, cur)}${cur.cost ? ` (−${cur.cost})` : ""}` : "Không dùng tâm lực", () => {
+          minds.length ? gameBtn(cur ? `${mindName(book, cur)} +${mindCs(c, cur, s, book)}${cur.cost ? ` (−${cur.cost})` : ""}` : "Không dùng tâm lực", () => {
             // cycle: each mind option (Psi-surge, then Mindblast…), then none
             const order = [...minds, -1];
             b.mind = order[(order.indexOf(b.mind) + 1) % order.length];
@@ -1443,6 +1443,8 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
     say(b.foes.length > 1 ? `${b.foes.length} kẻ thù lần lượt xông vào bạn.` : `${b.foes[0].def.name} chặn đường bạn!`);
     if (c.heroCs !== undefined) say(`Đấu tâm lực: Kỹ Năng Chiến Đấu của bạn là ${c.heroCs}, không dùng được vũ khí hay vật phẩm.`, "bad");
     else if (c.firstRound?.unarmed && check(s, c.firstRound.if) && fightWeapons(book, s, c).length) say(`Bạn phải đánh tay không ${(c.firstRound.rounds ?? 1) > 1 ? `${c.firstRound.rounds} hiệp đầu` : "hiệp đầu"} (${unarmedPenalty(book, s)}).`, "bad");
+    else if (c.unarmedUnless && !fightWeapons(book, s, c).length) say(`Bạn không có Vật Phẩm Đặc Biệt dùng như vũ khí: đánh tay không (${unarmedPenalty(book, s)}).`, "bad");
+    else if (c.unarmedUnless) say(`Bạn dùng ${itemName(book, fightWeapons(book, s, c)[0], s)}.`);
     else if (!fightWeapons(book, s, c).length) say(`Bạn không có vũ khí cận chiến: đánh tay không (${unarmedPenalty(book, s)}).`, "bad");
     else if (s.weapons[0]) say(`Bạn cầm ${itemName(book, s.weapons[0])}.`);
     busy = true;
