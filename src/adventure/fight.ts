@@ -23,7 +23,7 @@ import { creatureFrame, creatureKey, creatureSize, type CPose } from "./art/crea
 import { arrowHead, darkOrbHead, digitsSprite, disc, ease, FxLayer, ring, type Ease } from "./art/fx";
 import { iconEl, uiIcon } from "./art/icons";
 import { lookFor, personFrame, portrait, withWeapon, type Look, type Pose, type WeaponKind } from "./art/people";
-import { activeMind, battleExit, canEvade, check, epMax, fightWeapons, heroCs, heroLossMul, itemName, mindAllowed, mindBlocked, mindChoices, mindCs, mindName, mindUsed, playRound, startBattle, unarmedPenalty, type Battle, type RoundResult } from "./engine";
+import { activeMind, battleExit, canEvade, check, epMax, fightWeapons, heroCs, wielded, heroLossMul, itemName, mindAllowed, mindBlocked, mindChoices, mindCs, mindName, mindUsed, playRound, startBattle, unarmedPenalty, type Battle, type RoundResult } from "./engine";
 import { isMonster, OUT, Stage, H as SH, W as SW } from "./stage";
 import type { AdvState, Book, FoeDef } from "./types";
 import { bump, calmMotion, gameBtn, StageFit } from "./ui";
@@ -262,7 +262,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
   const sec = book.sections[s.section];
   const c = sec.combat!;
   const b = startBattle(book, s, sec);
-  const heroLook = withWeapon("lonewolf", fightWeapons(book, s, c)[0] ?? (c.unarmedUnless ? undefined : s.weapons[0]));
+  const heroLook = withWeapon("lonewolf", wielded(book, s, c) ?? (c.unarmedUnless || c.weapon ? undefined : s.weapons[0]));
   const heroStyle = styleOf(heroLook.weapon);
   const golden = !!heroLook.blade;
   // "Giảm rung màn hình" / reduced motion: no screen shake, no zoom punches
@@ -1442,11 +1442,12 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
     // ---------------------------------------------------------------- start
     say(b.foes.length > 1 ? `${b.foes.length} kẻ thù lần lượt xông vào bạn.` : `${b.foes[0].def.name} chặn đường bạn!`);
     if (c.heroCs !== undefined) say(`Đấu tâm lực: Kỹ Năng Chiến Đấu của bạn là ${c.heroCs}, không dùng được vũ khí hay vật phẩm.`, "bad");
+    else if (c.weapon) say(`Bạn đánh bằng ${itemName(book, c.weapon, s)}, không dùng vũ khí của mình.`);
     else if (c.firstRound?.unarmed && check(s, c.firstRound.if) && fightWeapons(book, s, c).length) say(`Bạn phải đánh tay không ${(c.firstRound.rounds ?? 1) > 1 ? `${c.firstRound.rounds} hiệp đầu` : "hiệp đầu"} (${unarmedPenalty(book, s)}).`, "bad");
     else if (c.unarmedUnless && !fightWeapons(book, s, c).length) say(`Bạn không có Vật Phẩm Đặc Biệt dùng như vũ khí: đánh tay không (${unarmedPenalty(book, s)}).`, "bad");
     else if (c.unarmedUnless) say(`Bạn dùng ${itemName(book, fightWeapons(book, s, c)[0], s)}.`);
     else if (!fightWeapons(book, s, c).length) say(`Bạn không có vũ khí cận chiến: đánh tay không (${unarmedPenalty(book, s)}).`, "bad");
-    else if (s.weapons[0]) say(`Bạn cầm ${itemName(book, s.weapons[0])}.`);
+    else if (wielded(book, s, c)) say(`Bạn cầm ${itemName(book, wielded(book, s, c)!, s)}.`);
     busy = true;
     render();
     void foeEnters(0).then(() => { busy = false; render(); });

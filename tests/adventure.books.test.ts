@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   battleExit, canEvade, choiceState, continueRun, discsOf, enter, newRun, phase, playRound, randomResult,
   startBattle, takeOffer, apply, visibleChoices, rollRandom, carryNeeds, playChoice, heroCs, answerRiddle, check,
-  epMax, masteryCount, profile,
+  epMax, losePool, masteryCount, profile,
 } from "../src/adventure/engine";
 import type { AdvState, Book, Choice, Cond, Disc } from "../src/adventure/types";
 
@@ -115,7 +115,7 @@ function playOnce(book: Book, s: AdvState, rng: () => number, r: Report, careful
     for (let i = s.offers.length - 1; i >= 0; i--) {
       const o = s.offers[i];
       if ("loseChoice" in o) {
-        const pool = o.loseChoice === "weapon" ? s.weapons : o.loseChoice === "backpack" ? [...s.backpack, ...(s.meals ? ["Meal"] : [])] : [...s.weapons, ...s.backpack];
+        const pool = losePool(book, s, o.loseChoice);
         if (pool.length) takeOffer(book, s, i, pool[Math.floor(rng() * pool.length)]); else s.offers.splice(i, 1);
       } else if (rng() < 0.7) takeOffer(book, s, i);
     }
@@ -170,6 +170,13 @@ function playOnce(book: Book, s: AdvState, rng: () => number, r: Report, careful
     if (leave) { enter(book, s, leave); continue; }
     const open = visibleChoices(sec, s).filter((c) => choiceState(s, c) === "ok");
     const moves = open.filter((c) => !c.repeat);
+    // only repeatable choices open ("first decide on your stake"): take one, as a reader must
+    const must = open.filter((c) => c.repeat && !c.roll);
+    if (!moves.length && must.length) {
+      const c = must[Math.floor(rng() * must.length)];
+      if (c.fx) apply(book, s, c.fx);
+      continue;
+    }
     if (!moves.length) {
       r.deadEnds.set(s.section, (r.deadEnds.get(s.section) ?? 0) + 1);
       return;

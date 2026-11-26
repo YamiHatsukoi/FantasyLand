@@ -44,6 +44,13 @@ export type Cond =
   | { loreCircle: LoreCircleId }
   /** Has not completed that Lore-circle. */
   | { notLoreCircle: LoreCircleId }
+  /**
+   * The weapon in hand (the one the player chose for this section, else the one the engine would fight
+   * with) is one of these: item keys or weapon kinds ("Dagger", "Quarterstaff"…).
+   */
+  | { wields: string | string[] }
+  /** Has Weaponskill / Weaponmastery with the weapon in hand ("with the weapon you are using"). */
+  | { wieldsMastered: true }
   | { all: Cond[] }
   | { any: Cond[] };
 
@@ -79,25 +86,26 @@ type EffectBase =
   /** Lune (book 9): never turned into Gold Crowns by the engine. */
   | { lune: number; optional?: boolean }
   | { arrows: number }
-  | { loseChoice: LoseKind; n?: number }
+  /** `into`: what is given up goes into that stash (a wager, an item handed over), `unstash` gives it back. */
+  | { loseChoice: LoseKind; n?: number; into?: string }
   | { epMax: number }
   | { csBase: number }
   | { gain: string; type: ItemType; n?: number; optional?: boolean; desc?: string }
-  /** Loses an item; `n` copies of it (Meals: n Meals). */
-  | { lose: string; n?: number }
+  /** Loses an item; `n` copies of it (Meals: n Meals). `into`: kept in that stash (stolen, taken away) for `unstash`. */
+  | { lose: string; n?: number; into?: string }
   | { loseAll: "weapons" | "backpack" | "special" | "gold" | "lune" | "meals" | "everything" }
   /**
    * Loses the n-th item of a list ("erase the second Special Item"); when the list is too short, the
    * first `else` that finds an item ("if you have only one, erase it; if none, the first Backpack Item").
    */
-  | { loseNth: NthPick & { else?: NthPick[] } }
+  | { loseNth: NthPick & { else?: NthPick[] }; into?: string }
   /** Loses n items of that list picked at random. */
-  | { loseRandom: { kind: ListKind; n: number } }
+  | { loseRandom: { kind: ListKind; n: number }; into?: string }
   /**
    * Loses half of the list (Backpack: Meals included), picked at random, or half the Gold Crowns / Lune
    * of the Belt Pouch ("gold", "lune"); the number lost is rounded down, `up`: rounded up.
    */
-  | { loseHalf: ListKind | "gold" | "lune"; up?: true }
+  | { loseHalf: ListKind | "gold" | "lune"; up?: true; into?: string }
   | { eat: true; noHunt?: boolean }
   | { flag: string }
   | { unflag: string }
@@ -195,6 +203,12 @@ export interface Combat {
    * modifiers (mods, csIf, firstRound, ambush) still apply.
    */
   heroCs?: number;
+  /**
+   * A borrowed weapon (item key): the hero fights with it instead of their own weapons (Paido's sword).
+   * Its kind (items `as`, else the key) counts for Weaponskill / Weaponmastery; the hero's own weapons,
+   * weapon-like Special Items (Sommerswerd +8 and its double damage to the undead) do not count.
+   */
+  weapon?: string;
   /** Choices offered on the fight-start screen instead of fighting ("use the Fireseed instead"). */
   instead?: Choice[];
   /** The fight does not happen when `if` holds: the section offers one way on, to `to` (button `text`, default "Đi tiếp"). */
@@ -406,7 +420,7 @@ export type Offer = (
   | { gain: string; type: ItemType; n: number; desc?: string }
   | { gold: number }
   | { lune: number }
-  | { loseChoice: LoseKind; n: number }
+  | { loseChoice: LoseKind; n: number; into?: string }
 ) & {
   /** Pick-limited loot: offers of one group share `AdvState.pickLeft[group]`. */
   group?: string;
@@ -437,6 +451,8 @@ export interface AdvState {
   lune?: number;
   /** How many more items each pick-limited group of the section's offers allows. */
   pickLeft?: Record<string, number>;
+  /** The weapon the player chose to use in the current section ("the weapon you are using"); absent = the engine's pick. */
+  wield?: string;
   /** Weapons mastered (Magnakai Weaponmastery / Grand Weaponmastery). */
   mastered?: string[];
   /** Definitions of carried items the current book does not describe (brought over from earlier books). */
