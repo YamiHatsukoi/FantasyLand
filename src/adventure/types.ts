@@ -55,6 +55,8 @@ export type Cond =
   | { pack: true }
   /** Has no Backpack ("if you no longer have a Backpack"). */
   | { noPack: true }
+  /** Carries at least n Meals ("if you have four or more Meals"). */
+  | { meals: number }
   | { all: Cond[] }
   | { any: Cond[] };
 
@@ -116,9 +118,11 @@ type EffectBase =
   | { loseRandom: { kind: ListKind; n: number }; into?: string; except?: string[]; orElse?: Effect[] }
   /**
    * Loses half of the list (Backpack: Meals included), picked at random, or half the Gold Crowns / Lune
-   * of the Belt Pouch ("gold", "lune"); the number lost is rounded down, `up`: rounded up.
+   * of the Belt Pouch ("gold", "lune"), or half the Meals ("meals"); the number lost is rounded down, `up`: rounded up.
    */
-  | { loseHalf: ListKind | "gold" | "lune"; up?: true; into?: string }
+  | { loseHalf: ListKind | "gold" | "lune" | "meals"; up?: true; into?: string }
+  /** One dose of that item is used up without its effect (Laumwort: one of three); the item goes with its last dose. */
+  | { dose: string }
   | { eat: true; noHunt?: boolean }
   /**
    * An open wound: `bleed` ENDURANCE lost on entering every section from the next one on, until one
@@ -195,6 +199,16 @@ export interface Combat {
   firstRound?: { cs?: number; rounds?: number; if?: Cond; noHeroLoss?: boolean; unarmed?: boolean };
   foeExtraLoss?: number;
   heroDrain?: { ep: number; if?: Cond };
+  /** While `if` holds, every round the hero loses ENDURANCE they lose `ep` more ("add 2 to any ENDURANCE point losses": poison). */
+  heroExtraLoss?: { ep: number; if?: Cond };
+  /**
+   * Mind combat on the hero's own scores: no weapon (no Weaponskill / Weaponmastery bonus, no
+   * bare-handed penalty, no weapon-like Special Item), no item COMBAT SKILL except the `keep` items
+   * (the Silver Helm), no next-fight change (Alether), and the ENDURANCE armour gives (Special Items
+   * with epMax) does not count while it lasts. The basic score, Lore-circles, whole-book changes,
+   * mind attacks and the fight's own modifiers still count.
+   */
+  psychic?: { keep?: string[] };
   /** One-round fight decided by who lost more ENDURANCE (hero more / less / equal). */
   compare?: { more: string; less: string; equal: string };
   /** Losing the fight is not death: go there with 1 ENDURANCE. */

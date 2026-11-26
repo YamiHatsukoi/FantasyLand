@@ -421,6 +421,7 @@ export function check(s: AdvState, c: Cond | undefined, book?: Book): boolean {
   if ("ep" in c) return s.ep >= c.ep;
   if ("notRank" in c) return rankOf(s) < c.notRank;
   if ("rank" in c) return rankOf(s) >= c.rank;
+  if ("meals" in c) return s.meals >= c.meals;
   if ("noPack" in c) return !!s.noPack;
   if ("pack" in c) return !s.noPack;
   if ("noWeapon" in c) return !armed(s);
@@ -454,6 +455,7 @@ export function condText(book: Book, c: Cond | undefined): string {
   if ("rank" in c) return `cần ${c.rank} kỹ năng`;
   if ("arrows" in c) return `cần ${c.arrows} mũi tên`;
   if ("lune" in c) return `cần ${c.lune} Lune`;
+  if ("meals" in c) return `cần ${c.meals} Phần Ăn`;
   if ("loreCircle" in c) return `cần ${loreCircleName(book, c.loreCircle)}`;
   return "";
 }
@@ -519,6 +521,12 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined, rng: Rn
       const have = e.loseHalf === "gold" ? s.gold : s.lune ?? 0;
       const lost = e.up ? Math.ceil(have / 2) : Math.floor(have / 2);
       if (lost) out.push(...(e.loseHalf === "gold" ? changeGold(s, -lost) : changeLune(s, -lost)));
+    } else if ("loseHalf" in e && e.loseHalf === "meals") {
+      const lost = e.up ? Math.ceil(s.meals / 2) : Math.floor(s.meals / 2);
+      if (lost) { s.meals -= lost; out.push({ kind: "meal", label: `Mất ${lost} Phần Ăn`, good: false, item: "Meal" }); }
+    } else if ("dose" in e) {
+      const it = itemDef(book, s, e.dose);
+      if (it && has(s, e.dose)) { takeDose(book, s, e.dose, it); out.push({ kind: "item", label: `Dùng 1 liều ${itemName(book, e.dose)}`, good: false, item: e.dose }); }
     } else if ("loseHalf" in e) {
       const all = listEntries(book, s, e.loseHalf as ListKind);
       out.push(...removeEntries(book, s, randomEntries(all, e.up ? Math.ceil(all.length / 2) : Math.floor(all.length / 2), rng), e.into));
@@ -1052,6 +1060,8 @@ export interface Battle {
   breathN?: number;
   /** combat.heroLossRoll: where the last number picked instead of a wound leads (`to`). */
   rollTo?: string;
+  /** combat.psychic: ENDURANCE from armour set aside for this fight (given back when it ends). */
+  armour?: number;
 }
 
 /** The foes met in this fight: `if` holding, and those met before (`keep`) with the ENDURANCE they had left. */
@@ -1067,6 +1077,12 @@ export function startBattle(book: Book, s: AdvState, sec: Section, rng: Rng = Ma
   const b: Battle = { foes: fightFoes(s, c, book), idx: 0, round: 0, mind: avail, lost: 0, ep0: s.ep };
   if (c.heroEp !== undefined) b.pool = b.poolMax = Math.max(1, c.heroEp === "ep" ? s.ep : c.heroEp);
   // under water: the rounds the hero can hold his breath (0 = 10)
+  // mind combat: the ENDURANCE armour gives does not count while it lasts (given back when it ends)
+  if (c.psychic) {
+    const armour = s.special.reduce((a, id) => a + (itemOn(book, s, id) ? itemDef(book, s, id)?.epMax ?? 0 : 0), 0);
+    b.armour = Math.max(0, Math.min(armour, s.ep - 1));
+    s.ep -= b.armour; b.ep0 = s.ep;
+  }
   if (c.breath) { const n = pick10(rng); b.breathN = n; b.breath = Math.max(0, (n || 10) + (c.breath.mods ?? []).reduce((a, m) => a + (check(s, m.if, book) ? m.add : 0), 0)); }
   return b;
 }
@@ -1077,6 +1093,7 @@ export function startBattle(book: Book, s: AdvState, sec: Section, rng: Rng = Ma
  */
 function fightOver(s: AdvState, b: Battle) {
   s.fought = true;
+  if (b.armour && s.ep > 0 && b.pool === undefined) { s.ep += b.armour; if (b.ep0 !== undefined) b.ep0 += b.armour; b.armour = 0; }
   s.csNext = 0;
   delete s.noPotions;
   s.lastFight = { lost: b.pool !== undefined ? 0 : Math.max(0, (b.ep0 ?? s.ep) - (b.over === "beaten" ? 0 : s.ep)), beaten: b.over === "beaten" && b.pool === undefined };
@@ -1084,7 +1101,7 @@ function fightOver(s: AdvState, b: Battle) {
 }
 
 /** The hero's bar in a fight: ENDURANCE, or the points of a contest (combat.heroEp). */
-export const heroPoints = (book: Book, s: AdvState, b: Battle) => (b.pool !== undefined ? { ep: b.pool, max: b.poolMax ?? b.pool } : { ep: s.ep, max: epMax(book, s) });
+export const heroPoints = (book: Book, s: AdvState, b: Battle) => (b.pool !== undefined ? { ep: b.pool, max: b.poolMax ?? b.pool } : { ep: s.ep, max: epMax(book, s) - (b.armour ?? 0) });
 
 export interface CsBreakdown {
   total: number;
@@ -1223,9 +1240,11 @@ export function heroCs(book: Book, s: AdvState, c: Combat, foe: FoeDef, mind = -
   // a psychic duel: the book sets the hero's COMBAT SKILL; only the fight's own modifiers add to it
   const duel = c.heroCs !== undefined;
   const parts: { label: string; v: number }[] = [duel ? { label: "Đấu tâm lực", v: c.heroCs! } : { label: "Cơ bản", v: s.cs }];
+  const psy = c.psychic;
   if (!duel) {
     for (const lc of loreCircles(book, s)) if (lc.cs) parts.push({ label: lc.name, v: lc.cs });
-    if (!fightWeapons(book, s, c, round).length) parts.push({ label: "Tay không", v: unarmedPenalty(book, s) });
+    if (psy) parts.push({ label: "Đấu tâm lực", v: 0 });
+    else if (!fightWeapons(book, s, c, round).length) parts.push({ label: "Tay không", v: unarmedPenalty(book, s) });
     else { const w = weaponBonus(book, s, c, round); if (w) parts.push(w); }
   }
   const first = inFirstRounds(s, c, round);
@@ -1239,13 +1258,14 @@ export function heroCs(book: Book, s: AdvState, c: Combat, foe: FoeDef, mind = -
     const hand = wielded(book, s, c, round);
     for (const id of s.special) {
       const cs = itemDef(book, s, id)?.cs;
+      if (psy && !psy.keep?.includes(id)) continue;
       if (cs && itemOn(book, s, id) && !forbidden(book, s, c, id) && (!weaponLike(book, s, id) || id === hand)) parts.push({ label: itemName(book, id, s), v: cs });
     }
   }
   if (c.mods?.cs) parts.push({ label: "Hoàn cảnh", v: c.mods.cs });
   for (const m2 of c.csIf ?? []) if (round + 1 >= (m2.fromRound ?? 1) && check(s, m2.if, book)) parts.push({ label: "Hoàn cảnh", v: m2.add });
   if (foe.heroCs) parts.push({ label: "Đồng minh", v: foe.heroCs });
-  if (!duel && s.csNext) parts.push({ label: "Tạm thời", v: s.csNext });
+  if (!duel && !psy && s.csNext) parts.push({ label: "Tạm thời", v: s.csNext });
   if (!duel && s.csBook) parts.push({ label: "Cả cuốn", v: s.csBook });
   return { total: parts.reduce((a, p) => a + p.v, 0), parts };
 }
@@ -1293,7 +1313,7 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
   const [fl, hl] = book.crt[n][crtColumnOf(ratio)];
   // "you lose no ENDURANCE in the first rounds" (firstRound.noHeroLoss): this round is spared
   const spared = !!c.firstRound?.noHeroLoss && inFirstRounds(s, c, b.round);
-  const sommer = c.heroCs === undefined && wielded(book, s, c, b.round) === "Sommerswerd" && foe.def.undead;
+  const sommer = c.heroCs === undefined && !c.psychic && wielded(book, s, c, b.round) === "Sommerswerd" && foe.def.undead;
   b.round++;
   const mindCost = am ? am.cost : 0;
   const hit = fl === KILL ? foe.ep : (fl + (c.foeExtraLoss ?? 0)) * (sommer ? 2 : 1) * (foe.def.double ? 2 : 1) * (am && c.mindMul ? c.mindMul : 1);
@@ -1312,6 +1332,8 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
     wound = o?.end === "death" ? (pts ? b.pool! : s.ep) : 0;
     if (o?.to) b.rollTo = o.to;
   }
+  // "add 2 to any ENDURANCE point losses you sustain during this combat" (a poisonous lash)
+  if (wound > 0 && c.heroExtraLoss && check(s, c.heroExtraLoss.if, book)) wound += c.heroExtraLoss.ep;
   const heroLoss = spared ? mindCost : wound + mindCost + drain;
   if (!evade) foe.ep = Math.max(0, foe.ep - foeLoss);
   if (pts) {
@@ -1322,7 +1344,7 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
     if (b.pool <= 0) b.over = "beaten";
     else if (b.rollTo) b.over = "rolled";
     else if (evade) b.over = "evaded";
-    else if (c.stopAt && foe.ep <= c.stopAt.foeEp) b.over = "stopped";
+    else if (c.stopAt && foe.ep <= c.stopAt.foeEp && !(foeKilled && fl === KILL)) b.over = "stopped";
     else if (foeKilled) { if (b.idx < b.foes.length - 1) b.idx++; else b.over = "win"; }
     else if (c.maxRounds && b.round >= c.maxRounds.n) b.over = "timeout";
     if (b.over) fightOver(s, b);
@@ -1339,7 +1361,8 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
   if (heroKilled) b.over = "lose";
   else if (b.rollTo) b.over = "rolled";
   else if (evade) b.over = "evaded";
-  else if (c.stopAt && foe.ep <= c.stopAt.foeEp) b.over = "stopped";
+  // "if you kill him before his ENDURANCE falls to 20 (an automatic kill)": the kill wins
+  else if (c.stopAt && foe.ep <= c.stopAt.foeEp && !(foeKilled && fl === KILL)) b.over = "stopped";
   else if (foeKilled) {
     if (b.idx < b.foes.length - 1) b.idx++;
     else b.over = "win";
