@@ -40,8 +40,15 @@ export type Cond =
   | { mastered: string }
   /** Carries at least one item of that kind that could be given up (items with `keep` do not count). */
   | { hasAny: LoseKind }
+  /** Has completed that Magnakai Lore-circle (all its disciplines, as the engine defines the circles). */
+  | { loreCircle: LoreCircleId }
+  /** Has not completed that Lore-circle. */
+  | { notLoreCircle: LoreCircleId }
   | { all: Cond[] }
   | { any: Cond[] };
+
+/** The Magnakai Lore-circles: Fire, Light, Solaris, Spirit. */
+export type LoreCircleId = "fire" | "light" | "solaris" | "spirit";
 
 export type ItemType = "weapon" | "backpack" | "special" | "meal";
 
@@ -86,8 +93,11 @@ type EffectBase =
   | { loseNth: NthPick & { else?: NthPick[] } }
   /** Loses n items of that list picked at random. */
   | { loseRandom: { kind: ListKind; n: number } }
-  /** Loses half of the list (Backpack: Meals included), picked at random; rounded down, `up`: rounded up. */
-  | { loseHalf: ListKind; up?: true }
+  /**
+   * Loses half of the list (Backpack: Meals included), picked at random, or half the Gold Crowns / Lune
+   * of the Belt Pouch ("gold", "lune"); the number lost is rounded down, `up`: rounded up.
+   */
+  | { loseHalf: ListKind | "gold" | "lune"; up?: true }
   | { eat: true; noHunt?: boolean }
   | { flag: string }
   | { unflag: string }
@@ -172,6 +182,13 @@ export interface Combat {
   mindMul?: number;
   /** The COMBAT SKILL bonus of a mind attack (Mindblast, Psi-surge, Kai-surge) is multiplied by n in this fight. */
   mindBonusMul?: number;
+  /** The first entry whose `if` holds sets the multiplier instead (×2 normally, ×3 with the Lore-circle of the Spirit). */
+  mindBonusMulIf?: { if: Cond; n: number }[];
+  /**
+   * "weaponLike": the hero fights bare-handed unless carrying a weapon-like Special Item (Sommerswerd,
+   * items with `weapon` or `as`; not a Bow), which is then the weapon used. Ordinary weapons do not count.
+   */
+  unarmedUnless?: "weaponLike";
   /**
    * The hero's COMBAT SKILL is n for this fight (a psychic duel): it replaces the basic score, Lore-circles,
    * weapons, items and the next-fight / whole-book changes; no mind attack adds to it. The fight's own
@@ -199,7 +216,7 @@ export interface Choice {
    * number is picked and the matching out's fx applied; an out with `to` (or `end`) leaves the
    * section, one without stays (use with `repeat` to play round after round).
    */
-  roll?: RandomPick;
+  roll?: ChoiceRoll;
   /** Where the choice sits in the explore view (an exit, a door, a person or an object). */
   via?: { exit?: "north" | "south" | "east" | "west"; door?: string; npc?: string; object?: string };
   /**
@@ -223,6 +240,29 @@ export interface RandomPick {
   out: { min: number; max: number; to?: string; end?: "death" | "victory"; fx?: Effect[] }[];
   bow?: boolean;
 }
+
+/** What one outcome of a dice-comparison game does: its effects, and where it leads (none: stay). */
+export interface RollOutcome { to?: string; end?: "death" | "victory"; fx?: Effect[] }
+
+/**
+ * A dice-comparison game ("pick two numbers for each player, the highest total wins"): every
+ * opponent and the hero pick `picks` numbers (default 2) and add them up; the hero's total gets
+ * `mods`. The hero wins by beating every opponent, loses when any opponent beats him, ties
+ * otherwise. `zerosWin`: all noughts ("Bullseyes!") beat any total.
+ */
+export interface CompareGame {
+  picks?: number;
+  opponents?: number;
+  mods?: { if: Cond; add: number }[];
+  zerosWin?: boolean;
+  win: RollOutcome;
+  lose: RollOutcome;
+  /** Default: nothing happens (stay, play again). */
+  tie?: RollOutcome;
+}
+
+/** A choice's game of chance: a random number table, or a dice-comparison game. */
+export type ChoiceRoll = RandomPick | { compare: CompareGame };
 
 export type Bg =
   | "forest" | "hill" | "road" | "river" | "lake" | "field" | "village" | "town" | "city" | "castle" | "hall" | "ruins"
