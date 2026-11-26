@@ -30,6 +30,12 @@ export type Cond =
   | { noWeapon: true }
   | { armed: true }
   | { arrows: number }
+  /** Fewer than n Arrows. */
+  | { arrowsBelow: number }
+  /** At least n Lune (the silver coin of Anari, book 9; kept apart from Gold Crowns). */
+  | { lune: number }
+  /** Fewer than n Lune. */
+  | { luneBelow: number }
   /** Weaponskill / Weaponmastery / Grand Weaponmastery with this weapon (item key: "Bow", "Sword"…). */
   | { mastered: string }
   /** Carries at least one item of that kind that could be given up (items with `keep` do not count). */
@@ -42,6 +48,18 @@ export type ItemType = "weapon" | "backpack" | "special" | "meal";
 /** What a `loseChoice` lets the player pick from ("any": weapons and Backpack, Meals included). */
 export type LoseKind = "weapon" | "backpack" | "special" | "any";
 
+/** A list of the Action Chart, in the order the items were noted (Backpack: its items, then the Meals). */
+export type ListKind = "weapon" | "backpack" | "special";
+
+/** One item of an Action Chart list by position: the n-th (1 = the first) or the last one. */
+export interface NthPick { kind: ListKind; n: number | "last" }
+
+/** Something offered to take in a pick-limited choice of loot (`pick`, `pickMax`). */
+export type PickItem =
+  | { gain: string; type: ItemType; n?: number; desc?: string }
+  | { gold: number }
+  | { lune: number };
+
 /** Any effect may carry `if`: it applies only when the condition holds. */
 export type Effect = EffectBase & { if?: Cond };
 
@@ -51,6 +69,8 @@ type EffectBase =
   | { restoreHalf: true }
   | { cs: number; for?: "combat" | "book" }
   | { gold: number; optional?: boolean }
+  /** Lune (book 9): never turned into Gold Crowns by the engine. */
+  | { lune: number; optional?: boolean }
   | { arrows: number }
   | { loseChoice: LoseKind; n?: number }
   | { epMax: number }
@@ -58,7 +78,16 @@ type EffectBase =
   | { gain: string; type: ItemType; n?: number; optional?: boolean; desc?: string }
   /** Loses an item; `n` copies of it (Meals: n Meals). */
   | { lose: string; n?: number }
-  | { loseAll: "weapons" | "backpack" | "special" | "gold" | "meals" | "everything" }
+  | { loseAll: "weapons" | "backpack" | "special" | "gold" | "lune" | "meals" | "everything" }
+  /**
+   * Loses the n-th item of a list ("erase the second Special Item"); when the list is too short, the
+   * first `else` that finds an item ("if you have only one, erase it; if none, the first Backpack Item").
+   */
+  | { loseNth: NthPick & { else?: NthPick[] } }
+  /** Loses n items of that list picked at random. */
+  | { loseRandom: { kind: ListKind; n: number } }
+  /** Loses half of the list (Backpack: Meals included), picked at random; rounded down, `up`: rounded up. */
+  | { loseHalf: ListKind; up?: true }
   | { eat: true; noHunt?: boolean }
   | { flag: string }
   | { unflag: string }
@@ -89,6 +118,8 @@ export interface FoeDef {
   holdRounds?: number;
   /** Loses double ENDURANCE. */
   double?: boolean;
+  /** Added to the hero's COMBAT SKILL while fighting this foe (an ally joins in after the first foe: +2). */
+  heroCs?: number;
 }
 
 export interface Combat {
@@ -178,6 +209,11 @@ export interface Choice {
   riddle?: boolean;
   fail?: string;
   hint?: string;
+  /**
+   * Taking the choice offers these items, of which the player may take at most n: in the section it
+   * leads to, or, with `repeat`, in this section (once per visit).
+   */
+  pickMax?: { n: number; items: PickItem[] };
 }
 
 export interface RandomPick {
@@ -255,6 +291,8 @@ export interface Section {
   random?: RandomPick;
   end?: "death" | "victory";
   note?: string;
+  /** Loot of which the player may take at most `max` ("you may take any two of the following"). */
+  pick?: { max: number; from: PickItem[] };
 }
 
 /** Combat Results Table: [random number 0-9][ratio column 0-12] = [enemy loss, hero loss]; -1 = killed. */
@@ -324,12 +362,19 @@ export interface Book {
   sections: Record<string, Section>;
 }
 
-export type Offer =
+export type Offer = (
   | { gain: string; type: ItemType; n: number; desc?: string }
   | { gold: number }
-  | { loseChoice: LoseKind; n: number };
+  | { lune: number }
+  | { loseChoice: LoseKind; n: number }
+) & {
+  /** Pick-limited loot: offers of one group share `AdvState.pickLeft[group]`. */
+  group?: string;
+  /** Already counted against its group (some of it was taken). */
+  picked?: boolean;
+};
 
-export interface Stash { weapons: string[]; backpack: string[]; special: string[]; meals: number; gold: number; arrows: number }
+export interface Stash { weapons: string[]; backpack: string[]; special: string[]; meals: number; gold: number; arrows: number; lune?: number }
 
 /** Progress of one play-through (what a save slot holds). */
 export interface AdvState {
@@ -348,6 +393,10 @@ export interface AdvState {
   meals: number;
   gold: number;
   arrows: number;
+  /** Lune (book 9's silver coins), apart from Gold Crowns; absent = none. */
+  lune?: number;
+  /** How many more items each pick-limited group of the section's offers allows. */
+  pickLeft?: Record<string, number>;
   /** Weapons mastered (Magnakai Weaponmastery / Grand Weaponmastery). */
   mastered?: string[];
   /** Definitions of carried items the current book does not describe (brought over from earlier books). */

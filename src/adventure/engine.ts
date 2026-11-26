@@ -1,5 +1,5 @@
 /** Lone Wolf rules of Adventure (Kai, Magnakai, Grand Master, New Order). Pure functions: no DOM. */
-import type { AdvState, Book, Choice, Combat, Cond, Disc, Effect, FoeDef, ItemDef, ItemType, LoseKind, Offer, RandomPick, Section, Stash, StashPart } from "./types";
+import type { AdvState, Book, Choice, Combat, Cond, Disc, Effect, FoeDef, ItemDef, ItemType, ListKind, LoseKind, NthPick, Offer, PickItem, RandomPick, Section, Stash, StashPart } from "./types";
 import { DISCS_BY_RULES } from "./types";
 
 export type Rng = () => number;
@@ -381,7 +381,10 @@ export function check(s: AdvState, c: Cond | undefined, book?: Book): boolean {
   if ("rank" in c) return rankOf(s) >= c.rank;
   if ("noWeapon" in c) return !armed(s);
   if ("armed" in c) return armed(s);
+  if ("arrowsBelow" in c) return s.arrows < c.arrowsBelow;
   if ("arrows" in c) return s.arrows >= c.arrows;
+  if ("luneBelow" in c) return (s.lune ?? 0) < c.luneBelow;
+  if ("lune" in c) return (s.lune ?? 0) >= c.lune;
   if ("notFlag" in c) return !s.flags[c.notFlag];
   if ("flag" in c) return !!s.flags[c.flag];
   return true;
@@ -404,13 +407,14 @@ export function condText(book: Book, c: Cond | undefined): string {
   if ("ep" in c) return `cần ${c.ep} Sức Bền`;
   if ("rank" in c) return `cần ${c.rank} kỹ năng`;
   if ("arrows" in c) return `cần ${c.arrows} mũi tên`;
+  if ("lune" in c) return `cần ${c.lune} Lune`;
   return "";
 }
 
 /** A choice the player can pick, one shown locked (a missing discipline...), or one not shown. */
 export function choiceState(s: AdvState, c: { if?: Cond }, book?: Book): "ok" | "locked" | "hidden" {
   if (check(s, c.if, book)) return "ok";
-  const negative = (x: Cond): boolean => "hasAny" in x || "notDisc" in x || "goldBelow" in x || "notItem" in x || "notFlag" in x || "epBelow" in x || "notRank" in x || "noWeapon" in x || ("all" in x && x.all.some(negative)) || ("any" in x && x.any.every(negative));
+  const negative = (x: Cond): boolean => "hasAny" in x || "notDisc" in x || "goldBelow" in x || "notItem" in x || "notFlag" in x || "epBelow" in x || "notRank" in x || "noWeapon" in x || "arrowsBelow" in x || "luneBelow" in x || ("all" in x && x.all.some(negative)) || ("any" in x && x.any.every(negative));
   return c.if && negative(c.if) ? "hidden" : "locked";
 }
 
@@ -428,7 +432,8 @@ export function changeEp(book: Book, s: AdvState, d: number): Change[] {
   return real ? [{ kind: "ep", label: `Sức Bền ${real > 0 ? "+" : ""}${real}`, good: real > 0 }] : [];
 }
 
-export function apply(book: Book, s: AdvState, fx: Effect[] | undefined): Change[] {
+/** `rng` picks the items lost at random (loseRandom, loseHalf). */
+export function apply(book: Book, s: AdvState, fx: Effect[] | undefined, rng: Rng = Math.random): Change[] {
   const out: Change[] = [];
   for (const e of fx ?? []) {
     const when = (e as { if?: Cond }).if;
@@ -444,6 +449,17 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined): Change
     } else if ("gold" in e) {
       if (e.optional && e.gold > 0) { s.offers.push({ gold: e.gold }); continue; }
       out.push(...changeGold(s, e.gold));
+    } else if ("lune" in e) {
+      if (e.optional && e.lune > 0) { s.offers.push({ lune: e.lune }); continue; }
+      out.push(...changeLune(s, e.lune));
+    } else if ("loseNth" in e) {
+      const x = nthEntry(book, s, e.loseNth) ?? (e.loseNth.else ?? []).map((t) => nthEntry(book, s, t)).find((t) => t);
+      if (x) out.push(...removeEntries(book, s, [x]));
+    } else if ("loseRandom" in e) {
+      out.push(...removeEntries(book, s, randomEntries(listEntries(book, s, e.loseRandom.kind), e.loseRandom.n, rng)));
+    } else if ("loseHalf" in e) {
+      const all = listEntries(book, s, e.loseHalf);
+      out.push(...removeEntries(book, s, randomEntries(all, e.up ? Math.ceil(all.length / 2) : Math.floor(all.length / 2), rng)));
     } else if ("arrows" in e) {
       const before = s.arrows;
       s.arrows = Math.max(0, Math.min(has(s, "Quiver") ? 6 : 0, s.arrows + e.arrows));
@@ -467,8 +483,9 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined): Change
       if (k === "meals") s.meals = 0;
       if (k === "special" || k === "everything") { s.special = []; s.arrows = 0; }
       if (k === "gold" || k === "everything") s.gold = 0;
+      if (k === "lune" || k === "everything") s.lune = 0;
       s.ep = Math.min(s.ep, epMax(book, s));
-      out.push({ kind: "item", label: k === "gold" ? "Mất hết Vương Miện Vàng" : k === "everything" ? "Mất toàn bộ hành trang" : k === "weapons" ? "Mất hết vũ khí" : k === "backpack" ? "Mất Ba Lô và mọi thứ trong đó" : k === "meals" ? "Mất hết Phần Ăn" : "Mất các Vật Phẩm Đặc Biệt", good: false });
+      out.push({ kind: "item", label: k === "gold" ? "Mất hết Vương Miện Vàng" : k === "lune" ? "Mất hết Lune" : k === "everything" ? "Mất toàn bộ hành trang" : k === "weapons" ? "Mất hết vũ khí" : k === "backpack" ? "Mất Ba Lô và mọi thứ trong đó" : k === "meals" ? "Mất hết Phần Ăn" : "Mất các Vật Phẩm Đặc Biệt", good: false });
     } else if ("eat" in e) {
       if (!e.noHunt && !s.flags.nohunt && s.disciplines.includes(profile(book).hunt)) out.push({ kind: "meal", label: `${book.names.disc[profile(book).hunt]}: tự kiếm được cái ăn`, good: true });
       else if (s.meals > 0) { s.meals--; out.push({ kind: "meal", label: "Ăn 1 Phần Ăn", good: true, item: "Meal" }); }
@@ -479,7 +496,7 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined): Change
       const old = s.stashes[e.stash];
       // taking more under the same name adds to what is held there
       s.stashes[e.stash] = old ? { weapons: [...old.weapons, ...took.weapons], backpack: [...old.backpack, ...took.backpack], special: [...old.special, ...took.special],
-        meals: old.meals + took.meals, gold: old.gold + took.gold, arrows: old.arrows + took.arrows } : took;
+        meals: old.meals + took.meals, gold: old.gold + took.gold, arrows: old.arrows + took.arrows, lune: (old.lune ?? 0) + (took.lune ?? 0) } : took;
       out.push({ kind: "item", label: e.only || e.weaponLike ? "Bị tịch thu một phần hành trang" : "Bị tịch thu toàn bộ hành trang", good: false });
     } else if ("unstash" in e) {
       const st = s.stashes?.[e.unstash];
@@ -489,6 +506,7 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined): Change
         for (const x of st.special) give(book, s, x, "special");
         give(book, s, "Meal", "meal", st.meals);
         s.gold = Math.min(MAX_GOLD, s.gold + st.gold);
+        if (st.lune) s.lune = (s.lune ?? 0) + st.lune;
         s.arrows += st.arrows;
         delete s.stashes![e.unstash];
         out.push({ kind: "item", label: "Lấy lại hành trang", good: true });
@@ -519,11 +537,81 @@ export function confiscate(book: Book, s: AdvState, only: StashPart[] | undefine
   if (part("backpack") || part("meals")) { took.meals = s.meals; s.meals = 0; }
   if (part("special")) { took.special = s.special; s.special = []; }
   else if (weaponLikeToo) { took.special = s.special.filter((id) => weaponLike(book, s, id)); s.special = s.special.filter((id) => !took.special.includes(id)); }
-  if (part("gold")) { took.gold = s.gold; s.gold = 0; }
+  // Lune are money too: they go with the Gold Crowns
+  if (part("gold")) { took.gold = s.gold; s.gold = 0; if (s.lune) { took.lune = s.lune; s.lune = 0; } }
   if (part("arrows") || (took.special.includes("Quiver") && !s.special.includes("Quiver"))) { took.arrows = s.arrows; s.arrows = 0; }
   s.ep = Math.min(s.ep, epMax(book, s));
   return took;
 }
+
+/** Lune: no upper limit, never turned into Gold Crowns (4 Lune = 1 Crown is the book's rate, not the engine's). */
+function changeLune(s: AdvState, d: number): Change[] {
+  const before = s.lune ?? 0;
+  s.lune = Math.max(0, before + d);
+  const real = s.lune - before;
+  return real ? [{ kind: "gold", label: `${real > 0 ? "+" : ""}${real} Lune`, good: real > 0, item: "Lune" }] : [];
+}
+
+/** One item of an Action Chart list, where it sits. */
+interface Entry { id: string; list: "weapon" | "backpack" | "special" | "meal"; idx: number }
+
+/**
+ * An Action Chart list in the order the items were noted: weapons, Special Items, or the Backpack
+ * (its items, then one entry per Meal: their place among the items is not kept). Items with `keep`
+ * are left out (the book never takes them).
+ */
+export function listEntries(book: Book, s: AdvState, kind: ListKind): Entry[] {
+  const keep = (id: string) => !!itemDef(book, s, id)?.keep;
+  const of = (list: string[], l: Entry["list"]) => list.map((id, idx) => ({ id, list: l, idx })).filter((x) => !keep(x.id));
+  if (kind === "weapon") return of(s.weapons, "weapon");
+  if (kind === "special") return of(s.special, "special");
+  return [...of(s.backpack, "backpack"), ...Array.from({ length: s.meals }, (_, idx) => ({ id: "Meal", list: "meal" as const, idx }))];
+}
+
+/** The item an `NthPick` names (the n-th, 1 = the first, or the last), if the list is long enough. */
+export function nthEntry(book: Book, s: AdvState, p: NthPick): Entry | undefined {
+  const l = listEntries(book, s, p.kind);
+  return p.n === "last" ? l[l.length - 1] : l[p.n - 1];
+}
+
+/** n distinct entries picked at random (all of them when there are no more). */
+function randomEntries(pool: Entry[], n: number, rng: Rng): Entry[] {
+  const left = [...pool];
+  const out: Entry[] = [];
+  while (out.length < n && left.length) out.push(left.splice(Math.min(left.length - 1, Math.floor(rng() * left.length)), 1)[0]);
+  return out;
+}
+
+/** Takes the entries off the Action Chart (later positions first, so the indexes stay right). */
+function removeEntries(book: Book, s: AdvState, xs: Entry[]): Change[] {
+  const lists = { weapon: s.weapons, backpack: s.backpack, special: s.special };
+  for (const x of [...xs].sort((a, b) => b.idx - a.idx)) {
+    if (x.list === "meal") s.meals = Math.max(0, s.meals - 1);
+    else lists[x.list].splice(x.idx, 1);
+  }
+  for (const x of xs) if (s.doses && x.id in s.doses && !has(s, x.id)) delete s.doses[x.id];
+  // Arrows are kept in the Quiver
+  if (!has(s, "Quiver")) s.arrows = 0;
+  s.ep = Math.min(s.ep, epMax(book, s));
+  return xs.map((x) => ({ kind: x.list === "meal" ? "meal" : "item", label: `Mất ${itemName(book, x.id, s)}`, good: false, item: x.id }));
+}
+
+/** Offers pick-limited loot under a group: at most `max` of the items may be taken. */
+export function openPick(s: AdvState, group: string, max: number, items: PickItem[]) {
+  (s.pickLeft ??= {})[group] = Math.max(0, max);
+  for (const it of items) s.offers.push("gain" in it ? { gain: it.gain, type: it.type, n: it.n ?? 1, desc: it.desc, group } : "gold" in it ? { gold: it.gold, group } : { lune: it.lune, group });
+}
+
+/** The group of a choice's pick-limited loot (`pickMax`). */
+export const choicePickGroup = (c: Choice) => `c:${c.text}`;
+
+/** Offers a choice's pick-limited loot (`pickMax`): call after moving to its section (or staying, with `repeat`). */
+export function openChoicePick(s: AdvState, c: Choice) {
+  if (c.pickMax) openPick(s, choicePickGroup(c), c.pickMax.n, c.pickMax.items);
+}
+
+/** Can this offer still be taken (its pick-limited group not used up)? */
+export const offerOpen = (s: AdvState, o: Offer) => !o.group || !!o.picked || (s.pickLeft?.[o.group] ?? 0) > 0;
 
 function changeGold(s: AdvState, d: number): Change[] {
   const before = s.gold;
@@ -535,7 +623,7 @@ function changeGold(s: AdvState, d: number): Change[] {
 // ------------------------------------------------------------------ moving through the book
 
 /** Moves to a section and applies its effects once (a reload does not apply them again). */
-export function enter(book: Book, s: AdvState, id: string): Change[] {
+export function enter(book: Book, s: AdvState, id: string, rng: Rng = Math.random): Change[] {
   const sec = book.sections[id];
   if (!sec) throw new Error(`Không có đoạn ${id}`);
   const ch: Change[] = [];
@@ -550,11 +638,13 @@ export function enter(book: Book, s: AdvState, id: string): Change[] {
   s.fought = false;
   s.hurt = false;
   s.offers = [];
+  s.pickLeft = undefined;
   if (!s.visited.includes(id)) s.visited.push(id);
   s.updated = Date.now();
   // an open wound bleeds every section until a Laumspur potion is drunk
   if (s.flags.bleeding) ch.push(...changeEp(book, s, -2).map((c) => ({ ...c, label: `${c.label} (vết thương chảy máu)` })));
-  ch.push(...apply(book, s, sec.fx));
+  ch.push(...apply(book, s, sec.fx, rng));
+  if (sec.pick) openPick(s, "sec", sec.pick.max, sec.pick.from);
   if (sec.end) s.ended = sec.end;
   if (s.ep <= 0) s.ended = "death";
   return ch;
@@ -591,7 +681,8 @@ export function visibleChoices(sec: Section, s: AdvState) {
   if (skip) return [skip];
   const forced = forcedChoices(sec, s);
   if (forced.length) return forced;
-  return (sec.choices ?? []).filter((c) => !c.force);
+  // a repeatable choice with pick-limited loot opens it once per visit
+  return (sec.choices ?? []).filter((c) => !c.force && !(c.repeat && c.pickMax && s.pickLeft?.[choicePickGroup(c)] !== undefined));
 }
 
 /**
@@ -693,8 +784,11 @@ function useDose(book: Book, s: AdvState, id: string, it: ItemDef, rng: Rng): Ch
 /** Takes up an offer of the section: an item, some gold, or picks what to give up. */
 export function takeOffer(book: Book, s: AdvState, i: number, choice?: string): Change[] {
   const o: Offer | undefined = s.offers[i];
-  if (!o) return [];
-  if ("gold" in o) { s.offers.splice(i, 1); return changeGold(s, o.gold); }
+  if (!o || !offerOpen(s, o)) return [];
+  // pick-limited loot: the first take of an offer counts against its group
+  const count = () => { if (o.group && !o.picked) { o.picked = true; s.pickLeft![o.group] = Math.max(0, (s.pickLeft?.[o.group] ?? 0) - 1); } };
+  if ("gold" in o) { s.offers.splice(i, 1); count(); return changeGold(s, o.gold); }
+  if ("lune" in o) { s.offers.splice(i, 1); count(); return changeLune(s, o.lune); }
   if ("loseChoice" in o) {
     if (!choice || !losePool(book, s, o.loseChoice).includes(choice) || !drop(book, s, choice)) return [];
     o.n--;
@@ -704,6 +798,7 @@ export function takeOffer(book: Book, s: AdvState, i: number, choice?: string): 
   freshDoses(s, o.gain);
   const left = give(book, s, o.gain, o.type, o.n);
   const got = o.n - left;
+  if (got > 0) count();
   if (left > 0) o.n = left;
   else s.offers.splice(i, 1);
   return got ? [{ kind: o.type === "meal" ? "meal" : "item", label: `Nhận ${itemName(book, o.gain)}${got > 1 ? ` ×${got}` : ""}`, good: true, item: o.gain }] : [];
@@ -844,6 +939,7 @@ export function heroCs(book: Book, s: AdvState, c: Combat, foe: FoeDef, mind = -
   }
   if (c.mods?.cs) parts.push({ label: "Hoàn cảnh", v: c.mods.cs });
   for (const m2 of c.csIf ?? []) if (check(s, m2.if, book)) parts.push({ label: "Hoàn cảnh", v: m2.add });
+  if (foe.heroCs) parts.push({ label: "Đồng minh", v: foe.heroCs });
   if (!duel && s.csNext) parts.push({ label: "Tạm thời", v: s.csNext });
   if (!duel && s.csBook) parts.push({ label: "Cả cuốn", v: s.csBook });
   return { total: parts.reduce((a, p) => a + p.v, 0), parts };

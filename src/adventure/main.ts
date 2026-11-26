@@ -22,6 +22,7 @@ import { Performance } from "./director";
 import {
   choiceState, condText, discsOf, dosesLeft, drop, enter, itemDef, losePool, epMax, itemName, newRun, pendingLoss, phase, pick10,
   profile, randomResult, playChoice, retry, takeOffer, useItem, usable, answerRiddle, apply, continueRun, visibleChoices, type Change,
+  offerOpen, openChoicePick,
   baseCs, randomPicks, carryNeeds, loreCircles, masteryCount, newSeries, ownDiscs, rankName, tierOf,
 } from "./engine";
 import { runFight } from "./fight";
@@ -571,11 +572,12 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
     const epText = h("b");
     const epEl = h("div", { class: "adv-ep fr-chip" }, ui("ep", 2), h("div", { class: "adv-ep-track" }, epFill), epText);
     const chip = (icon: UiIcon, label: string) => { const v = h("b"); const c = h("span", { class: "adv-chip fr-chip", title: label }, ui(icon, 2), v); return { c, v }; };
-    const csC = chip("cs", "Kỹ Năng Chiến Đấu"), goldC = chip("gold", "Vương Miện Vàng"), mealC = chip("meal", "Phần Ăn");
+    const csC = chip("cs", "Kỹ Năng Chiến Đấu"), goldC = chip("gold", "Vương Miện Vàng"), mealC = chip("meal", "Phần Ăn"), luneC = chip("gold", "Lune");
+    luneC.c.classList.add("lune");
     const leave = async () => { await saves!.flush(); void openBook(entry); };
     const hud = h("div", { class: "adv-hud" },
       iconBtn("back", "Về ô lưu", () => void leave()),
-      h("div", { class: "adv-hud-stats" }, epEl, h("div", { class: "adv-chips" }, csC.c, goldC.c, mealC.c)),
+      h("div", { class: "adv-hud-stats" }, epEl, h("div", { class: "adv-chips" }, csC.c, goldC.c, luneC.c, mealC.c)),
       h("div", { class: "adv-hud-r" }, ...nn(book.map ? iconBtn("map", "Bản đồ", () => openMap()) : null, iconBtn("backpack", "Hành trang", () => chart()))));
 
     // --- scene
@@ -668,6 +670,9 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       countTo(csC.v, baseCs(book, s));
       countTo(goldC.v, s.gold);
       countTo(mealC.v, s.meals);
+      // Lune (book 9) show only while the hero has some
+      luneC.c.hidden = !s.lune;
+      luneC.v.textContent = String(s.lune ?? 0);
       if (last) {
         if (s.ep < last.ep) { bump(epEl, "hit"); bump(sceneWrap, "hurt"); } else if (s.ep > last.ep) bump(epEl, "heal");
         if (baseCs(book, s) !== last.cs) bump(csC.c, baseCs(book, s) > last.cs ? "up" : "hit");
@@ -678,10 +683,12 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
     }
 
     /** Moves to a section: map travel when the place changes, then the section is performed. */
-    async function goTo(to: string, extra: Change[] = []) {
+    async function goTo(to: string, extra: Change[] = [], via?: Choice) {
       const from = s.section;
       fromLoc = book.sections[from]?.scene.loc;
       const ch = enter(book, s, to);
+      // a choice's pick-limited loot is offered where it leads
+      if (via?.pickMax && !s.ended) openChoicePick(s, via);
       save();
       if (extra.length) { renderChips(); showChanges(extra); }
       const pa = placeOf(from), pb = placeOf(to);
@@ -956,8 +963,8 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       if (c.roll) return void gamble(c);
       if (c.riddle) return riddlePad(c);
       const ch = c.fx ? apply(book, s, c.fx) : [];
-      if (c.repeat) { save(); render(); showChanges(ch); return; }
-      void goTo(c.to, ch);
+      if (c.repeat) { openChoicePick(s, c); save(); render(); showChanges(ch); return; }
+      void goTo(c.to, ch, c);
     }
 
     /**
@@ -983,7 +990,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
         }
         padKey = null;
         const ch = to === c.to && c.fx ? apply(book, s, c.fx) : [];
-        void goTo(to, ch);
+        void goTo(to, ch, to === c.to ? c : undefined);
       };
       padKey = (e) => {
         if (/^[0-9]$/.test(e.key)) { type(e.key); return true; }
@@ -1021,7 +1028,11 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       if (!s.offers.length) return null;
       const cards = s.offers.map((o: Offer, i) => {
         const take = (id?: string) => { showChanges(takeOffer(book, s, i, id)); save(); render(); };
-        if ("gold" in o) return h("div", { class: "adv-loot fr-parch" }, h("span", { class: "adv-loot-ic" }, ui("gold", 2)), h("div", { class: "adv-loot-t" }, h("b", null, `${o.gold} Vương Miện Vàng`)), gameBtn("Nhặt", () => take(), { kind: "gold", cls: "small" }));
+        // pick-limited loot: once enough has been taken, the rest cannot be
+        const shut = !offerOpen(s, o);
+        const shutNote = shut ? h("small", { class: "bad" }, "Đã lấy đủ số món được chọn") : null;
+        if ("gold" in o || "lune" in o) return h("div", { class: `adv-loot fr-parch${shut ? " shut" : ""}` }, h("span", { class: "adv-loot-ic" }, ui("gold", 2)),
+          h("div", { class: "adv-loot-t" }, h("b", null, "gold" in o ? `${o.gold} Vương Miện Vàng` : `${o.lune} Lune`), shutNote), gameBtn("Nhặt", () => take(), { kind: "gold", cls: "small", disabled: shut }));
         if ("loseChoice" in o) {
           const pool = losePool(book, s, o.loseChoice);
           if (!pool.length) { s.offers.splice(i, 1); return null; }
@@ -1030,11 +1041,14 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
             h("div", { class: "adv-opt-grid" }, ...pool.map((id) => h("button", { class: "adv-opt fr-btn", type: "button", onclick: () => { sfx("debuff"); take(id); } }, h("span", { class: "adv-item-l" }, iconEl(itemIcon(id), 2), h("b", null, itemName(book, id)))))));
         }
         const full = o.type !== "special" && (o.type === "weapon" ? s.weapons.length >= 2 : s.backpack.length + s.meals >= 8);
-        return h("div", { class: "adv-loot fr-parch" }, h("span", { class: "adv-loot-ic" }, iconEl(itemIcon(o.gain, o.type), 2)),
-          h("div", { class: "adv-loot-t" }, h("b", null, itemLabel(book, o)), o.desc ? h("small", null, o.desc) : null, full ? h("small", { class: "bad" }, o.type === "weapon" ? "Đã mang đủ 2 vũ khí: bỏ bớt trong Hành trang" : "Ba Lô đã đầy: bỏ bớt trong Hành trang") : null),
-          gameBtn("Nhặt", () => take(), { kind: "gold", cls: "small", disabled: full }));
+        return h("div", { class: `adv-loot fr-parch${shut ? " shut" : ""}` }, h("span", { class: "adv-loot-ic" }, iconEl(itemIcon(o.gain, o.type), 2)),
+          h("div", { class: "adv-loot-t" }, h("b", null, itemLabel(book, o)), o.desc ? h("small", null, o.desc) : null, shutNote ?? (full ? h("small", { class: "bad" }, o.type === "weapon" ? "Đã mang đủ 2 vũ khí: bỏ bớt trong Hành trang" : "Ba Lô đã đầy: bỏ bớt trong Hành trang") : null)),
+          gameBtn("Nhặt", () => take(), { kind: "gold", cls: "small", disabled: full || shut }));
       }).filter(Boolean) as HTMLElement[];
-      return cards.length ? h("div", { class: "adv-loots" }, h("div", { class: "adv-loots-t" }, ui("backpack", 1), "Tìm thấy"), ...cards) : null;
+      // "you may take any two": how many more the player may still take
+      const limits = Object.entries(s.pickLeft ?? {}).filter(([g]) => s.offers.some((o) => o.group === g));
+      const limitNote = limits.length ? h("small", { class: "adv-loots-n" }, limits.map(([, n]) => (n > 0 ? `Được lấy thêm ${n} món` : "Đã lấy đủ")).join(" · ")) : null;
+      return cards.length ? h("div", { class: "adv-loots" }, h("div", { class: "adv-loots-t" }, ui("backpack", 1), "Tìm thấy", limitNote), ...cards) : null;
     }
 
     async function fight() {
@@ -1114,6 +1128,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
               tile("cs", "Chiến Đấu", String(baseCs(book, s))),
               tile("ep", "Sức Bền", `${s.ep}/${max}`, h("i", { class: "adv-tile-bar", style: `--p:${Math.max(0, Math.min(100, (100 * s.ep) / max))}%` })),
               tile("gold", "Vàng", `${s.gold}/50`),
+              s.lune ? tile("gold", "Lune", String(s.lune)) : null,
               s.arrows ? tile("arrows", "Mũi tên", String(s.arrows)) : tile("meal", "Phần Ăn", String(s.meals)))),
           h("div", { class: "adv-inv" },
             h("div", { class: "adv-inv-sec w" }, h("div", { class: "adv-inv-t" }, ui("weapons", 1), "Vũ khí", h("span", null, `${s.weapons.length}/2`)), h("div", { class: "adv-grid two" }, ...weapons)),

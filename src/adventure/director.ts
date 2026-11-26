@@ -122,6 +122,8 @@ const KW = {
   magic: /\b(phép thuật|ma thuật|phép|bùa chú|thần chú)\b/,
   glow: /\b(ánh sáng|phát sáng|tỏa sáng|toả sáng|lấp lánh|rực sáng|sáng rực|lóe sáng)\b/,
   dark: /\b(bóng tối|tối tăm|tối om|đen kịt)\b/,
+  // letters with diacritics are not \w: whole words are told apart by Unicode letters
+  frost: /(?<!\p{L})(băng giá|đóng băng|sương giá|giá buốt|tinh thể băng|lạnh cóng)(?!\p{L})/u,
   dust: /\b(bụi)\b/,
   rocks: /\b(đá lở|đá rơi|sụp đổ|sập xuống|lở đất)\b/,
   splash: /\b(rơi xuống nước|nhảy xuống (sông|nước|hồ)|lặn xuống|bơi|té nước|bắn tung)\b/,
@@ -233,6 +235,7 @@ export function synthBeats(book: Book, sec: Section): Beat[] {
     if (KW.magic.test(t)) A.push({ fx: "magic", at: named ?? HERO });
     if (KW.glow.test(t)) A.push({ fx: "glow", at: named ?? 3 });
     if (KW.dark.test(t)) A.push({ fx: "darkness", at: "all" });
+    if (KW.frost.test(t)) A.push({ fx: "frost", at: "all" });
     if (KW.rocks.test(t)) A.push({ fx: "fall-rocks", at: 3 }, { sfx: "thunder" });
     else if (KW.dust.test(t)) A.push({ fx: "dust", at: HERO });
     if (KW.splash.test(t)) A.push({ fx: "splash", at: HERO }, { sfx: "splash" });
@@ -566,7 +569,12 @@ export class Director {
       if (!this.instant) sfx("blip", kind === "!" ? "620" : kind === "?" ? "480" : "300");
       return {};
     }
-    if ("fx" in a && a.fx) { if (!this.instant || ["darkness", "fire", "smoke"].includes(str(a.fx))) this.fx(str(a.fx), R.at); return { subject: this.instant ? undefined : this.pointOf(R.at) }; }
+    if ("fx" in a && a.fx) {
+      const word = str(a.fx).trim().toLowerCase();
+      // an effect is decoration: whatever the word, it never stops the performance
+      try { if (!this.instant || ["darkness", "fire", "smoke"].includes(word)) this.fx(word, R.at); } catch { /* unknown or broken effect: skipped */ }
+      return { subject: this.instant ? undefined : this.pointOf(R.at) };
+    }
     if ("prop" in a && a.prop) return this.prop(str(a.prop), R.at, str(R.state));
     if ("remove" in a && a.remove) return this.remove(str(a.remove));
     if ("weather" in a && a.weather) {
@@ -1050,10 +1058,73 @@ export class Director {
         if (!this.instant) sfx("demolish");
         break;
       }
+      case "frost":
+      case "ice":
+      case "freeze": this.frost(P); break;
       default:
         // an effect word the director does not know: a soft burst of light rather than nothing
-        st.burst(P.x, P.y - 20, "#fff0c0", 12, 1.2, { glow: true });
+        st.burst(Number.isFinite(P.x) ? P.x : W / 2, Number.isFinite(P.y) ? P.y - 20 : H / 2, "#fff0c0", 12, 1.2, { glow: true });
     }
+  }
+
+  /**
+   * Frost: the picture turns icy blue, rime creeps in from the edges as six-armed crystals, and
+   * glittering ice motes drift down (around the point, or over the whole scene for "all" / "sky").
+   */
+  private frost(P: ReturnType<Director["pointOf"]>) {
+    const st = this.stage;
+    const t0 = st.now, ms = 5600;
+    const wide = !!(P.all || P.sky);
+    // crystals along the four edges, the corners thickest
+    const crystals = Array.from({ length: 30 }, (_, i) => {
+      const side = i % 4, u = Math.random() ** 1.6 * (Math.random() < 0.5 ? 1 : -1) * 0.5 + 0.5;
+      const x = side === 0 ? u * W : side === 1 ? W - rnd(0, 6) : side === 2 ? u * W : rnd(0, 6);
+      const y = side === 0 ? rnd(0, 6) : side === 1 ? u * H : side === 2 ? H - rnd(0, 6) : u * H;
+      return { x, y, r: rnd(5, 14), rot: Math.random() * Math.PI, delay: rnd(0, 1100) };
+    });
+    st.overlays.push((g, t) => {
+      const k = (t - t0) / ms;
+      if (k >= 1) return false;
+      const a = Math.min(1, k * 5) * Math.min(1, (1 - k) * 3);
+      g.save();
+      g.fillStyle = `rgba(110,170,255,${0.2 * a})`;
+      g.fillRect(0, 0, W, H);
+      const gr = g.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, W * 0.62);
+      gr.addColorStop(0, "rgba(210,236,255,0)");
+      gr.addColorStop(1, `rgba(225,244,255,${0.6 * a})`);
+      g.fillStyle = gr;
+      g.fillRect(0, 0, W, H);
+      g.strokeStyle = `rgba(240,250,255,${0.9 * a})`;
+      g.lineWidth = 1;
+      for (const c of crystals) {
+        const grow = Math.max(0, Math.min(1, (t - t0 - c.delay) / 800));
+        if (!grow) continue;
+        const r = c.r * easeOut(grow);
+        g.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const an = c.rot + (i * Math.PI) / 3, cx = Math.cos(an), cy = Math.sin(an);
+          g.moveTo(c.x, c.y); g.lineTo(c.x + cx * r, c.y + cy * r);
+          // little side branches two thirds of the way out
+          const bx = c.x + cx * r * 0.6, by = c.y + cy * r * 0.6, b = r * 0.3;
+          for (const d of [-0.7, 0.7]) { g.moveTo(bx, by); g.lineTo(bx + Math.cos(an + d) * b, by + Math.sin(an + d) * b); }
+        }
+        g.stroke();
+      }
+      g.restore();
+      return true;
+    });
+    // ice motes glinting as they fall
+    const id = `frost${++this.uid}`;
+    const x0 = wide ? W / 2 : P.x, spread = wide ? W / 2 : 40, top = wide ? 0 : Math.max(0, P.y - 70);
+    st.emit({
+      id, until: st.now + 2600,
+      tick: (dt) => {
+        for (let i = 0; i < dt / 40; i++) if (Math.random() < 0.7) st.particles.push({ x: x0 + rnd(-spread, spread), y: top + rnd(0, 30), vx: rnd(-0.15, 0.15), vy: rnd(0.15, 0.5), life: 0, max: rnd(1400, 2400), col: Math.random() < 0.5 ? "#ffffff" : "#bfe2ff", size: Math.random() < 0.3 ? 2 : 1, glow: true, drag: 0.2 });
+      },
+    });
+    if (P.who) { P.who.flash = st.now + 120; }
+    st.flash("#e0f2ff", 180);
+    if (!this.instant) sfx("cast", "ice");
   }
 
   /** One frame of flames over a base of width w (also used by burning props). */
