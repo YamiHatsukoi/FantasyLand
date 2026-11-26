@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   battleExit, canEvade, choiceState, continueRun, discsOf, enter, newRun, phase, playRound, randomResult,
   startBattle, takeOffer, apply, visibleChoices, rollRandom, carryNeeds, playChoice, heroCs, answerRiddle, check,
+  epMax, masteryCount, profile,
 } from "../src/adventure/engine";
 import type { AdvState, Book, Choice, Cond, Disc } from "../src/adventure/types";
 
@@ -44,6 +45,32 @@ function hero(book: Book, rng: () => number): AdvState {
   // Weaponmastery (Magnakai and later): the weapons chosen at the start
   const mastered = book.rules === "kai" ? [] : [...new Set(book.weaponskill)].sort(() => rng() - 0.5).slice(0, 3);
   return newRun(book, { name: "Thử", csRoll: Math.floor(rng() * 10), epRoll: Math.floor(rng() * 10), disciplines: discs, weaponskillRoll: Math.floor(rng() * 10), goldRoll: Math.floor(rng() * 10), mastered, picks });
+}
+
+/** First book of each series: a hero who finished every book before has learnt one discipline per book. */
+const SERIES_START: Record<Book["rules"], number> = { kai: 1, magnakai: 6, grandmaster: 13, neworder: 21 };
+
+/**
+ * When no play-through of the previous book won, the books that follow would only ever meet fresh
+ * heroes, though they are written for a hero who carries on (book 8 expects the Sommerswerd and five
+ * Magnakai disciplines). A veteran stands in for that hero: the disciplines of every finished book of
+ * the series, Weaponmastery to match, and the Sommerswerd (won in book 2, kept until the New Order).
+ */
+function veteran(book: Book, rng: () => number): AdvState {
+  const s = hero(book, rng);
+  const n = Math.min(discsOf(book).length, book.discCount + book.num - SERIES_START[book.rules ?? "kai"]);
+  s.disciplines = [...s.disciplines, ...[...discsOf(book)].filter((d) => !s.disciplines.includes(d)).sort(() => rng() - 0.5)].slice(0, n) as Disc[];
+  if (s.disciplines.includes("weaponskill") && !s.weaponskill) s.weaponskill = book.weaponskill[Math.floor(rng() * book.weaponskill.length)];
+  else if (s.disciplines.includes(profile(book).weapon.disc) && profile(book).weapon.disc !== "weaponskill")
+    s.mastered = [...new Set([...(s.mastered ?? []), ...[...new Set(book.weaponskill)].sort(() => rng() - 0.5)])].slice(0, masteryCount(book, s));
+  if (book.num >= 3 && book.rules !== "neworder" && !s.special.includes("Sommerswerd")) {
+    s.special.push("Sommerswerd");
+    s.items = { ...s.items, Sommerswerd: { name: "Sommerswerd", type: "special", cs: 8, weapon: true, as: "Sword", keep: true } };
+  }
+  s.cs = Math.max(s.cs, 15);
+  s.epBase = Math.max(s.epBase, 25);
+  s.ep = epMax(book, s);
+  return s;
 }
 
 /** Does this condition depend only on what a hero cannot change within the book (disciplines, rank)? */
@@ -191,7 +218,7 @@ describe.skipIf(!DIR)("adventure book packages (random play-throughs)", () => {
             newDisc, newDiscs: need?.fresh ? shuffle(discsOf(book)).slice(0, book.discCount) : undefined,
             mastered: shuffle([...new Set(book.weaponskill)].filter((w) => !(prev.mastered ?? []).includes(w))).slice(0, extra?.masteryCap ?? 0),
             picks: book.kit.picks.map((p) => p.mode === "random" ? [Math.floor(rng() * p.options.length)] : [...p.options.keys()].sort(() => rng() - 0.5).slice(0, p.count)), goldRoll: 3,
-          }) : hero(book, rng);
+          }) : !won.length && i % 2 && book.num > SERIES_START[book.rules ?? "kai"] ? veteran(book, rng) : hero(book, rng);
           const careful = i % 4 === 3;
           if (careful) { s.cs = Math.max(s.cs, 19); s.epBase = Math.max(s.epBase, 29); s.ep = s.epBase; }
           playOnce(book, s, rng, r, careful);
