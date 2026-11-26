@@ -23,7 +23,7 @@ import { creatureFrame, creatureKey, creatureSize, type CPose } from "./art/crea
 import { arrowHead, darkOrbHead, digitsSprite, disc, ease, FxLayer, ring, type Ease } from "./art/fx";
 import { iconEl, uiIcon } from "./art/icons";
 import { lookFor, personFrame, portrait, withWeapon, type Look, type Pose, type WeaponKind } from "./art/people";
-import { activeMind, battleExit, canEvade, check, epMax, fightWeapons, heroCs, wielded, heroLossMul, itemName, mindAllowed, mindBlocked, mindChoices, mindCs, mindName, mindUsed, playRound, startBattle, unarmedPenalty, type Battle, type RoundResult } from "./engine";
+import { activeMind, battleExit, canEvade, check, epMax, fightWeapons, heroCs, heroPoints, wielded, heroLossMul, itemName, mindAllowed, mindBlocked, mindChoices, mindCs, mindName, mindUsed, playRound, startBattle, unarmedPenalty, type Battle, type RoundResult } from "./engine";
 import { isMonster, OUT, Stage, H as SH, W as SW } from "./stage";
 import type { AdvState, Book, FoeDef } from "./types";
 import { bump, calmMotion, gameBtn, StageFit } from "./ui";
@@ -577,11 +577,14 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
 
     let curFoe = 0;
     /** ENDURANCE shown on the bars: they follow the show, not the rules (already applied). */
-    let heroShown = s.ep;
+    /** The hero's bar: ENDURANCE, or the contest's own points (combat.heroEp). */
+    const hpNow = () => heroPoints(book, s, b).ep;
+    const hpMax = () => heroPoints(book, s, b).max;
+    let heroShown = hpNow();
     let foeShown = b.foes[0].ep;
 
     function lowCheck() {
-      const low = heroShown > 0 && heroShown / epMax(book, s) <= 0.3;
+      const low = heroShown > 0 && heroShown / hpMax() <= 0.3;
       el.classList.toggle("low", low);
     }
 
@@ -635,11 +638,11 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       fx.number(x - 4, gy - 58, dmg, { crit: big, grad: big ? heroCrit : heroGrad });
       if (big) { punch(1.12, x, y); if (dmg >= 9 || heroShown - dmg <= 0) fx.flash(col, 80, 0.24); fx.shake(3.5, 260); sfx("crit"); } else { fx.shake(2, 150); sfx("hit"); }
       heroShown -= dmg;
-      heroBar.set(heroShown, epMax(book, s));
+      heroBar.set(heroShown, hpMax());
       bump(faceBox, "flinch");
       bump(el, "hurt");
       lowCheck();
-      say(`Bạn mất ${dmg} Sức Bền.`, "bad");
+      say(b.pool !== undefined ? `Bạn mất ${dmg} điểm.` : `Bạn mất ${dmg} Sức Bền.`, "bad");
     }
 
     function heroBlocks(p: Pup) {
@@ -877,7 +880,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       sfx("cast", "light");
       await fx.charge(hx, hy, { col, dur: 170, r: 18 });
       hero.aura = "";
-      if (cost > 0) { fx.number(hero.x - 8, gy - 60, cost, { small: true, grad: ["#ffffff", col, "#5a2a9a"] }); heroShown -= cost; heroBar.set(heroShown, epMax(book, s)); lowCheck(); }
+      if (cost > 0) { fx.number(hero.x - 8, gy - 60, cost, { small: true, grad: ["#ffffff", col, "#5a2a9a"] }); heroShown -= cost; heroBar.set(heroShown, hpMax()); lowCheck(); }
       const [tx, ty] = foeHitPoint(p);
       sfx("whoosh");
       void fx.psiWave(hx + 4, hy + 6, tx, { col, col2: core, dur: 190, h: 11 });
@@ -1321,12 +1324,14 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
 
     // ---------------------------------------------------------------- a round
     let busy = false;
+    /** The number of the last round (shown when a number ends the fight: combat.onNumber). */
+    let lastN: number | null = null;
     const shrugged = new Set<number>();
     function render() {
       const foe = b.foes[b.idx];
-      heroShown = s.ep;
+      heroShown = hpNow();
       foeShown = foe.ep;
-      heroBar.set(s.ep, epMax(book, s));
+      heroBar.set(hpNow(), hpMax());
       foeBar.set(foe.ep, foe.def.ep);
       lowCheck();
       foeName.textContent = `${foe.def.name}${b.foes.length > 1 ? ` (${b.idx + 1}/${b.foes.length})` : ""}`;
@@ -1365,14 +1370,15 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       const foe = b.foes[b.idx];
       const m = mindSpec();
       const immune = !!m && mindBlocked(foe.def, m);
-      const heroBefore = s.ep, foeBefore = foe.ep;
+      const heroBefore = hpNow(), foeBefore = foe.ep;
       const r: RoundResult = playRound(book, s, b, evade);
+      lastN = r.n;
       onChange();
       // the bars follow the show, not the rules (they already changed)
       heroShown = heroBefore;
       foeShown = foeBefore;
       foeBar.set(foeShown, foe.def.ep);
-      heroBar.set(heroShown, epMax(book, s));
+      heroBar.set(heroShown, hpMax());
       // the hero closes in while the reel spins
       await Promise.all([spin(r.n), r.evaded ? null : wait(120).then(() => engage(p))]);
       const heroDmg = r.heroLoss - r.mindCost;
@@ -1423,7 +1429,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       onChange();
       const win = b.over === "win";
       if (win) await victory();
-      const title = win ? "CHIẾN THẮNG" : b.over === "evaded" ? "ĐÃ THOÁT" : b.over === "timeout" ? (c.compare ? "HẾT HIỆP" : "HẾT GIỜ") : b.over === "beaten" ? "THUA TRẬN" : b.over === "hurt" ? "TRÚNG ĐÒN!" : b.over === "stopped" ? "DỪNG TAY" : "BẠI TRẬN";
+      const title = win ? "CHIẾN THẮNG" : b.over === "evaded" ? "ĐÃ THOÁT" : b.over === "timeout" ? (c.compare ? "HẾT HIỆP" : "HẾT GIỜ") : b.over === "beaten" ? "THUA TRẬN" : b.over === "hurt" ? "TRÚNG ĐÒN!" : b.over === "stopped" ? "DỪNG TAY" : b.over === "number" ? `SỐ ${lastN ?? ""}!` : "BẠI TRẬN";
       sfx(b.over === "lose" ? "defeat" : "victory");
       const done = (to2: string | null) => { alive = false; releaseOthers(); fit.destroy(); stage.destroy(); el.classList.add("out"); setTimeout(() => el.remove(), 250); playMusic("title"); resolve({ battle: b, exit: to2 }); };
       const alts = b.over === "evaded" ? c.evade?.alt ?? [] : [];
@@ -1434,7 +1440,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       banner.replaceChildren(h("div", { class: `adv-fbanner-box fr-panel ${b.over} ${good ? "good" : "badend"}` },
         iconEl(uiIcon(win ? "trophy" : b.over === "evaded" ? "flee" : "skull"), 3),
         h("div", { class: "t" }, title),
-        h("div", { class: "sub" }, `${b.round} hiệp · Sức Bền ${Math.max(0, s.ep)}/${epMax(book, s)}`),
+        h("div", { class: "sub" }, `${b.round} hiệp · ${b.pool !== undefined ? `Điểm ${b.pool}/${b.poolMax} · ` : ""}Sức Bền ${Math.max(0, s.ep)}/${epMax(book, s)}`),
         h("div", { class: "btns" }, ...buttons)));
       banner.classList.add("show");
     }
@@ -1448,6 +1454,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
     else if (c.unarmedUnless) say(`Bạn dùng ${itemName(book, fightWeapons(book, s, c)[0], s)}.`);
     else if (!fightWeapons(book, s, c).length) say(`Bạn không có vũ khí cận chiến: đánh tay không (${unarmedPenalty(book, s)}).`, "bad");
     else if (wielded(book, s, c)) say(`Bạn cầm ${itemName(book, wielded(book, s, c)!, s)}.`);
+    if (b.pool !== undefined) say(`Thi đấu bằng ${b.pool} điểm riêng: Sức Bền thật của bạn không đổi.`);
     busy = true;
     render();
     void foeEnters(0).then(() => { busy = false; render(); });

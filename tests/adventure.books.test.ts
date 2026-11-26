@@ -115,7 +115,7 @@ function playOnce(book: Book, s: AdvState, rng: () => number, r: Report, careful
     for (let i = s.offers.length - 1; i >= 0; i--) {
       const o = s.offers[i];
       if ("loseChoice" in o) {
-        const pool = losePool(book, s, o.loseChoice);
+        const pool = losePool(book, s, o.loseChoice, o.except);
         if (pool.length) takeOffer(book, s, i, pool[Math.floor(rng() * pool.length)]); else s.offers.splice(i, 1);
       } else if (rng() < 0.7) takeOffer(book, s, i);
     }

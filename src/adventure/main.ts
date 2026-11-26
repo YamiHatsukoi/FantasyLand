@@ -1070,7 +1070,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
         if ("gold" in o || "lune" in o) return h("div", { class: `adv-loot fr-parch${shut ? " shut" : ""}` }, h("span", { class: "adv-loot-ic" }, ui("gold", 2)),
           h("div", { class: "adv-loot-t" }, h("b", null, "gold" in o ? `${o.gold} Vương Miện Vàng` : `${o.lune} Lune`), shutNote), gameBtn("Nhặt", () => take(), { kind: "gold", cls: "small", disabled: shut }));
         if ("loseChoice" in o) {
-          const pool = losePool(book, s, o.loseChoice);
+          const pool = losePool(book, s, o.loseChoice, o.except);
           if (!pool.length) { s.offers.splice(i, 1); return null; }
           return h("div", { class: "adv-loot lose fr-parch" },
             h("div", { class: "adv-loot-h" }, ui("skull", 2), h("b", null, `${o.into ? "Chọn" : "Phải bỏ lại"} ${o.n} món${o.loseChoice === "weapon" ? " vũ khí" : o.loseChoice === "backpack" ? " trong Ba Lô" : o.loseChoice === "special" ? " Vật Phẩm Đặc Biệt" : ""}${o.into ? " để giao ra" : ""}`)),

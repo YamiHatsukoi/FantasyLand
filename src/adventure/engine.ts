@@ -1,5 +1,5 @@
 /** Lone Wolf rules of Adventure (Kai, Magnakai, Grand Master, New Order). Pure functions: no DOM. */
-import type { AdvState, Book, Choice, ChoiceRoll, Combat, CompareGame, Cond, Disc, Effect, FoeDef, ItemDef, ItemType, ListKind, LoreCircleId, LoseKind, NthPick, Offer, PickItem, RandomPick, Section, Stash, StashPart } from "./types";
+import type { AdvState, Book, Choice, ChoiceRoll, Combat, CompareGame, Cond, Disc, Effect, FoeDef, ItemDef, ItemType, ListKind, LoreCircleId, LoseKind, NthPick, Offer, OnNumber, PickItem, RandomPick, Section, Stash, StashPart } from "./types";
 import { DISCS_BY_RULES } from "./types";
 
 export type Rng = () => number;
@@ -280,15 +280,18 @@ export function epMax(book: Book, s: AdvState) {
 
 /** Holds a weapon: one in the weapon slots, or the Sommerswerd. */
 export function armed(s: AdvState, book?: Book) {
-  return s.weapons.length > 0 || s.special.some((id) => id === "Sommerswerd" || !!(book ? itemDef(book, s, id) : s.items?.[id])?.weapon);
+  return s.weapons.length > 0 || s.special.some((id) => { const d = book ? itemDef(book, s, id) : s.items?.[id]; return id === "Sommerswerd" || !!d?.weapon || (!!d?.as && d.as !== "Bow"); });
 }
 
 /** The kind of weapon an item counts as (the Sommerswerd is a sword). */
 export const weaponKind = (book: Book, s: AdvState, id: string) => itemDef(book, s, id)?.as ?? (id === "Sommerswerd" ? "Sword" : id);
 
-/** Weapons usable hand to hand: a Bow is not (fighting with only a Bow is fighting bare-handed). */
+/**
+ * Weapons usable hand to hand: a Bow is not (fighting with only a Bow is fighting bare-handed). Special
+ * Items count when weapon-like (the Sommerswerd, `weapon`, or a weapon kind `as`: the Magic Spear).
+ */
 export function meleeWeapons(book: Book, s: AdvState): string[] {
-  const special = s.special.filter((id) => id === "Sommerswerd" || !!itemDef(book, s, id)?.weapon);
+  const special = s.special.filter((id) => weaponLike(book, s, id));
   return [...special, ...s.weapons].filter((id) => weaponKind(book, s, id) !== "Bow");
 }
 
@@ -351,10 +354,19 @@ export function itemName(book: Book, id: string, s?: Pick<AdvState, "items">) {
  * What the player may pick from when giving something up (loseChoice): weapons, the Backpack (Meals
  * included), Special Items, or weapons and Backpack ("any"). Items with `keep` are never offered.
  */
-export function losePool(book: Book | undefined, s: AdvState, kind: LoseKind): string[] {
-  const meals = s.meals > 0 ? ["Meal"] : [];
-  const pool = kind === "weapon" ? s.weapons : kind === "backpack" ? [...s.backpack, ...meals] : kind === "special" ? s.special : [...s.weapons, ...s.backpack, ...meals];
+export function losePool(book: Book | undefined, s: AdvState, kind: LoseKind, except?: string[]): string[] {
+  const meals = Array.from({ length: s.meals }, () => "Meal");
+  const pool = kind === "weapon" ? [...s.weapons] : kind === "backpack" ? [...s.backpack, ...meals] : kind === "special" ? [...s.special] : [...s.weapons, ...s.backpack, ...meals];
+  // `except`: one of each is spared (the Torch in use): a second one may still be given up
+  for (const x of except ?? []) { const i = pool.indexOf(x); if (i >= 0) pool.splice(i, 1); }
   return [...new Set(pool)].filter((id) => id === "Meal" || !(book?.items[id] ?? s.items?.[id])?.keep);
+}
+
+/** The entries of a list with one of each `except` item left out (the first one noted). */
+function sparing(entries: Entry[], except?: string[]): Entry[] {
+  const out = [...entries];
+  for (const x of except ?? []) { const i = out.findIndex((e) => e.id === x); if (i >= 0) out.splice(i, 1); }
+  return out;
 }
 
 /** Doses left of a carried item (`uses`, default 1). */
@@ -478,8 +490,12 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined, rng: Rn
     } else if ("loseNth" in e) {
       const x = nthEntry(book, s, e.loseNth) ?? (e.loseNth.else ?? []).map((t) => nthEntry(book, s, t)).find((t) => t);
       if (x) out.push(...removeEntries(book, s, [x], e.into));
+      else if (e.orElse) out.push(...apply(book, s, e.orElse, rng));
     } else if ("loseRandom" in e) {
-      out.push(...removeEntries(book, s, randomEntries(listEntries(book, s, e.loseRandom.kind), e.loseRandom.n, rng), e.into));
+      const pool = sparing(listEntries(book, s, e.loseRandom.kind), e.except);
+      // nothing to lose: the fallback ("if you have no Backpack Items, you lose a Weapon instead")
+      if (!pool.length && e.orElse) out.push(...apply(book, s, e.orElse, rng));
+      else out.push(...removeEntries(book, s, randomEntries(pool, e.loseRandom.n, rng), e.into));
     } else if ("loseHalf" in e && (e.loseHalf === "gold" || e.loseHalf === "lune")) {
       // half the Belt Pouch: the number lost is rounded down (`up`: rounded up)
       const have = e.loseHalf === "gold" ? s.gold : s.lune ?? 0;
@@ -493,7 +509,9 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined, rng: Rn
       s.arrows = Math.max(0, Math.min(has(s, "Quiver") ? 6 : 0, s.arrows + e.arrows));
       if (s.arrows !== before) out.push({ kind: "item", label: `Mũi tên ${s.arrows - before > 0 ? "+" : ""}${s.arrows - before}`, good: s.arrows > before, item: "Arrow" });
     } else if ("loseChoice" in e) {
-      s.offers.push({ loseChoice: e.loseChoice, n: e.n ?? 1, ...(e.into ? { into: e.into } : {}) });
+      // nothing to pick from: the fallback ("if you have no Backpack Items, you lose a Weapon instead")
+      if (!losePool(book, s, e.loseChoice, e.except).length) { if (e.orElse) out.push(...apply(book, s, e.orElse, rng)); continue; }
+      s.offers.push({ loseChoice: e.loseChoice, n: e.n ?? 1, ...(e.into ? { into: e.into } : {}), ...(e.except?.length ? { except: e.except } : {}) });
     } else if ("gain" in e) {
       const n = e.n ?? 1;
       if (e.optional) { s.offers.push({ gain: e.gain, type: e.type, n, desc: e.desc }); continue; }
@@ -504,6 +522,7 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined, rng: Rn
     } else if ("lose" in e) {
       const k = e.into ? removeEntries(book, s, entriesOf(book, s, e.lose, e.n ?? 1), e.into).length : dropN(book, s, e.lose, e.n ?? 1);
       if (k) out.push({ kind: e.lose === "Meal" ? "meal" : "item", label: `Mất ${itemName(book, e.lose)}${k > 1 ? ` ×${k}` : ""}`, good: false, item: e.lose });
+      else if (e.orElse) out.push(...apply(book, s, e.orElse, rng));
     } else if ("loseAll" in e) {
       const k = e.loseAll;
       if (k === "weapons" || k === "everything") s.weapons = [];
@@ -525,10 +544,22 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined, rng: Rn
       const st = s.stashes?.[e.unstash];
       if (st) {
         // what no longer fits (the Backpack filled up meanwhile) is offered, to make room for it
-        const back = (id: string, type: ItemType, n = 1) => { const left = give(book, s, id, type, n); if (left > 0) s.offers.push({ gain: id, type, n: left }); };
-        for (const w of st.weapons) back(w, "weapon");
-        for (const b of st.backpack) back(b, "backpack");
-        for (const x of st.special) back(x, "special");
+        const back = (id: string, type: ItemType, n = 1, at = -1) => {
+          const left = give(book, s, id, type, n);
+          if (left > 0) s.offers.push({ gain: id, type, n: left });
+          // back where it was noted on the list (when the list is long enough; else at its end)
+          else if (at >= 0 && type !== "meal") {
+            const list = type === "weapon" ? s.weapons : type === "special" ? s.special : s.backpack;
+            list.splice(list.length - 1, 1);
+            list.splice(Math.min(at, list.length), 0, id);
+          }
+        };
+        // earlier places first, so each item goes back in front of the ones that followed it
+        const inOrder = (ids: string[], pos?: number[]) => ids.map((id, i) => ({ id, at: pos?.[i] ?? -1 }))
+          .sort((a, b) => (a.at < 0 ? Infinity : a.at) - (b.at < 0 ? Infinity : b.at));
+        for (const w of inOrder(st.weapons, st.pos?.weapons)) back(w.id, "weapon", 1, w.at);
+        for (const x of inOrder(st.backpack, st.pos?.backpack)) back(x.id, "backpack", 1, x.at);
+        for (const x of inOrder(st.special, st.pos?.special)) back(x.id, "special", 1, x.at);
         if (st.meals) back("Meal", "meal", st.meals);
         s.gold = Math.min(MAX_GOLD, s.gold + st.gold);
         if (st.lune) s.lune = (s.lune ?? 0) + st.lune;
@@ -554,8 +585,12 @@ function freshDoses(s: AdvState, id: string) {
 function addToStash(s: AdvState, name: string, took: Stash) {
   s.stashes ??= {};
   const old = s.stashes[name];
+  // places on the lists (a stash saved before they were kept has none: those items go back at the end)
+  const at = (st: Stash, k: "weapons" | "backpack" | "special") => st[k].map((_, i) => st.pos?.[k]?.[i] ?? -1);
+  const pos = (k: "weapons" | "backpack" | "special") => [...(old ? at(old, k) : []), ...at(took, k)];
   s.stashes[name] = old ? { weapons: [...old.weapons, ...took.weapons], backpack: [...old.backpack, ...took.backpack], special: [...old.special, ...took.special],
-    meals: old.meals + took.meals, gold: old.gold + took.gold, arrows: old.arrows + took.arrows, lune: (old.lune ?? 0) + (took.lune ?? 0) } : took;
+    meals: old.meals + took.meals, gold: old.gold + took.gold, arrows: old.arrows + took.arrows, lune: (old.lune ?? 0) + (took.lune ?? 0),
+    pos: { weapons: pos("weapons"), backpack: pos("backpack"), special: pos("special") } } : took;
 }
 
 /**
@@ -565,11 +600,19 @@ function addToStash(s: AdvState, name: string, took: Stash) {
 export function confiscate(book: Book, s: AdvState, only: StashPart[] | undefined, weaponLikeToo: boolean): Stash {
   const part = (p: StashPart) => !only || only.includes(p);
   const took: Stash = { weapons: [], backpack: [], special: [], meals: 0, gold: 0, arrows: 0 };
-  if (part("weapons")) { took.weapons = s.weapons; s.weapons = []; }
-  if (part("backpack")) { took.backpack = s.backpack; s.backpack = []; }
+  const pos = { weapons: [] as number[], backpack: [] as number[], special: [] as number[] };
+  const every = (l: string[]) => l.map((_, i) => i);
+  if (part("weapons")) { took.weapons = s.weapons; pos.weapons = every(s.weapons); s.weapons = []; }
+  if (part("backpack")) { took.backpack = s.backpack; pos.backpack = every(s.backpack); s.backpack = []; }
   if (part("backpack") || part("meals")) { took.meals = s.meals; s.meals = 0; }
-  if (part("special")) { took.special = s.special; s.special = []; }
-  else if (weaponLikeToo) { took.special = s.special.filter((id) => weaponLike(book, s, id)); s.special = s.special.filter((id) => !took.special.includes(id)); }
+  if (part("special")) { took.special = s.special; pos.special = every(s.special); s.special = []; }
+  else if (weaponLikeToo) {
+    const idx = every(s.special).filter((i) => weaponLike(book, s, s.special[i]));
+    took.special = idx.map((i) => s.special[i]);
+    pos.special = idx;
+    s.special = s.special.filter((_, i) => !idx.includes(i));
+  }
+  took.pos = pos;
   // Lune are money too: they go with the Gold Crowns
   if (part("gold")) { took.gold = s.gold; s.gold = 0; if (s.lune) { took.lune = s.lune; s.lune = 0; } }
   if (part("arrows") || (took.special.includes("Quiver") && !s.special.includes("Quiver"))) { took.arrows = s.arrows; s.arrows = 0; }
@@ -637,8 +680,12 @@ function removeEntries(book: Book, s: AdvState, xs: Entry[], into?: string): Cha
   // Arrows are kept in the Quiver
   if (!has(s, "Quiver")) s.arrows = 0;
   if (into && xs.length) {
-    const of = (l: Entry["list"]) => xs.filter((x) => x.list === l).map((x) => x.id);
-    addToStash(s, into, { weapons: of("weapon"), backpack: of("backpack"), special: of("special"), meals: of("meal").length, gold: 0, arrows: arrows - s.arrows });
+    // kept with the place each held on its list, to go back there (`unstash`)
+    const sel = (l: Entry["list"]) => xs.filter((x) => x.list === l).sort((a, b) => a.idx - b.idx);
+    const of = (l: Entry["list"]) => sel(l).map((x) => x.id);
+    const at = (l: Entry["list"]) => sel(l).map((x) => x.idx);
+    addToStash(s, into, { weapons: of("weapon"), backpack: of("backpack"), special: of("special"), meals: of("meal").length, gold: 0, arrows: arrows - s.arrows,
+      pos: { weapons: at("weapon"), backpack: at("backpack"), special: at("special") } });
   }
   s.ep = Math.min(s.ep, epMax(book, s));
   return xs.map((x) => ({ kind: x.list === "meal" ? "meal" : "item", label: `Mất ${itemName(book, x.id, s)}`, good: false, item: x.id }));
@@ -786,6 +833,12 @@ export function randomResult(book: Book, sec: Section, s: AdvState, nums: number
   return tableResult(book, sec.random!, s, nums);
 }
 
+/** Is one of the numbers picked one that `onNumber` names (its condition holding)? */
+export function numberHit(s: AdvState, o: OnNumber, nums: number[], book?: Book): boolean {
+  const want = Array.isArray(o.n) ? o.n : [o.n];
+  return nums.some((x) => want.includes(x)) && check(s, o.if, book);
+}
+
 /** The outcome of a random number table for the number(s) picked. */
 export function tableResult(book: Book, r: RandomPick, s: AdvState, nums: number | number[]) {
   const n = typeof nums === "number" ? nums : nums.reduce((a, x) => a + x, 0);
@@ -797,8 +850,10 @@ export function tableResult(book: Book, r: RandomPick, s: AdvState, nums: number
     if (mkRank(book, s) >= MK.mentora && s.disciplines.includes(p.disc)) add += 2;
   }
   const v = n + add;
+  // "if you pick a 0 at any time…": one of the numbers picked leads elsewhere, whatever the total
+  if (r.onNumber && numberHit(s, r.onNumber, typeof nums === "number" ? [nums] : nums, book)) return { n, add, value: v, to: r.onNumber.to, end: undefined, fx: undefined, onNumber: true };
   const out = r.out.find((o) => v >= o.min && v <= o.max) ?? (v < r.out[0].min ? r.out[0] : r.out[r.out.length - 1]);
-  return { n, add, value: v, to: out.to ?? "", end: out.end, fx: out.fx };
+  return { n, add, value: v, to: out.to ?? "", end: out.end, fx: out.fx, onNumber: false };
 }
 
 /**
@@ -878,7 +933,7 @@ export function takeOffer(book: Book, s: AdvState, i: number, choice?: string): 
   if ("gold" in o) { s.offers.splice(i, 1); count(); return changeGold(s, o.gold); }
   if ("lune" in o) { s.offers.splice(i, 1); count(); return changeLune(s, o.lune); }
   if ("loseChoice" in o) {
-    if (!choice || !losePool(book, s, o.loseChoice).includes(choice)) return [];
+    if (!choice || !losePool(book, s, o.loseChoice, o.except).includes(choice)) return [];
     if (o.into) {
       // staked / handed over: kept under that name, to be given back by `unstash`
       const lists: Entry["list"][] = o.loseChoice === "weapon" ? ["weapon"] : o.loseChoice === "special" ? ["special"] : o.loseChoice === "backpack" ? ["backpack", "meal"] : ["weapon", "backpack", "meal"];
@@ -915,16 +970,25 @@ export interface Battle {
   round: number;
   /** Mind attack in use: index into the profile's `mind` list, or -1. */
   mind: number;
-  over?: "win" | "lose" | "evaded" | "timeout" | "beaten" | "hurt" | "stopped";
+  over?: "win" | "lose" | "evaded" | "timeout" | "beaten" | "hurt" | "stopped" | "number";
   compare?: "more" | "less" | "equal";
   /** ENDURANCE the hero lost in this fight. */
   lost: number;
+  /** A contest on points of its own (combat.heroEp): the hero's points left, and at the start. */
+  pool?: number;
+  poolMax?: number;
 }
 
 export function startBattle(book: Book, s: AdvState, sec: Section): Battle {
-  const avail = mindChoices(book, s)[0] ?? -1;
-  return { foes: sec.combat!.foes.map((def) => ({ def, ep: def.ep })), idx: 0, round: 0, mind: avail, lost: 0 };
+  const c = sec.combat!;
+  const avail = mindAllowed(c) ? mindChoices(book, s)[0] ?? -1 : -1;
+  const b: Battle = { foes: c.foes.map((def) => ({ def, ep: def.ep })), idx: 0, round: 0, mind: avail, lost: 0 };
+  if (c.heroEp !== undefined) b.pool = b.poolMax = Math.max(1, c.heroEp === "ep" ? s.ep : c.heroEp);
+  return b;
 }
+
+/** The hero's bar in a fight: ENDURANCE, or the points of a contest (combat.heroEp). */
+export const heroPoints = (book: Book, s: AdvState, b: Battle) => (b.pool !== undefined ? { ep: b.pool, max: b.poolMax ?? b.pool } : { ep: s.ep, max: epMax(book, s) });
 
 export interface CsBreakdown {
   total: number;
@@ -953,7 +1017,7 @@ export const scaledHeroLoss = (s: AdvState, c: Combat, hl: number) => Math.floor
 export const inFirstRounds = (s: AdvState, c: Combat, round: number) => !!c.firstRound && round < (c.firstRound.rounds ?? 1) && check(s, c.firstRound.if);
 
 /** Mind attacks add nothing in a psychic duel (combat.heroCs) or where the book forbids them. */
-export const mindAllowed = (c: Combat) => !c.noMindblast && c.heroCs === undefined;
+export const mindAllowed = (c: Combat) => !c.noMindblast && c.heroCs === undefined && c.heroEp === undefined;
 
 /**
  * How many times a mind attack's COMBAT SKILL bonus counts in this fight: the first `mindBonusMulIf`
@@ -1120,6 +1184,12 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
   const am = mindUsed(book, s, c, foe.def, b.mind);
   const ratio = heroCs(book, s, c, foe.def, b.mind, b.round).total - foe.def.cs;
   const n = pick10(rng);
+  // "if you pick a 0 at any time during this combat, turn to …": the round ends the fight, harmless
+  if (c.onNumber && numberHit(s, c.onNumber, [n], book)) {
+    b.round++;
+    b.over = "number"; s.fought = true; s.csNext = 0;
+    return { n, ratio, foe: foeIdx, foeLoss: 0, heroLoss: 0, mindCost: 0, foeKilled: false, heroKilled: false, evaded: false };
+  }
   const [fl, hl] = book.crt[n][crtColumnOf(ratio)];
   // "you lose no ENDURANCE in the first rounds" (firstRound.noHeroLoss): this round is spared
   const spared = !!c.firstRound?.noHeroLoss && inFirstRounds(s, c, b.round);
@@ -1130,8 +1200,22 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
   const foeLoss = evade || (c.foeHoldLoss ?? 0) >= b.round ? 0 : hit;
   const held = (foe.def.holdRounds ?? 0) >= b.round;
   const drain = (c.heroDrain && check(s, c.heroDrain.if) ? c.heroDrain.ep : 0) + (c.mindforce && !knows(s, profile(book).shield) ? c.mindforce : 0);
-  const heroLoss = spared ? mindCost : (held ? 0 : hl === KILL ? s.ep : scaledHeroLoss(s, c, hl)) + mindCost + drain;
+  const pts = b.pool !== undefined;
+  const heroLoss = spared ? mindCost : (held ? 0 : hl === KILL ? (pts ? b.pool! : s.ep) : scaledHeroLoss(s, c, hl)) + mindCost + drain;
   if (!evade) foe.ep = Math.max(0, foe.ep - foeLoss);
+  if (pts) {
+    // a contest on points: they are lost instead of ENDURANCE; at 0 the contest is lost (combat.lose)
+    b.pool = Math.max(0, b.pool! - heroLoss);
+    b.lost += heroLoss;
+    const foeKilled = !evade && foe.ep <= 0;
+    if (b.pool <= 0) b.over = "beaten";
+    else if (evade) b.over = "evaded";
+    else if (c.stopAt && foe.ep <= c.stopAt.foeEp) b.over = "stopped";
+    else if (foeKilled) { if (b.idx < b.foes.length - 1) b.idx++; else b.over = "win"; }
+    else if (c.maxRounds && b.round >= c.maxRounds.n) b.over = "timeout";
+    if (b.over) { s.fought = true; s.csNext = 0; }
+    return { n, ratio, foe: foeIdx, foeLoss, heroLoss, mindCost, foeKilled: foeKilled && b.over !== "beaten", heroKilled: false, evaded: evade };
+  }
   s.ep = Math.max(0, s.ep - heroLoss);
   if (heroLoss > 0) s.hurt = true;
   // "If you lose any ENDURANCE, turn immediately to …"
@@ -1168,6 +1252,7 @@ export function battleExit(book: Book, s: AdvState, b: Battle): string | null {
   if (b.over === "beaten") return c.lose ?? "";
   if (b.over === "hurt") return c.onHurt ?? "";
   if (b.over === "stopped") return c.stopAt?.to ?? "";
+  if (b.over === "number") return c.onNumber?.to ?? "";
   if (b.over === "win" && c.winBy) return b.round <= c.winBy.rounds ? c.winBy.fast : c.winBy.slow;
   if (b.over === "evaded") return c.evade?.to ?? "";
   if (c.compare && b.compare) return c.compare[b.compare];
@@ -1191,7 +1276,7 @@ export function validateBook(book: Book): string[] {
   for (const [id, sec] of Object.entries(book.sections ?? {})) {
     const c = sec.combat;
     const links = [...[...(sec.choices ?? []), ...(c?.instead ?? [])].flatMap((x) => [x.to, x.fail]), ...(sec.random?.out ?? []).map((o) => o.to), ...(sec.choices ?? []).flatMap((x) => rollLinks(x.roll)),
-      c?.win, c?.skipIf?.to, c?.lose, c?.winBy?.fast, c?.winBy?.slow, c?.evade?.to, ...(c?.evade?.alt ?? []).map((a) => a.to), c?.maxRounds?.to, c?.stopAt?.to, c?.onHurt, c?.compare?.more, c?.compare?.less, c?.compare?.equal].filter((x): x is string => !!x);
+      c?.win, c?.skipIf?.to, c?.lose, c?.winBy?.fast, c?.winBy?.slow, c?.evade?.to, ...(c?.evade?.alt ?? []).map((a) => a.to), c?.maxRounds?.to, c?.stopAt?.to, c?.onHurt, c?.compare?.more, c?.compare?.less, c?.compare?.equal, c?.onNumber?.to, sec.random?.onNumber?.to].filter((x): x is string => !!x);
     for (const t of links) if (!book.sections[t]) errs.push(`§${id} → §${t}: không có đoạn này`);
     if (!links.length && !sec.end && !(sec.random?.out ?? []).some((o) => o.end)) errs.push(`§${id}: ngõ cụt`);
   }

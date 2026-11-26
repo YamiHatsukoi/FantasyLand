@@ -75,11 +75,11 @@ describe("v13: partial confiscation", () => {
     expect(s.backpack).toEqual(["Rope"]);
     expect(s.meals).toBe(3);
     expect(s.gold).toBe(12);
-    expect(s.stashes!.jail).toEqual({ weapons: ["Sword"], backpack: [], special: ["Sommerswerd", "Dagger2"], meals: 0, gold: 0, arrows: 0 });
-    // the hero picks up an axe meanwhile; it stays when the stash comes back
+    expect(s.stashes!.jail).toEqual({ weapons: ["Sword"], backpack: [], special: ["Sommerswerd", "Dagger2"], meals: 0, gold: 0, arrows: 0, pos: { weapons: [0], backpack: [], special: [1, 2] } });
+    // the hero picks up an axe meanwhile; it stays when the stash comes back (v18: the gear goes back where it was on the lists)
     apply(book, s, [{ gain: "Axe", type: "weapon" }, { unstash: "jail" }]);
-    expect(s.weapons).toEqual(["Axe", "Sword"]);
-    expect(s.special).toEqual(["Map", "Helmet", "Sommerswerd", "Dagger2"]);
+    expect(s.weapons).toEqual(["Sword", "Axe"]);
+    expect(s.special).toEqual(["Map", "Sommerswerd", "Dagger2", "Helmet"]);
     expect(s.stashes!.jail).toBeUndefined();
   });
 

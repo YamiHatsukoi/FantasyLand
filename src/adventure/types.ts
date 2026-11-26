@@ -86,21 +86,26 @@ type EffectBase =
   /** Lune (book 9): never turned into Gold Crowns by the engine. */
   | { lune: number; optional?: boolean }
   | { arrows: number }
-  /** `into`: what is given up goes into that stash (a wager, an item handed over), `unstash` gives it back. */
-  | { loseChoice: LoseKind; n?: number; into?: string }
+  /**
+   * The player picks what to give up. `into`: what is given up goes into that stash (a wager, an item
+   * handed over), `unstash` gives it back. `except`: one of each of these items is not offered (the
+   * Torch in use). `orElse`: applied instead when there is nothing to pick from ("if you have no
+   * Backpack Items, you lose a Weapon instead").
+   */
+  | { loseChoice: LoseKind; n?: number; into?: string; except?: string[]; orElse?: Effect[] }
   | { epMax: number }
   | { csBase: number }
   | { gain: string; type: ItemType; n?: number; optional?: boolean; desc?: string }
   /** Loses an item; `n` copies of it (Meals: n Meals). `into`: kept in that stash (stolen, taken away) for `unstash`. */
-  | { lose: string; n?: number; into?: string }
+  | { lose: string; n?: number; into?: string; orElse?: Effect[] }
   | { loseAll: "weapons" | "backpack" | "special" | "gold" | "lune" | "meals" | "everything" }
   /**
    * Loses the n-th item of a list ("erase the second Special Item"); when the list is too short, the
    * first `else` that finds an item ("if you have only one, erase it; if none, the first Backpack Item").
    */
-  | { loseNth: NthPick & { else?: NthPick[] }; into?: string }
-  /** Loses n items of that list picked at random. */
-  | { loseRandom: { kind: ListKind; n: number }; into?: string }
+  | { loseNth: NthPick & { else?: NthPick[] }; into?: string; orElse?: Effect[] }
+  /** Loses n items of that list picked at random (`except`: one of each of these is spared; `orElse`: when the list is empty). */
+  | { loseRandom: { kind: ListKind; n: number }; into?: string; except?: string[]; orElse?: Effect[] }
   /**
    * Loses half of the list (Backpack: Meals included), picked at random, or half the Gold Crowns / Lune
    * of the Belt Pouch ("gold", "lune"); the number lost is rounded down, `up`: rounded up.
@@ -209,6 +214,18 @@ export interface Combat {
    * weapon-like Special Items (Sommerswerd +8 and its double damage to the undead) do not count.
    */
   weapon?: string;
+  /**
+   * A contest fought by the combat rules on points of its own (the target points of an archery final, an
+   * arm-wrestling match): the hero starts with n points ("ep": as many as their ENDURANCE now), loses
+   * them instead of ENDURANCE (which does not change) and goes to `lose` at 0. No mind attack is used.
+   */
+  heroEp?: number | "ep";
+  /**
+   * Picking this number (or one of these) from the Random Number Table in any round, while `if`
+   * holds, ends the fight at once (that round does no harm): go to `to` (a cracked bow that
+   * breaks on a 0, a fall from a plank on a 1).
+   */
+  onNumber?: OnNumber;
   /** Choices offered on the fight-start screen instead of fighting ("use the Fireseed instead"). */
   instead?: Choice[];
   /** The fight does not happen when `if` holds: the section offers one way on, to `to` (button `text`, default "Đi tiếp"). */
@@ -253,7 +270,12 @@ export interface RandomPick {
   mods?: { if: Cond; add: number }[];
   out: { min: number; max: number; to?: string; end?: "death" | "victory"; fx?: Effect[] }[];
   bow?: boolean;
+  /** Any one of the numbers picked being this one (before modifiers), while `if` holds, leads to `to` instead. */
+  onNumber?: OnNumber;
 }
+
+/** "If you pick a 0 at any time…, turn to …": a number (or numbers) of the Random Number Table, and where it leads. */
+export interface OnNumber { n: number | number[]; to: string; if?: Cond }
 
 /** What one outcome of a dice-comparison game does: its effects, and where it leads (none: stay). */
 export interface RollOutcome { to?: string; end?: "death" | "victory"; fx?: Effect[] }
@@ -420,7 +442,7 @@ export type Offer = (
   | { gain: string; type: ItemType; n: number; desc?: string }
   | { gold: number }
   | { lune: number }
-  | { loseChoice: LoseKind; n: number; into?: string }
+  | { loseChoice: LoseKind; n: number; into?: string; except?: string[] }
 ) & {
   /** Pick-limited loot: offers of one group share `AdvState.pickLeft[group]`. */
   group?: string;
@@ -428,7 +450,11 @@ export type Offer = (
   picked?: boolean;
 };
 
-export interface Stash { weapons: string[]; backpack: string[]; special: string[]; meals: number; gold: number; arrows: number; lune?: number }
+export interface Stash {
+  weapons: string[]; backpack: string[]; special: string[]; meals: number; gold: number; arrows: number; lune?: number;
+  /** Where each item sat on its list when taken (index, parallel to the lists; -1 or absent: unknown), to give it back there. */
+  pos?: { weapons: number[]; backpack: number[]; special: number[] };
+}
 
 /** Progress of one play-through (what a save slot holds). */
 export interface AdvState {

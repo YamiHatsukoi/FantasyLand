@@ -179,7 +179,8 @@ describe("v17: lost items kept for later (into / unstash)", () => {
     expect(s.special).toEqual(["Map", "Key"]);
     expect(s.stashes?.thief?.special).toEqual(["Gem"]);
     const ch = apply(book, s, [{ unstash: "thief" }]);
-    expect(s.special).toEqual(["Map", "Key", "Gem"]);
+    // v18: back in its place, second on the list
+    expect(s.special).toEqual(["Map", "Gem", "Key"]);
     expect(s.stashes?.thief).toBeUndefined();
     expect(ch.map((c) => c.label)).toEqual(["Lấy lại hành trang"]);
     // nothing was stolen: unstash does nothing
