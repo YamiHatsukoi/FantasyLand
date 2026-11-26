@@ -234,6 +234,8 @@ export function continueRun(book: Book, prev: AdvState, h: CarryOver): AdvState 
     ...JSON.parse(JSON.stringify(prev)) as AdvState,
     v: 2, book: book.id, section: book.start, csNext: 0, csBook: 0, offers: [], fought: false, hurt: false,
     visited: [], steps: 0, created: now, updated: now, ended: undefined, back: undefined,
+    // a new book starts with a Backpack, unwounded; what was met in the last book stays there
+    noPack: undefined, bleed: undefined, noPotions: undefined, lastFight: undefined, foesLeft: undefined, randomAt: undefined,
   };
   // flags of the old book stay (later books ask "have you ever…"), cutscene marks do not
   for (const f of Object.keys(s.flags)) if (f.startsWith("cut:")) delete s.flags[f];
@@ -274,8 +276,11 @@ export function continueRun(book: Book, prev: AdvState, h: CarryOver): AdvState 
 /** An item's description: the book's own, or the one the hero brought from an earlier book. */
 export const itemDef = (book: Book, s: Pick<AdvState, "items"> | undefined, id: string): ItemDef | undefined => book.items[id] ?? s?.items?.[id];
 
+/** Do the item's bonuses count now (ItemDef.offIf: no shield while an arm is useless)? */
+export const itemOn = (book: Book, s: AdvState, id: string) => { const off = itemDef(book, s, id)?.offIf; return !off || !check(s, off, book); };
+
 export function epMax(book: Book, s: AdvState) {
-  return s.epBase + s.special.reduce((a, id) => a + (itemDef(book, s, id)?.epMax ?? 0), 0) + loreCircles(book, s).reduce((a, c) => a + c.ep, 0);
+  return s.epBase + s.special.reduce((a, id) => a + (itemOn(book, s, id) ? itemDef(book, s, id)?.epMax ?? 0 : 0), 0) + loreCircles(book, s).reduce((a, c) => a + c.ep, 0);
 }
 
 /** Holds a weapon: one in the weapon slots, or the Sommerswerd. */
@@ -300,14 +305,19 @@ export function has(s: AdvState, id: string) {
   return s.weapons.includes(id) || s.backpack.includes(id) || s.special.includes(id);
 }
 
+/** Room left for items of that type (no Backpack: none for Backpack Items and Meals). */
 export function room(s: AdvState, type: ItemType) {
   if (type === "weapon") return MAX_WEAPONS - s.weapons.length;
-  if (type === "backpack" || type === "meal") return MAX_BACKPACK - s.backpack.length - s.meals;
+  if (type === "backpack" || type === "meal") return s.noPack ? 0 : MAX_BACKPACK - s.backpack.length - s.meals;
   return Infinity;
 }
 
+/** The Backpack itself: finding one lets the hero carry Backpack Items again (it is not an item on a list). */
+export const PACK = "Backpack";
+
 /** Adds items as far as there is room; returns how many did not fit. */
 export function give(book: Book, s: AdvState, id: string, type: ItemType, n = 1): number {
+  if (id === PACK) { delete s.noPack; return 0; }
   let left = n;
   const before = epMax(book, s);
   while (left > 0 && room(s, type) > 0) {
@@ -411,6 +421,8 @@ export function check(s: AdvState, c: Cond | undefined, book?: Book): boolean {
   if ("ep" in c) return s.ep >= c.ep;
   if ("notRank" in c) return rankOf(s) < c.notRank;
   if ("rank" in c) return rankOf(s) >= c.rank;
+  if ("noPack" in c) return !!s.noPack;
+  if ("pack" in c) return !s.noPack;
   if ("noWeapon" in c) return !armed(s);
   if ("armed" in c) return armed(s);
   if ("arrowsBelow" in c) return s.arrows < c.arrowsBelow;
@@ -449,7 +461,7 @@ export function condText(book: Book, c: Cond | undefined): string {
 /** A choice the player can pick, one shown locked (a missing discipline...), or one not shown. */
 export function choiceState(s: AdvState, c: { if?: Cond }, book?: Book): "ok" | "locked" | "hidden" {
   if (check(s, c.if, book)) return "ok";
-  const negative = (x: Cond): boolean => "hasAny" in x || "notDisc" in x || "goldBelow" in x || "notItem" in x || "notFlag" in x || "epBelow" in x || "notRank" in x || "noWeapon" in x || "arrowsBelow" in x || "luneBelow" in x || "notLoreCircle" in x || ("all" in x && x.all.some(negative)) || ("any" in x && x.any.every(negative));
+  const negative = (x: Cond): boolean => "hasAny" in x || "notDisc" in x || "goldBelow" in x || "notItem" in x || "notFlag" in x || "epBelow" in x || "notRank" in x || "noWeapon" in x || "arrowsBelow" in x || "luneBelow" in x || "notLoreCircle" in x || "noPack" in x || ("all" in x && x.all.some(negative)) || ("any" in x && x.any.every(negative));
   return c.if && negative(c.if) ? "hidden" : "locked";
 }
 
@@ -474,7 +486,13 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined, rng: Rn
     const when = (e as { if?: Cond }).if;
     if (when && !check(s, when, book)) continue;
     if ("ep" in e) out.push(...changeEp(book, s, e.ep));
-    else if ("restoreHalf" in e) out.push(...changeEp(book, s, Math.floor((epMax(book, s) - s.ep) / 2)));
+    else if ("restoreHalf" in e && e.restoreHalf === "fight") {
+      // half of what the last fight took; a fight lost (combat.lose) went down to 0, not to the 1 point it leaves
+      const f = s.lastFight;
+      if (f) { const half = Math.floor(f.lost / 2); out.push(...changeEp(book, s, f.beaten ? Math.max(0, half - s.ep) : half)); }
+    } else if ("restoreHalf" in e) out.push(...changeEp(book, s, Math.floor((epMax(book, s) - s.ep) / 2)));
+    else if ("bleed" in e) { s.bleed = { ep: Math.abs(e.bleed), cure: e.cure?.length ? e.cure : ["Potion of Laumspur"] }; out.push({ kind: "ep", label: "Vết thương chảy máu", good: false }); }
+    else if ("noPotions" in e) { s.noPotions = true; out.push({ kind: "item", label: "Không uống được thuốc trước trận", good: false }); }
     else if ("epMax" in e) { s.epBase += e.epMax; out.push(...changeEp(book, s, e.epMax > 0 ? e.epMax : 0)); out.push({ kind: "ep", label: `Sức Bền tối đa ${e.epMax > 0 ? "+" : ""}${e.epMax}`, good: e.epMax > 0 }); }
     else if ("csBase" in e) { s.cs += e.csBase; out.push({ kind: "cs", label: `Kỹ Năng Chiến Đấu ${e.csBase > 0 ? "+" : ""}${e.csBase}`, good: e.csBase > 0 }); }
     else if ("cs" in e) {
@@ -526,13 +544,14 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined, rng: Rn
     } else if ("loseAll" in e) {
       const k = e.loseAll;
       if (k === "weapons" || k === "everything") s.weapons = [];
-      if (k === "backpack" || k === "everything") { s.backpack = []; s.meals = 0; }
+      if (k === "backpack" || k === "pack" || k === "everything") { s.backpack = []; s.meals = 0; }
+      if (k === "pack") s.noPack = true;
       if (k === "meals") s.meals = 0;
       if (k === "special" || k === "everything") { s.special = []; s.arrows = 0; }
       if (k === "gold" || k === "everything") s.gold = 0;
       if (k === "lune" || k === "everything") s.lune = 0;
       s.ep = Math.min(s.ep, epMax(book, s));
-      out.push({ kind: "item", label: k === "gold" ? "Mất hết Vương Miện Vàng" : k === "lune" ? "Mất hết Lune" : k === "everything" ? "Mất toàn bộ hành trang" : k === "weapons" ? "Mất hết vũ khí" : k === "backpack" ? "Mất Ba Lô và mọi thứ trong đó" : k === "meals" ? "Mất hết Phần Ăn" : "Mất các Vật Phẩm Đặc Biệt", good: false });
+      out.push({ kind: "item", label: k === "gold" ? "Mất hết Vương Miện Vàng" : k === "lune" ? "Mất hết Lune" : k === "everything" ? "Mất toàn bộ hành trang" : k === "weapons" ? "Mất hết vũ khí" : k === "backpack" ? "Mất mọi thứ trong Ba Lô" : k === "pack" ? "Mất Ba Lô và mọi thứ trong đó" : k === "meals" ? "Mất hết Phần Ăn" : "Mất các Vật Phẩm Đặc Biệt", good: false });
     } else if ("eat" in e) {
       if (!e.noHunt && !s.flags.nohunt && s.disciplines.includes(profile(book).hunt)) out.push({ kind: "meal", label: `${book.names.disc[profile(book).hunt]}: tự kiếm được cái ăn`, good: true });
       else if (s.meals > 0) { s.meals--; out.push({ kind: "meal", label: "Ăn 1 Phần Ăn", good: true, item: "Meal" }); }
@@ -735,10 +754,12 @@ export function enter(book: Book, s: AdvState, id: string, rng: Rng = Math.rando
   s.offers = [];
   s.pickLeft = undefined;
   s.wield = undefined;
+  s.randomAt = undefined;
   if (!s.visited.includes(id)) s.visited.push(id);
   s.updated = Date.now();
-  // an open wound bleeds every section until a Laumspur potion is drunk
-  if (s.flags.bleeding) ch.push(...changeEp(book, s, -2).map((c) => ({ ...c, label: `${c.label} (vết thương chảy máu)` })));
+  // an open wound bleeds every section until it is cured (saves from before v19 kept it as a flag)
+  if (s.flags.bleeding && !s.bleed) { s.bleed = { ep: 2, cure: ["Potion of Laumspur"] }; delete s.flags.bleeding; }
+  if (s.bleed) ch.push(...changeEp(book, s, -s.bleed.ep).map((c) => ({ ...c, label: `${c.label} (vết thương chảy máu)` })));
   ch.push(...apply(book, s, sec.fx, rng));
   if (sec.pick) openPick(s, "sec", sec.pick.max, sec.pick.from);
   if (sec.end) s.ended = sec.end;
@@ -764,6 +785,16 @@ export function phase(book: Book, s: AdvState): "end" | "combat" | "random" | "c
 export function skipChoice(sec: Section, s: AdvState): Choice | null {
   const k = sec.combat?.skipIf;
   return k && !s.fought && check(s, k.if) ? { text: k.text ?? "Đi tiếp", to: k.to } : null;
+}
+
+/**
+ * The choices offered instead of the section's fight: when a `force` one holds ("if you have lost the
+ * use of one arm, you cannot fight"), only the forced ones, and the fight itself is not offered.
+ */
+export function insteadChoices(sec: Section, s: AdvState, book?: Book): { list: Choice[]; barred: boolean } {
+  const all = sec.combat?.instead ?? [];
+  const forced = all.filter((c) => c.force && check(s, c.if, book));
+  return forced.length ? { list: forced, barred: true } : { list: all.filter((c) => !c.force), barred: false };
 }
 
 /** "If you have X, go to Y": those choices take precedence over the section's random pick. */
@@ -828,9 +859,46 @@ export function compareResult(book: Book, g: CompareGame, s: AdvState, nums: num
   return { result, hero, foes, add, heroTotal, foeTotals, to: o.to ?? "", end: o.end, fx: o.fx };
 }
 
-/** The random number(s) picked for the section's table (summed), with modifiers, and where it leads. */
+/**
+ * The section's random table being played: its own, or a nested one (`out[].then`, "if you are stuck,
+ * pick another number") the earlier picks of this visit led to.
+ */
+export function sectionRandom(sec: Section, s: Pick<AdvState, "randomAt">): RandomPick {
+  let r = sec.random!;
+  for (const i of s.randomAt ?? []) { const nx = r.out[i]?.then; if (!nx) break; r = nx; }
+  return r;
+}
+
+/**
+ * The random number(s) picked for the section's table (summed), with modifiers, and where it leads.
+ * `next`: the range picked leads to another pick here (`then`): call `pickAgain` with it.
+ */
 export function randomResult(book: Book, sec: Section, s: AdvState, nums: number | number[]) {
-  return tableResult(book, sec.random!, s, nums);
+  return tableResult(book, sectionRandom(sec, s), s, nums);
+}
+
+/** After a result with `next`: the section's next pick is that nested table. */
+export function pickAgain(s: AdvState, next: number) {
+  s.randomAt = [...(s.randomAt ?? []), next];
+}
+
+/** The hero's COMBAT SKILL outside a fight: basic score, Lore-circles and the whole-book changes. */
+export const csNow = (book: Book, s: AdvState) => baseCs(book, s) + s.csBook;
+
+/**
+ * The bow the hero shoots with (random.bow): the best of their own (Bow weapons, Special Items that
+ * count as a Bow), else a borrowed one ("Bow"); and what it adds to the number picked.
+ */
+export function bowShot(book: Book, s: AdvState): { bow: string; own: boolean; add: number } {
+  const bows = [...s.weapons, ...s.special].filter((id) => weaponKind(book, s, id) === "Bow");
+  const roll = (id: string) => (itemOn(book, s, id) ? itemDef(book, s, id)?.bowRoll ?? 0 : 0);
+  const best = bows.reduce<string | null>((a, id) => (a === null || roll(id) > roll(a) ? id : a), null);
+  const p = profile(book).weapon;
+  let add = best ? roll(best) : 0;
+  if (masters(s, "Bow") && s.disciplines.includes(p.disc)) add += p.bonus;
+  // Mentora: Weaponmastery makes every missile weapon more accurate
+  if (mkRank(book, s) >= MK.mentora && s.disciplines.includes(p.disc)) add += 2;
+  return { bow: best ?? "Bow", own: !!best, add };
 }
 
 /** Is one of the numbers picked one that `onNumber` names (its condition holding)? */
@@ -843,17 +911,16 @@ export function numberHit(s: AdvState, o: OnNumber, nums: number[], book?: Book)
 export function tableResult(book: Book, r: RandomPick, s: AdvState, nums: number | number[]) {
   const n = typeof nums === "number" ? nums : nums.reduce((a, x) => a + x, 0);
   let add = (r.mods ?? []).reduce((a, m) => a + (check(s, m.if, book) ? m.add : 0), 0);
-  if (r.bow && s.weapons.some((w) => weaponKind(book, s, w) === "Bow")) {
-    const p = profile(book).weapon;
-    if (masters(s, "Bow")) add += p.bonus;
-    // Mentora: Weaponmastery makes every missile weapon more accurate
-    if (mkRank(book, s) >= MK.mentora && s.disciplines.includes(p.disc)) add += 2;
-  }
-  const v = n + add;
+  if (r.bow) add += bowShot(book, s).add;
+  // "if your total is equal to or less than your COMBAT SKILL": the ranges read total − COMBAT SKILL
+  const vs = r.vs === "cs" ? csNow(book, s) : 0;
+  const v = n + add - vs;
   // "if you pick a 0 at any time…": one of the numbers picked leads elsewhere, whatever the total
-  if (r.onNumber && numberHit(s, r.onNumber, typeof nums === "number" ? [nums] : nums, book)) return { n, add, value: v, to: r.onNumber.to, end: undefined, fx: undefined, onNumber: true };
-  const out = r.out.find((o) => v >= o.min && v <= o.max) ?? (v < r.out[0].min ? r.out[0] : r.out[r.out.length - 1]);
-  return { n, add, value: v, to: out.to ?? "", end: out.end, fx: out.fx, onNumber: false };
+  if (r.onNumber && numberHit(s, r.onNumber, typeof nums === "number" ? [nums] : nums, book)) return { n, add, vs, value: v, to: r.onNumber.to, end: undefined, fx: undefined, onNumber: true, next: undefined };
+  const i0 = r.out.findIndex((o) => v >= o.min && v <= o.max);
+  const i = i0 >= 0 ? i0 : v < r.out[0].min ? 0 : r.out.length - 1;
+  const out = r.out[i];
+  return { n, add, vs, value: v, to: out.to ?? "", end: out.end, fx: out.fx, onNumber: false, next: out.then ? i : undefined };
 }
 
 /**
@@ -886,9 +953,10 @@ export function eatMeal(book: Book, s: AdvState): Change[] {
 export function useItem(book: Book, s: AdvState, id: string, rng: Rng = Math.random): Change[] {
   const it = itemDef(book, s, id);
   if (it?.use && has(s, id)) return useDose(book, s, id, it, rng);
-  if (!it?.heal || !has(s, id) || s.ep >= epMax(book, s)) return [];
+  const cure = !!s.bleed?.cure.includes(id);
+  if (!it?.heal || !has(s, id) || (s.ep >= epMax(book, s) && !cure) || s.noPotions) return [];
   takeDose(book, s, id, it);
-  if (/laumspur/i.test(id)) delete s.flags.bleeding;
+  if (s.bleed?.cure.includes(id)) delete s.bleed;
   const left = has(s, id) && (it.uses ?? 1) > 1 ? dosesLeft(book, s, id) : 0;
   return [{ kind: "item", label: `Dùng ${it.name}${left ? ` (còn ${left} lần)` : ""}`, good: true, item: id }, ...changeEp(book, s, it.heal)];
 }
@@ -897,7 +965,7 @@ export function useItem(book: Book, s: AdvState, id: string, rng: Rng = Math.ran
 export function usable(book: Book, s: AdvState, id: string): boolean {
   const it = itemDef(book, s, id);
   if (!it || !has(s, id) || s.ended) return false;
-  return !!it.use || (!!it.heal && s.ep < epMax(book, s));
+  return !!it.use || (!!it.heal && (s.ep < epMax(book, s) || !!s.bleed?.cure.includes(id)) && !s.noPotions);
 }
 
 /** Flag set once the hero is addicted to an item (Adgana). */
@@ -970,21 +1038,49 @@ export interface Battle {
   round: number;
   /** Mind attack in use: index into the profile's `mind` list, or -1. */
   mind: number;
-  over?: "win" | "lose" | "evaded" | "timeout" | "beaten" | "hurt" | "stopped" | "number";
+  over?: "win" | "lose" | "evaded" | "timeout" | "beaten" | "hurt" | "stopped" | "number" | "rolled";
   compare?: "more" | "less" | "equal";
   /** ENDURANCE the hero lost in this fight. */
   lost: number;
   /** A contest on points of its own (combat.heroEp): the hero's points left, and at the start. */
   pool?: number;
   poolMax?: number;
+  /** ENDURANCE when the fight started (for restoreHalf "fight"). */
+  ep0?: number;
+  /** Under water (combat.breath): rounds the hero can hold his breath (picked as the fight starts), and the number picked. */
+  breath?: number;
+  breathN?: number;
+  /** combat.heroLossRoll: where the last number picked instead of a wound leads (`to`). */
+  rollTo?: string;
 }
 
-export function startBattle(book: Book, s: AdvState, sec: Section): Battle {
+/** The foes met in this fight: `if` holding, and those met before (`keep`) with the ENDURANCE they had left. */
+export function fightFoes(s: AdvState, c: Combat, book?: Book): Foe[] {
+  const all = c.foes.filter((def) => check(s, def.if, book)).map((def) => ({ def, ep: def.keep && s.foesLeft?.[def.keep] !== undefined ? s.foesLeft[def.keep] : def.ep }));
+  const alive = all.filter((f) => f.ep > 0);
+  return alive.length ? alive : all.length ? all.map((f) => ({ ...f, ep: Math.max(1, f.ep) })) : c.foes.map((def) => ({ def, ep: def.ep }));
+}
+
+export function startBattle(book: Book, s: AdvState, sec: Section, rng: Rng = Math.random): Battle {
   const c = sec.combat!;
   const avail = mindAllowed(c) ? mindChoices(book, s)[0] ?? -1 : -1;
-  const b: Battle = { foes: c.foes.map((def) => ({ def, ep: def.ep })), idx: 0, round: 0, mind: avail, lost: 0 };
+  const b: Battle = { foes: fightFoes(s, c, book), idx: 0, round: 0, mind: avail, lost: 0, ep0: s.ep };
   if (c.heroEp !== undefined) b.pool = b.poolMax = Math.max(1, c.heroEp === "ep" ? s.ep : c.heroEp);
+  // under water: the rounds the hero can hold his breath (0 = 10)
+  if (c.breath) { const n = pick10(rng); b.breathN = n; b.breath = Math.max(0, (n || 10) + (c.breath.mods ?? []).reduce((a, m) => a + (check(s, m.if, book) ? m.add : 0), 0)); }
   return b;
+}
+
+/**
+ * The fight is over: next-fight changes are spent, potions may be drunk again, what it took is
+ * remembered (restoreHalf "fight") and so is what is left of foes met again (`keep`).
+ */
+function fightOver(s: AdvState, b: Battle) {
+  s.fought = true;
+  s.csNext = 0;
+  delete s.noPotions;
+  s.lastFight = { lost: b.pool !== undefined ? 0 : Math.max(0, (b.ep0 ?? s.ep) - (b.over === "beaten" ? 0 : s.ep)), beaten: b.over === "beaten" && b.pool === undefined };
+  for (const f of b.foes) if (f.def.keep) (s.foesLeft ??= {})[f.def.keep] = Math.max(0, f.ep);
 }
 
 /** The hero's bar in a fight: ENDURANCE, or the points of a contest (combat.heroEp). */
@@ -1080,7 +1176,7 @@ export function fightWeapons(book: Book, s: AdvState, c?: Combat, round?: number
 function weaponWorth(book: Book, s: AdvState, id: string): number {
   const p = profile(book).weapon;
   const mastery = s.disciplines.includes(p.disc) && masters(s, weaponKind(book, s, id)) ? p.bonus : 0;
-  return mastery + (s.special.includes(id) && weaponLike(book, s, id) ? itemDef(book, s, id)?.cs ?? 0 : 0);
+  return mastery + (s.special.includes(id) && weaponLike(book, s, id) && itemOn(book, s, id) ? itemDef(book, s, id)?.cs ?? 0 : 0);
 }
 
 /**
@@ -1102,7 +1198,7 @@ const inHand = (s: AdvState, book?: Book) => (book ? wielded(book, s) : s.wield 
 /** Does the section ask which weapon the hero is using (conditions `wields` / `wieldsMastered`)? */
 export function asksWield(sec: Section): boolean {
   const on = (c: Cond | undefined): boolean => !!c && ("wields" in c || "wieldsMastered" in c || ("all" in c && c.all.some(on)) || ("any" in c && c.any.some(on)));
-  const mods = (m?: { if: Cond }[]) => (m ?? []).some((x) => on(x.if));
+  const mods = (m?: { if?: Cond }[]) => (m ?? []).some((x) => on(x.if));
   return mods(sec.random?.mods) || (sec.choices ?? []).some((c) => on(c.if) || (!!c.roll && ("compare" in c.roll ? mods(c.roll.compare.mods) : mods(c.roll.mods))));
 }
 
@@ -1143,11 +1239,11 @@ export function heroCs(book: Book, s: AdvState, c: Combat, foe: FoeDef, mind = -
     const hand = wielded(book, s, c, round);
     for (const id of s.special) {
       const cs = itemDef(book, s, id)?.cs;
-      if (cs && !forbidden(book, s, c, id) && (!weaponLike(book, s, id) || id === hand)) parts.push({ label: itemName(book, id, s), v: cs });
+      if (cs && itemOn(book, s, id) && !forbidden(book, s, c, id) && (!weaponLike(book, s, id) || id === hand)) parts.push({ label: itemName(book, id, s), v: cs });
     }
   }
   if (c.mods?.cs) parts.push({ label: "Hoàn cảnh", v: c.mods.cs });
-  for (const m2 of c.csIf ?? []) if (check(s, m2.if, book)) parts.push({ label: "Hoàn cảnh", v: m2.add });
+  for (const m2 of c.csIf ?? []) if (round + 1 >= (m2.fromRound ?? 1) && check(s, m2.if, book)) parts.push({ label: "Hoàn cảnh", v: m2.add });
   if (foe.heroCs) parts.push({ label: "Đồng minh", v: foe.heroCs });
   if (!duel && s.csNext) parts.push({ label: "Tạm thời", v: s.csNext });
   if (!duel && s.csBook) parts.push({ label: "Cả cuốn", v: s.csBook });
@@ -1173,6 +1269,10 @@ export interface RoundResult {
   foeKilled: boolean;
   heroKilled: boolean;
   evaded: boolean;
+  /** combat.heroLossRoll: the number picked instead of losing ENDURANCE this round. */
+  lossRoll?: number;
+  /** combat.breath: ENDURANCE lost for want of air this round. */
+  air?: number;
 }
 
 /** One round against the current foe. `evade`: escape this round (the enemy's losses are ignored). */
@@ -1187,7 +1287,7 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
   // "if you pick a 0 at any time during this combat, turn to …": the round ends the fight, harmless
   if (c.onNumber && numberHit(s, c.onNumber, [n], book)) {
     b.round++;
-    b.over = "number"; s.fought = true; s.csNext = 0;
+    b.over = "number"; fightOver(s, b);
     return { n, ratio, foe: foeIdx, foeLoss: 0, heroLoss: 0, mindCost: 0, foeKilled: false, heroKilled: false, evaded: false };
   }
   const [fl, hl] = book.crt[n][crtColumnOf(ratio)];
@@ -1199,9 +1299,20 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
   const hit = fl === KILL ? foe.ep : (fl + (c.foeExtraLoss ?? 0)) * (sommer ? 2 : 1) * (foe.def.double ? 2 : 1) * (am && c.mindMul ? c.mindMul : 1);
   const foeLoss = evade || (c.foeHoldLoss ?? 0) >= b.round ? 0 : hit;
   const held = (foe.def.holdRounds ?? 0) >= b.round;
-  const drain = (c.heroDrain && check(s, c.heroDrain.if) ? c.heroDrain.ep : 0) + (c.mindforce && !knows(s, profile(book).shield) ? c.mindforce : 0);
+  // under water: every round past the breath the hero could hold costs more
+  const air = c.breath && b.breath !== undefined && b.round > b.breath ? c.breath.ep : 0;
+  const drain = (c.heroDrain && check(s, c.heroDrain.if) ? c.heroDrain.ep : 0) + (c.mindforce && !knows(s, profile(book).shield) ? c.mindforce : 0) + air;
   const pts = b.pool !== undefined;
-  const heroLoss = spared ? mindCost : (held ? 0 : hl === KILL ? (pts ? b.pool! : s.ep) : scaledHeroLoss(s, c, hl)) + mindCost + drain;
+  let wound = held ? 0 : hl === KILL ? (pts ? b.pool! : s.ep) : scaledHeroLoss(s, c, hl);
+  // "do not subtract them: pick a number instead" (the Javek's fangs on a padded arm)
+  let lossRoll: number | undefined;
+  if (c.heroLossRoll && wound > 0 && !spared) {
+    lossRoll = pick10(rng);
+    const o = c.heroLossRoll.out.find((x) => lossRoll! >= x.min && lossRoll! <= x.max);
+    wound = o?.end === "death" ? (pts ? b.pool! : s.ep) : 0;
+    if (o?.to) b.rollTo = o.to;
+  }
+  const heroLoss = spared ? mindCost : wound + mindCost + drain;
   if (!evade) foe.ep = Math.max(0, foe.ep - foeLoss);
   if (pts) {
     // a contest on points: they are lost instead of ENDURANCE; at 0 the contest is lost (combat.lose)
@@ -1209,22 +1320,24 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
     b.lost += heroLoss;
     const foeKilled = !evade && foe.ep <= 0;
     if (b.pool <= 0) b.over = "beaten";
+    else if (b.rollTo) b.over = "rolled";
     else if (evade) b.over = "evaded";
     else if (c.stopAt && foe.ep <= c.stopAt.foeEp) b.over = "stopped";
     else if (foeKilled) { if (b.idx < b.foes.length - 1) b.idx++; else b.over = "win"; }
     else if (c.maxRounds && b.round >= c.maxRounds.n) b.over = "timeout";
-    if (b.over) { s.fought = true; s.csNext = 0; }
-    return { n, ratio, foe: foeIdx, foeLoss, heroLoss, mindCost, foeKilled: foeKilled && b.over !== "beaten", heroKilled: false, evaded: evade };
+    if (b.over) fightOver(s, b);
+    return { n, ratio, foe: foeIdx, foeLoss, heroLoss, mindCost, foeKilled: foeKilled && b.over !== "beaten", heroKilled: false, evaded: evade, lossRoll, air };
   }
   s.ep = Math.max(0, s.ep - heroLoss);
   if (heroLoss > 0) s.hurt = true;
   // "If you lose any ENDURANCE, turn immediately to …"
-  if (c.onHurt && heroLoss > 0 && s.ep > 0) { b.over = "hurt"; s.fought = true; s.csNext = 0; return { n, ratio, foe: foeIdx, foeLoss, heroLoss, mindCost, foeKilled: !evade && foe.ep <= 0, heroKilled: false, evaded: evade }; }
+  if (c.onHurt && heroLoss > 0 && s.ep > 0) { b.over = "hurt"; fightOver(s, b); return { n, ratio, foe: foeIdx, foeLoss, heroLoss, mindCost, foeKilled: !evade && foe.ep <= 0, heroKilled: false, evaded: evade, lossRoll, air }; }
   b.lost += heroLoss;
-  if (s.ep <= 0 && c.lose) { s.ep = 1; b.over = "beaten"; s.fought = true; s.csNext = 0; return { n, ratio, foe: foeIdx, foeLoss, heroLoss, mindCost, foeKilled: false, heroKilled: false, evaded: false }; }
+  if (s.ep <= 0 && c.lose) { b.over = "beaten"; fightOver(s, b); s.ep = 1; return { n, ratio, foe: foeIdx, foeLoss, heroLoss, mindCost, foeKilled: false, heroKilled: false, evaded: false, lossRoll, air }; }
   const heroKilled = s.ep <= 0;
   const foeKilled = !evade && foe.ep <= 0;
   if (heroKilled) b.over = "lose";
+  else if (b.rollTo) b.over = "rolled";
   else if (evade) b.over = "evaded";
   else if (c.stopAt && foe.ep <= c.stopAt.foeEp) b.over = "stopped";
   else if (foeKilled) {
@@ -1233,14 +1346,16 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
   } else if (c.maxRounds && b.round >= c.maxRounds.n) b.over = "timeout";
   if (c.compare && !b.over) b.over = "timeout";
   if (c.compare) b.compare = heroLoss > foeLoss ? "more" : heroLoss < foeLoss ? "less" : "equal";
-  if (b.over) { s.fought = true; s.csNext = 0; }
+  if (b.over) fightOver(s, b);
   if (b.over === "win" && c.restoreHalf && b.lost > 0) s.ep = Math.min(epMax(book, s), s.ep + Math.floor(b.lost / 2));
-  return { n, ratio, foe: foeIdx, foeLoss, heroLoss, mindCost, foeKilled, heroKilled, evaded: evade };
+  return { n, ratio, foe: foeIdx, foeLoss, heroLoss, mindCost, foeKilled, heroKilled, evaded: evade, lossRoll, air };
 }
 
 export function canEvade(book: Book, s: AdvState, b: Battle) {
   const e = book.sections[s.section].combat?.evade;
   if (!e || b.over || !check(s, e.if)) return false;
+  // "if you kill the first guard, you can evade": only once that many foes are dead
+  if (e.afterFoes && b.idx < e.afterFoes) return false;
   if (e.any || (e.anyIf && check(s, e.anyIf))) return true;
   return b.round >= (e.after ?? 0) && (e.until === undefined || b.round < e.until);
 }
@@ -1253,6 +1368,7 @@ export function battleExit(book: Book, s: AdvState, b: Battle): string | null {
   if (b.over === "hurt") return c.onHurt ?? "";
   if (b.over === "stopped") return c.stopAt?.to ?? "";
   if (b.over === "number") return c.onNumber?.to ?? "";
+  if (b.over === "rolled") return b.rollTo ?? "";
   if (b.over === "win" && c.winBy) return b.round <= c.winBy.rounds ? c.winBy.fast : c.winBy.slow;
   if (b.over === "evaded") return c.evade?.to ?? "";
   if (c.compare && b.compare) return c.compare[b.compare];
@@ -1267,6 +1383,10 @@ export function battleExit(book: Book, s: AdvState, b: Battle): string | null {
 const rollLinks = (r: ChoiceRoll | undefined): (string | undefined)[] =>
   !r ? [] : "compare" in r ? [r.compare.win.to, r.compare.lose.to, r.compare.tie?.to] : r.out.map((o) => o.to);
 
+/** Sections the nested picks of a random table lead to (`out[].then`). */
+const randomLinks = (r: RandomPick | undefined): (string | undefined)[] => (r?.out ?? []).flatMap((o) => (o.then ? [o.then.onNumber?.to, ...o.then.out.map((x) => x.to), ...randomLinks(o.then)] : []));
+const randomEnds = (r: RandomPick | undefined): boolean => (r?.out ?? []).some((o) => !!o.end || randomEnds(o.then));
+
 /** Problems in a book package (used by the import screen and the tests). */
 export function validateBook(book: Book): string[] {
   const errs: string[] = [];
@@ -1276,9 +1396,10 @@ export function validateBook(book: Book): string[] {
   for (const [id, sec] of Object.entries(book.sections ?? {})) {
     const c = sec.combat;
     const links = [...[...(sec.choices ?? []), ...(c?.instead ?? [])].flatMap((x) => [x.to, x.fail]), ...(sec.random?.out ?? []).map((o) => o.to), ...(sec.choices ?? []).flatMap((x) => rollLinks(x.roll)),
-      c?.win, c?.skipIf?.to, c?.lose, c?.winBy?.fast, c?.winBy?.slow, c?.evade?.to, ...(c?.evade?.alt ?? []).map((a) => a.to), c?.maxRounds?.to, c?.stopAt?.to, c?.onHurt, c?.compare?.more, c?.compare?.less, c?.compare?.equal, c?.onNumber?.to, sec.random?.onNumber?.to].filter((x): x is string => !!x);
+      c?.win, c?.skipIf?.to, c?.lose, c?.winBy?.fast, c?.winBy?.slow, c?.evade?.to, ...(c?.evade?.alt ?? []).map((a) => a.to), c?.maxRounds?.to, c?.stopAt?.to, c?.onHurt, c?.compare?.more, c?.compare?.less, c?.compare?.equal, c?.onNumber?.to, sec.random?.onNumber?.to,
+      ...randomLinks(sec.random), ...(c?.heroLossRoll?.out ?? []).map((o) => o.to)].filter((x): x is string => !!x);
     for (const t of links) if (!book.sections[t]) errs.push(`§${id} → §${t}: không có đoạn này`);
-    if (!links.length && !sec.end && !(sec.random?.out ?? []).some((o) => o.end)) errs.push(`§${id}: ngõ cụt`);
+    if (!links.length && !sec.end && !randomEnds(sec.random)) errs.push(`§${id}: ngõ cụt`);
   }
   return errs;
 }

@@ -9,9 +9,9 @@ import { describe, expect, it } from "vitest";
 import {
   battleExit, canEvade, choiceState, continueRun, discsOf, enter, newRun, phase, playRound, randomResult,
   startBattle, takeOffer, apply, visibleChoices, rollRandom, carryNeeds, playChoice, heroCs, answerRiddle, check,
-  epMax, losePool, masteryCount, profile,
+  epMax, losePool, masteryCount, profile, insteadChoices, sectionRandom, pickAgain,
 } from "../src/adventure/engine";
-import type { AdvState, Book, Choice, Cond, Disc } from "../src/adventure/types";
+import type { AdvState, Book, Choice, Cond, Disc, Section } from "../src/adventure/types";
 
 // node APIs without @types/node in this project
 const env = (globalThis as unknown as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {};
@@ -87,10 +87,11 @@ function doomed(book: Book, hero?: AdvState): Set<string> {
   if (hit) return hit;
   const out = new Set<string>();
   const open = (y: Choice) => !hero || !y.if || !fixedCond(y.if) || check(hero, y.if);
+  const nested = (r: Section["random"]): (string | undefined)[] => (r?.out ?? []).flatMap((o) => [o.to ?? (o.end === "death" ? "†" : ""), ...(o.then ? nested(o.then) : [])]);
   const links = (id: string) => {
     const x = book.sections[id];
     const c = x.combat;
-    return [...[...(x.choices ?? []), ...(c?.instead ?? [])].filter(open).flatMap((y) => [y.to, y.fail]), c?.skipIf?.to, ...(x.random?.out ?? []).map((o) => o.to ?? (o.end === "death" ? "†" : "")),
+    return [...[...(x.choices ?? []), ...(c?.instead ?? [])].filter(open).flatMap((y) => [y.to, y.fail]), c?.skipIf?.to, ...nested(x.random), ...(c?.heroLossRoll?.out ?? []).map((o) => o.to),
       c?.win, c?.lose, c?.onHurt, c?.stopAt?.to, c?.evade?.to, c?.maxRounds?.to, ...Object.values(c?.winBy ?? {}), ...Object.values(c?.compare ?? {})].filter((t): t is string => typeof t === "string" && !!t);
   };
   let changed = true;
@@ -127,14 +128,17 @@ function playOnce(book: Book, s: AdvState, rng: () => number, r: Report, careful
     }
     if (ph === "combat") {
       // now and then take a way out offered instead of the fight
-      const alts = (sec.combat!.instead ?? []).filter((c) => choiceState(s, c) === "ok");
-      if (alts.length && rng() < 0.3) {
+      const inst = insteadChoices(sec, s, book);
+      const alts = inst.list.filter((c) => choiceState(s, c, book) === "ok");
+      if (inst.barred && !alts.length) throw new Error(`§${s.section}: the fight is barred and no way instead is open`);
+      if (alts.length && (inst.barred || rng() < 0.3)) {
         const c = alts[Math.floor(rng() * alts.length)];
+        if (c.roll) { const to = playChoice(book, s, c, rollRandom(c.roll, rng)).to; if (!s.ended && to) enter(book, s, to); continue; }
         if (c.fx) apply(book, s, c.fx);
         enter(book, s, c.to);
         continue;
       }
-      const b = startBattle(book, s, sec);
+      const b = startBattle(book, s, sec, rng);
       // evade now and then; mostly when the fight looks hopeless (as a reader would)
       const grim = () => {
         const foe = b.foes[b.idx];
@@ -148,9 +152,10 @@ function playOnce(book: Book, s: AdvState, rng: () => number, r: Report, careful
       if (to) { enter(book, s, to); continue; }
     }
     if (phase(book, s) === "random") {
-      const res = randomResult(book, sec, s, rollRandom(sec, rng));
+      const res = randomResult(book, sec, s, rollRandom(sectionRandom(sec, s), rng));
       if (res.fx) apply(book, s, res.fx);
       if (res.end) { s.ended = res.end; continue; }
+      if (res.next !== undefined) { pickAgain(s, res.next); continue; }
       if (!res.to || !book.sections[res.to]) throw new Error(`§${s.section}: random leads to "${res.to}"`);
       enter(book, s, res.to);
       continue;

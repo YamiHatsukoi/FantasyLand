@@ -1374,6 +1374,9 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       const r: RoundResult = playRound(book, s, b, evade);
       lastN = r.n;
       onChange();
+      // combat.heroLossRoll: a number picked instead of the wound; combat.breath: no air left
+      if (r.lossRoll !== undefined) say(`Đòn trúng bạn: bốc ${r.lossRoll}. ${r.heroKilled ? "Không qua khỏi!" : b.rollTo ? "" : "Không mất Sức Bền."}`, r.heroKilled ? "bad" : undefined);
+      if (r.air) say(`Hết hơi dưới nước: −${r.air} Sức Bền.`, "bad");
       // the bars follow the show, not the rules (they already changed)
       heroShown = heroBefore;
       foeShown = foeBefore;
@@ -1429,7 +1432,7 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       onChange();
       const win = b.over === "win";
       if (win) await victory();
-      const title = win ? "CHIẾN THẮNG" : b.over === "evaded" ? "ĐÃ THOÁT" : b.over === "timeout" ? (c.compare ? "HẾT HIỆP" : "HẾT GIỜ") : b.over === "beaten" ? "THUA TRẬN" : b.over === "hurt" ? "TRÚNG ĐÒN!" : b.over === "stopped" ? "DỪNG TAY" : b.over === "number" ? `SỐ ${lastN ?? ""}!` : "BẠI TRẬN";
+      const title = win ? "CHIẾN THẮNG" : b.over === "evaded" ? "ĐÃ THOÁT" : b.over === "timeout" ? (c.compare ? "HẾT HIỆP" : "HẾT GIỜ") : b.over === "beaten" ? "THUA TRẬN" : b.over === "hurt" ? "TRÚNG ĐÒN!" : b.over === "stopped" ? "DỪNG TAY" : b.over === "number" ? `SỐ ${lastN ?? ""}!` : b.over === "rolled" ? "DỪNG TRẬN" : "BẠI TRẬN";
       sfx(b.over === "lose" ? "defeat" : "victory");
       const done = (to2: string | null) => { alive = false; releaseOthers(); fit.destroy(); stage.destroy(); el.classList.add("out"); setTimeout(() => el.remove(), 250); playMusic("title"); resolve({ battle: b, exit: to2 }); };
       const alts = b.over === "evaded" ? c.evade?.alt ?? [] : [];
@@ -1455,6 +1458,8 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
     else if (!fightWeapons(book, s, c).length) say(`Bạn không có vũ khí cận chiến: đánh tay không (${unarmedPenalty(book, s)}).`, "bad");
     else if (wielded(book, s, c)) say(`Bạn cầm ${itemName(book, wielded(book, s, c)!, s)}.`);
     if (b.pool !== undefined) say(`Thi đấu bằng ${b.pool} điểm riêng: Sức Bền thật của bạn không đổi.`);
+    if (b.breath !== undefined) say(`Dưới nước: bốc ${b.breathN}${b.breathN === 0 ? " (= 10)" : ""}, bạn nín thở được ${b.breath} hiệp; sau đó mỗi hiệp mất thêm ${c.breath!.ep} Sức Bền.`, "bad");
+    if (c.heroLossRoll) say("Mỗi lần bị thương, bốc một số thay cho việc mất Sức Bền.");
     busy = true;
     render();
     void foeEnters(0).then(() => { busy = false; render(); });

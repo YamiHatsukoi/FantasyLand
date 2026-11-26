@@ -51,6 +51,10 @@ export type Cond =
   | { wields: string | string[] }
   /** Has Weaponskill / Weaponmastery with the weapon in hand ("with the weapon you are using"). */
   | { wieldsMastered: true }
+  /** Still has a Backpack (not lost with `loseAll: "pack"`, or found again). */
+  | { pack: true }
+  /** Has no Backpack ("if you no longer have a Backpack"). */
+  | { noPack: true }
   | { all: Cond[] }
   | { any: Cond[] };
 
@@ -79,8 +83,11 @@ export type Effect = EffectBase & { if?: Cond };
 
 type EffectBase =
   | { ep: number }
-  /** Restores half of the ENDURANCE lost so far (rounded down). */
-  | { restoreHalf: true }
+  /**
+   * Restores half of the ENDURANCE lost so far (rounded down); "fight": half of what the last fight
+   * took (a fight lost with `combat.lose` counts down to 0, not to the 1 point it leaves).
+   */
+  | { restoreHalf: true | "fight" }
   | { cs: number; for?: "combat" | "book" }
   | { gold: number; optional?: boolean }
   /** Lune (book 9): never turned into Gold Crowns by the engine. */
@@ -98,7 +105,8 @@ type EffectBase =
   | { gain: string; type: ItemType; n?: number; optional?: boolean; desc?: string }
   /** Loses an item; `n` copies of it (Meals: n Meals). `into`: kept in that stash (stolen, taken away) for `unstash`. */
   | { lose: string; n?: number; into?: string; orElse?: Effect[] }
-  | { loseAll: "weapons" | "backpack" | "special" | "gold" | "lune" | "meals" | "everything" }
+  /** "pack": the Backpack itself and all in it: no Backpack Items or Meals can be carried until a Backpack is found. */
+  | { loseAll: "weapons" | "backpack" | "pack" | "special" | "gold" | "lune" | "meals" | "everything" }
   /**
    * Loses the n-th item of a list ("erase the second Special Item"); when the list is too short, the
    * first `else` that finds an item ("if you have only one, erase it; if none, the first Backpack Item").
@@ -112,6 +120,13 @@ type EffectBase =
    */
   | { loseHalf: ListKind | "gold" | "lune"; up?: true; into?: string }
   | { eat: true; noHunt?: boolean }
+  /**
+   * An open wound: `bleed` ENDURANCE lost on entering every section from the next one on, until one
+   * of the `cure` items is used (default: a Potion of Laumspur).
+   */
+  | { bleed: number; cure?: string[] }
+  /** Healing items (`heal`) cannot be used until the next fight is over ("unable to swallow any potions prior to the combat"). */
+  | { noPotions: true }
   | { flag: string }
   | { unflag: string }
   /**
@@ -143,6 +158,13 @@ export interface FoeDef {
   double?: boolean;
   /** Added to the hero's COMBAT SKILL while fighting this foe (an ally joins in after the first foe: +2). */
   heroCs?: number;
+  /**
+   * The same creature met again: its ENDURANCE is kept under this name when a fight ends, and a
+   * later foe with the same `keep` starts with what it had left (none left: it is not met again).
+   */
+  keep?: string;
+  /** The foe is in the fight only when this holds ("if the earlier combat listed only two, ignore the third"). */
+  if?: Cond;
 }
 
 export interface Combat {
@@ -154,13 +176,16 @@ export interface Combat {
    * Evading: after `after` rounds have been fought; with `until`, only while fewer than `until` rounds have been (until 1 = the first round only).
    * `if`: evading is possible only when it holds. `any: true`, or `anyIf` holding: at any round (after / until do not count).
    */
-  evade?: { after?: number; until?: number; if?: Cond; any?: boolean; anyIf?: Cond; to: string; alt?: { text: string; to: string }[] };
+  evade?: { after?: number; until?: number; if?: Cond; any?: boolean; anyIf?: Cond; to: string; alt?: { text: string; to: string }[];
+    /** Only once this many foes of the fight are dead ("if you kill the first guard, you can evade"). */
+    afterFoes?: number };
   /** The fight stops as soon as the foe's ENDURANCE is n or less: go to `to`. */
   stopAt?: { foeEp: number; to: string };
   win?: string;
   maxRounds?: { n: number; to: string };
   noMindblast?: boolean;
-  csIf?: { if: Cond; add: number }[];
+  /** COMBAT SKILL changed while `if` holds; `fromRound`: only from that round on (2 = the second and later rounds). */
+  csIf?: { if: Cond; add: number; fromRound?: number }[];
   onHurt?: string;
   /**
    * The first `rounds` rounds (default 1), when `if` holds (e.g. no Huntmastery): COMBAT SKILL changed
@@ -226,8 +251,22 @@ export interface Combat {
    * breaks on a 0, a fall from a plank on a 1).
    */
   onNumber?: OnNumber;
-  /** Choices offered on the fight-start screen instead of fighting ("use the Fireseed instead"). */
+  /**
+   * Choices offered on the fight-start screen instead of fighting ("use the Fireseed instead"). One
+   * with `force` whose `if` holds takes the fight away: only the forced ones are offered.
+   */
   instead?: Choice[];
+  /**
+   * ENDURANCE the hero would lose from the Combat Results Table is not lost: a number is picked
+   * instead, and its range decides (nothing: fight on; `end`: death; `to`: the fight stops there).
+   * The Javek's fangs on a padded arm.
+   */
+  heroLossRoll?: { out: { min: number; max: number; to?: string; end?: "death" }[] };
+  /**
+   * Fighting under water: a number is picked as the fight starts (0 = 10) plus `mods`: the rounds
+   * the hero can hold his breath; every round after those costs `ep` ENDURANCE more.
+   */
+  breath?: { ep: number; mods?: { if: Cond; add: number }[] };
   /** The fight does not happen when `if` holds: the section offers one way on, to `to` (button `text`, default "Đi tiếp"). */
   skipIf?: { if: Cond; to: string; text?: string };
 }
@@ -267,9 +306,17 @@ export interface Choice {
 export interface RandomPick {
   /** Random numbers picked and added together (default 1): the out ranges then cover 0 to 9 × picks. */
   picks?: number;
-  mods?: { if: Cond; add: number }[];
-  out: { min: number; max: number; to?: string; end?: "death" | "victory"; fx?: Effect[] }[];
+  /** `if` absent: it always adds ("pick a number and add 10"). */
+  mods?: { if?: Cond; add: number }[];
+  /** `then`: the range leads to another pick in the same section ("if you are stuck, pick another number"). */
+  out: { min: number; max: number; to?: string; end?: "death" | "victory"; fx?: Effect[]; then?: RandomPick }[];
+  /**
+   * Shooting with a bow: Weaponmastery with Bow, Mentora and the bow's own `bowRoll` (Silver Bow of
+   * Duadon +3) add to the number. The hero's own best bow is used, else a borrowed one (a Bow).
+   */
   bow?: boolean;
+  /** "cs": the hero's COMBAT SKILL (outside a fight) is taken off the total before the ranges are read ("if your total is equal to or less than your COMBAT SKILL"). */
+  vs?: "cs";
   /** Any one of the numbers picked being this one (before modifiers), while `if` holds, leads to `to` instead. */
   onNumber?: OnNumber;
 }
@@ -391,6 +438,10 @@ export interface ItemDef {
   uses?: number;
   /** Never offered when the player picks something to give up (loseChoice). */
   keep?: boolean;
+  /** Added to the number picked when shooting with this bow (random.bow): the Silver Bow of Duadon +3. */
+  bowRoll?: number;
+  /** Its bonuses (cs, epMax) do not count while this holds (no shield while an arm is useless). */
+  offIf?: Cond;
   /**
    * Usable before a fight (a drug such as Adgana): +cs COMBAT SKILL in the next fight. With `addict`,
    * each dose taken while not addicted picks a number 0-9: in [min, max] the hero becomes addicted,
@@ -489,6 +540,18 @@ export interface AdvState {
   doses?: Record<string, number>;
   /** Gear taken away (confiscated) by name, to be given back later. */
   stashes?: Record<string, Stash>;
+  /** The Backpack is lost (loseAll "pack"): no Backpack Items or Meals until one is found. */
+  noPack?: boolean;
+  /** An open wound bleeding every section (Effect `bleed`). */
+  bleed?: { ep: number; cure: string[] };
+  /** Healing items cannot be used until the next fight is over (Effect `noPotions`). */
+  noPotions?: boolean;
+  /** ENDURANCE the last fight took (for restoreHalf "fight"), and whether it was lost (combat.lose). */
+  lastFight?: { lost: number; beaten: boolean };
+  /** ENDURANCE left of foes met again (FoeDef.keep). */
+  foesLeft?: Record<string, number>;
+  /** Which nested pick of the section's random table is being played (indexes of `out` entries with `then`). */
+  randomAt?: number[];
   flags: Record<string, boolean>;
   /** COMBAT SKILL changes: for the next combat only, and for the rest of the book. */
   csNext: number;

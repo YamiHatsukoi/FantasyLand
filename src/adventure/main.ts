@@ -23,7 +23,7 @@ import {
   choiceState, condText, discsOf, dosesLeft, drop, enter, itemDef, losePool, epMax, itemName, newRun, pendingLoss, phase, pick10,
   profile, randomResult, playChoice, retry, takeOffer, useItem, usable, answerRiddle, apply, continueRun, visibleChoices, type Change,
   offerOpen, openChoicePick, asksWield, fightWeapons, wielded,
-  baseCs, randomPicks, compareShape, carryNeeds, loreCircles, masteryCount, newSeries, ownDiscs, rankName, tierOf,
+  baseCs, randomPicks, compareShape, sectionRandom, pickAgain, insteadChoices, room, fightFoes, carryNeeds, loreCircles, masteryCount, newSeries, ownDiscs, rankName, tierOf,
 } from "./engine";
 import { runFight } from "./fight";
 import { importBook, listBooks, loadBook, newShelfLink, removeBook, saveShelfLink, shelfLink, syncShelf, type BookEntry } from "./library";
@@ -912,11 +912,13 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       if (ph === "end") return endPanel();
       if (ph === "combat") {
         const c = sec.combat!;
-        dock.append(
-          h("div", { class: "adv-foes" }, ...c.foes.map((f) => h("div", { class: "adv-foe fr-foe" }, h("b", null, f.name), h("span", null, ui("cs", 1), String(f.cs), ui("ep", 1), String(f.ep))))),
-          gameBtn("Vào trận", () => void fight(), { kind: "red", icon: "cs", cls: "block big" }));
+        // "if you have lost the use of one arm, you cannot fight": a forced way instead takes the fight away
+        const inst = insteadChoices(sec, s, book);
+        dock.append(...nn(
+          h("div", { class: "adv-foes" }, ...fightFoes(s, c, book).map((f) => h("div", { class: "adv-foe fr-foe" }, h("b", null, f.def.name), h("span", null, ui("cs", 1), String(f.def.cs), ui("ep", 1), String(f.ep))))),
+          inst.barred ? null : gameBtn("Vào trận", () => void fight(), { kind: "red", icon: "cs", cls: "block big" })));
         // "instead of fighting…": choices offered before the fight starts
-        for (const alt of c.instead ?? []) {
+        for (const alt of inst.list) {
           const st = choiceState(s, alt, book);
           if (st === "hidden") continue;
           dock.append(h("button", { class: `adv-choice ${st === "locked" ? "locked fr-slot" : "fr-btn"}`, type: "button", disabled: st === "locked", onclick: () => { sfx("click"); pick(alt); } },
@@ -936,13 +938,17 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
           hand?.remove();
           // "pick two numbers and add them together": one wheel per number
           const nums: number[] = [];
-          for (let i = 0; i < randomPicks(sec); i++) { if (i) await sleep(350); nums.push(await wheelRoll(wheel)); }
+          for (let i = 0; i < randomPicks(sectionRandom(sec, s)); i++) { if (i) await sleep(350); nums.push(await wheelRoll(wheel)); }
           const n = nums.reduce((a, x) => a + x, 0);
           const res = randomResult(book, sec, s, nums);
           const extra = res.fx ? apply(book, s, res.fx) : [];
           if (res.end) { s.ended = res.end; save(true); showChanges(extra); renderChips(); }
-          dock.append(h("div", { class: "adv-roll fr-chip" }, `Số ${nums.length > 1 ? `${nums.join(" + ")} = ${n}` : n}${res.add ? ` ${res.add > 0 ? "+" : ""}${res.add} = ${res.value}` : ""}`),
-            gameBtn("Tiếp tục", () => (res.end ? render() : void goTo(res.to, extra)), { kind: "gold", cls: "block big" }));
+          // "if you are stuck, pick another number": the next pick is played here
+          if (res.next !== undefined && !res.end) { pickAgain(s, res.next); if (extra.length) showChanges(extra); renderChips(); }
+          const total = res.add ? ` ${res.add > 0 ? "+" : ""}${res.add} = ${n + res.add}` : "";
+          const vs = res.vs ? ` − Kỹ Năng Chiến Đấu ${res.vs} = ${res.value}` : "";
+          dock.append(h("div", { class: "adv-roll fr-chip" }, `Số ${nums.length > 1 ? `${nums.join(" + ")} = ${n}` : n}${total}${vs}`),
+            gameBtn(res.next !== undefined && !res.end ? "Bốc lại" : "Tiếp tục", () => (res.end || res.next !== undefined ? render() : void goTo(res.to, extra)), { kind: "gold", cls: "block big" }));
           save();
         }, { kind: "gold", icon: "dice", cls: "block big" });
         dock.append(wheel, rollBtn);
@@ -1076,9 +1082,9 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
             h("div", { class: "adv-loot-h" }, ui("skull", 2), h("b", null, `${o.into ? "Chọn" : "Phải bỏ lại"} ${o.n} món${o.loseChoice === "weapon" ? " vũ khí" : o.loseChoice === "backpack" ? " trong Ba Lô" : o.loseChoice === "special" ? " Vật Phẩm Đặc Biệt" : ""}${o.into ? " để giao ra" : ""}`)),
             h("div", { class: "adv-opt-grid" }, ...pool.map((id) => h("button", { class: "adv-opt fr-btn", type: "button", onclick: () => { sfx("debuff"); take(id); } }, h("span", { class: "adv-item-l" }, iconEl(itemIcon(id), 2), h("b", null, itemName(book, id)))))));
         }
-        const full = o.type !== "special" && (o.type === "weapon" ? s.weapons.length >= 2 : s.backpack.length + s.meals >= 8);
+        const full = o.gain !== "Backpack" && o.type !== "special" && room(s, o.type) <= 0;
         return h("div", { class: `adv-loot fr-parch${shut ? " shut" : ""}` }, h("span", { class: "adv-loot-ic" }, iconEl(itemIcon(o.gain, o.type), 2)),
-          h("div", { class: "adv-loot-t" }, h("b", null, itemLabel(book, o)), o.desc ? h("small", null, o.desc) : null, shutNote ?? (full ? h("small", { class: "bad" }, o.type === "weapon" ? "Đã mang đủ 2 vũ khí: bỏ bớt trong Hành trang" : "Ba Lô đã đầy: bỏ bớt trong Hành trang") : null)),
+          h("div", { class: "adv-loot-t" }, h("b", null, itemLabel(book, o)), o.desc ? h("small", null, o.desc) : null, shutNote ?? (full ? h("small", { class: "bad" }, o.type === "weapon" ? "Đã mang đủ 2 vũ khí: bỏ bớt trong Hành trang" : s.noPack ? "Không có Ba Lô để đựng" : "Ba Lô đã đầy: bỏ bớt trong Hành trang") : null)),
           gameBtn("Nhặt", () => take(), { kind: "gold", cls: "small", disabled: full || shut }));
       }).filter(Boolean) as HTMLElement[];
       // "you may take any two": how many more the player may still take
@@ -1168,7 +1174,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
               s.arrows ? tile("arrows", "Mũi tên", String(s.arrows)) : tile("meal", "Phần Ăn", String(s.meals)))),
           h("div", { class: "adv-inv" },
             h("div", { class: "adv-inv-sec w" }, h("div", { class: "adv-inv-t" }, ui("weapons", 1), "Vũ khí", h("span", null, `${s.weapons.length}/2`)), h("div", { class: "adv-grid two" }, ...weapons)),
-            h("div", { class: "adv-inv-sec b" }, h("div", { class: "adv-inv-t" }, ui("backpack", 1), "Ba Lô", h("span", null, `${s.backpack.length + s.meals}/8`)), h("div", { class: "adv-grid" }, ...bag)),
+            h("div", { class: "adv-inv-sec b" }, h("div", { class: "adv-inv-t" }, ui("backpack", 1), "Ba Lô", h("span", null, s.noPack ? "Không có Ba Lô" : `${s.backpack.length + s.meals}/8`)), h("div", { class: "adv-grid" }, ...bag)),
             h("div", { class: "adv-inv-sec sp" }, h("div", { class: "adv-inv-t" }, ui("special", 1), "Vật Phẩm Đặc Biệt", h("span", null, String(s.special.length))), h("div", { class: "adv-grid" }, ...specials))),
           detail,
           h("div", { class: "adv-inv-t" }, ui("book", 1), `Kỹ năng ${seriesName(book)}`, rankName(s) ? h("span", null, rankName(s)) : null),
