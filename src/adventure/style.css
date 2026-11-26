@@ -287,6 +287,8 @@
 .adv-loots-n { margin-left: auto; font-family: var(--body, inherit); font-size: 13px; color: var(--tx); opacity: .85; }
 .adv-loot.lose { flex-direction: column; align-items: stretch; gap: 8px; padding: 4px; }
 .adv-loot-h { display: flex; align-items: center; gap: 8px; }
+.adv-bet { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.adv-bet-n { width: 88px; padding: 6px 8px; font: inherit; font-size: 16px; border-radius: 6px; border: 2px solid var(--brass); background: rgba(0, 0, 0, .25); color: var(--tx); }
 .adv-loot .adv-opt { color: var(--tx); }
 
 /* end of the adventure */

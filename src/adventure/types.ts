@@ -36,6 +36,12 @@ export type Cond =
   | { lune: number }
   /** Fewer than n Lune. */
   | { luneBelow: number }
+  /** At least n Kika (the iron coin of Helgedad, book 12; kept apart from Gold Crowns and Lune). */
+  | { kika: number }
+  /** Fewer than n Kika. */
+  | { kikaBelow: number }
+  /** The weapon in hand is none of these (item keys or weapon kinds); false when unarmed. */
+  | { notWields: string[] }
   /** Weaponskill / Weaponmastery / Grand Weaponmastery with this weapon (item key: "Bow", "Sword"…). */
   | { mastered: string }
   /** Carries at least one item of that kind that could be given up (items with `keep` do not count). */
@@ -78,7 +84,8 @@ export interface NthPick { kind: ListKind; n: number | "last" }
 export type PickItem =
   | { gain: string; type: ItemType; n?: number; desc?: string }
   | { gold: number }
-  | { lune: number };
+  | { lune: number }
+  | { kika: number };
 
 /** Any effect may carry `if`: it applies only when the condition holds. */
 export type Effect = EffectBase & { if?: Cond };
@@ -94,6 +101,15 @@ type EffectBase =
   | { gold: number; optional?: boolean }
   /** Lune (book 9): never turned into Gold Crowns by the engine. */
   | { lune: number; optional?: boolean }
+  /** Kika (book 12): never turned into Gold Crowns by the engine. */
+  | { kika: number; optional?: boolean }
+  /**
+   * A wager of the player's own choosing: they pick how many coins (at least `min`, at most what
+   * they have) go into the stash `into`; nothing goes on until it is placed. `payBet` pays it out.
+   */
+  | { bet: "kika" | "gold"; min?: number; into: string }
+  /** The wager in stash `name` is won: `mul` times the stake is paid (2: "double the amount you staked"). Lost wagers stay in the stash. */
+  | { payBet: string; mul: number }
   | { arrows: number }
   /**
    * The player picks what to give up. `into`: what is given up goes into that stash (a wager, an item
@@ -108,7 +124,7 @@ type EffectBase =
   /** Loses an item; `n` copies of it (Meals: n Meals). `into`: kept in that stash (stolen, taken away) for `unstash`. */
   | { lose: string; n?: number; into?: string; orElse?: Effect[] }
   /** "pack": the Backpack itself and all in it: no Backpack Items or Meals can be carried until a Backpack is found. */
-  | { loseAll: "weapons" | "backpack" | "pack" | "special" | "gold" | "lune" | "meals" | "everything" }
+  | { loseAll: "weapons" | "backpack" | "pack" | "special" | "gold" | "lune" | "kika" | "meals" | "everything" }
   /**
    * Loses the n-th item of a list ("erase the second Special Item"); when the list is too short, the
    * first `else` that finds an item ("if you have only one, erase it; if none, the first Backpack Item").
@@ -120,7 +136,7 @@ type EffectBase =
    * Loses half of the list (Backpack: Meals included), picked at random, or half the Gold Crowns / Lune
    * of the Belt Pouch ("gold", "lune"), or half the Meals ("meals"); the number lost is rounded down, `up`: rounded up.
    */
-  | { loseHalf: ListKind | "gold" | "lune" | "meals"; up?: true; into?: string }
+  | { loseHalf: ListKind | "gold" | "lune" | "kika" | "meals"; up?: true; into?: string }
   /** One dose of that item is used up without its effect (Laumwort: one of three); the item goes with its last dose. */
   | { dose: string }
   | { eat: true; noHunt?: boolean }
@@ -167,6 +183,8 @@ export interface FoeDef {
    * later foe with the same `keep` starts with what it had left (none left: it is not met again).
    */
   keep?: string;
+  /** What the foe is, for item bonuses against it (`csVs`): "darklord"… */
+  tags?: string[];
   /** The foe is in the fight only when this holds ("if the earlier combat listed only two, ignore the third"). */
   if?: Cond;
 }
@@ -196,7 +214,14 @@ export interface Combat {
    * by `cs`; `noHeroLoss`: the hero loses no ENDURANCE in them; `unarmed`: the hero fights bare-handed
    * in them (no weapon, no Weaponmastery bonus), armed again afterwards.
    */
-  firstRound?: { cs?: number; rounds?: number; if?: Cond; noHeroLoss?: boolean; unarmed?: boolean };
+  firstRound?: { cs?: number; rounds?: number; if?: Cond; noHeroLoss?: boolean; unarmed?: boolean;
+    /** Weapons (keys or kinds) not usable in those rounds ("if you survive the first three rounds you retrieve the Sommerswerd"). */
+    forbid?: string[] };
+  /**
+   * "If you lose more ENDURANCE than your enemy in the first round, any you lose afterwards in this
+   * combat is permanent": later losses also lower the basic ENDURANCE.
+   */
+  scarIfWorse?: boolean;
   foeExtraLoss?: number;
   heroDrain?: { ep: number; if?: Cond };
   /** While `if` holds, every round the hero loses ENDURANCE they lose `ep` more ("add 2 to any ENDURANCE point losses": poison). */
@@ -462,6 +487,16 @@ export interface ItemDef {
    * losing `epBase` basic ENDURANCE for good; doses taken once addicted give `cs` instead.
    */
   use?: { cs: number; addict?: { roll: [number, number]; epBase: number; cs: number } };
+  /** COMBAT SKILL instead of `cs` against foes with this tag (Helshezag: +7 against a Darklord). */
+  csVs?: { tag: string; cs: number };
+  /** While it is the weapon in hand: `ep` basic ENDURANCE lost for good every round from `fromRound` on (Helshezag). */
+  drain?: { ep: number; fromRound: number };
+  /** Only used in a fight when the player says so ("if you wish to use it"): a toggle on the battle screen. */
+  optIn?: boolean;
+  /** Kept in the Quiver in place of an Arrow (Zejar-dulaga): one Arrow fewer fits. */
+  quiverSlot?: boolean;
+  /** Also a Meal: `eat` takes it when there is no plain Meal, and its `heal` is restored. */
+  meal?: boolean;
 }
 
 export interface StartPick {
@@ -507,6 +542,8 @@ export type Offer = (
   | { gain: string; type: ItemType; n: number; desc?: string }
   | { gold: number }
   | { lune: number }
+  | { kika: number }
+  | { bet: "kika" | "gold"; min: number; into: string }
   | { loseChoice: LoseKind; n: number; into?: string; except?: string[] }
 ) & {
   /** Pick-limited loot: offers of one group share `AdvState.pickLeft[group]`. */
@@ -516,7 +553,7 @@ export type Offer = (
 };
 
 export interface Stash {
-  weapons: string[]; backpack: string[]; special: string[]; meals: number; gold: number; arrows: number; lune?: number;
+  weapons: string[]; backpack: string[]; special: string[]; meals: number; gold: number; arrows: number; lune?: number; kika?: number;
   /** Where each item sat on its list when taken (index, parallel to the lists; -1 or absent: unknown), to give it back there. */
   pos?: { weapons: number[]; backpack: number[]; special: number[] };
 }
@@ -540,6 +577,10 @@ export interface AdvState {
   arrows: number;
   /** Lune (book 9's silver coins), apart from Gold Crowns; absent = none. */
   lune?: number;
+  /** Kika (book 12's iron coins), apart from Gold Crowns; absent = none. */
+  kika?: number;
+  /** Weapons the hero chose not to fight with in the current fight (items with `optIn`); cleared when it ends. */
+  unused?: string[];
   /** How many more items each pick-limited group of the section's offers allows. */
   pickLeft?: Record<string, number>;
   /** The weapon the player chose to use in the current section ("the weapon you are using"); absent = the engine's pick. */

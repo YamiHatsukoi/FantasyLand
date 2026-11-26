@@ -158,7 +158,7 @@ export interface NewHero {
 }
 
 function giveKit(book: Book, s: AdvState, picks: number[][], skipOwned: boolean) {
-  const arrows = (n?: number) => { if (n) s.arrows = Math.min(has(s, "Quiver") ? 6 : 0, s.arrows + n); };
+  const arrows = (n?: number) => { if (n) s.arrows = Math.min(arrowCap(book, s), s.arrows + n); };
   for (const it of book.kit.items) if (!skipOwned || !has(s, it.gain)) { give(book, s, it.gain, it.type, it.n ?? 1); arrows(it.arrows); }
   book.kit.picks.forEach((p, i) => {
     for (const idx of picks[i] ?? []) {
@@ -329,6 +329,8 @@ export function give(book: Book, s: AdvState, id: string, type: ItemType, n = 1)
   }
   const gained = epMax(book, s) - before;
   if (gained > 0) s.ep += gained;
+  // kept in the Quiver in place of an Arrow: with six Arrows, one is discarded for it
+  if (left < n && itemDef(book, s, id)?.quiverSlot) s.arrows = Math.min(s.arrows, arrowCap(book, s));
   return left;
 }
 
@@ -430,6 +432,12 @@ export function check(s: AdvState, c: Cond | undefined, book?: Book): boolean {
   if ("arrows" in c) return s.arrows >= c.arrows;
   if ("luneBelow" in c) return (s.lune ?? 0) < c.luneBelow;
   if ("lune" in c) return (s.lune ?? 0) >= c.lune;
+  if ("kikaBelow" in c) return (s.kika ?? 0) < c.kikaBelow;
+  if ("kika" in c) return (s.kika ?? 0) >= c.kika;
+  if ("notWields" in c) {
+    const w = inHand(s, book);
+    return !!w && !c.notWields.includes(w) && !(!!book && c.notWields.includes(weaponKind(book, s, w)));
+  }
   if ("notFlag" in c) return !s.flags[c.notFlag];
   if ("flag" in c) return !!s.flags[c.flag];
   return true;
@@ -455,6 +463,7 @@ export function condText(book: Book, c: Cond | undefined): string {
   if ("rank" in c) return `cần ${c.rank} kỹ năng`;
   if ("arrows" in c) return `cần ${c.arrows} mũi tên`;
   if ("lune" in c) return `cần ${c.lune} Lune`;
+  if ("kika" in c) return `cần ${c.kika} Kika`;
   if ("meals" in c) return `cần ${c.meals} Phần Ăn`;
   if ("loreCircle" in c) return `cần ${loreCircleName(book, c.loreCircle)}`;
   return "";
@@ -463,7 +472,7 @@ export function condText(book: Book, c: Cond | undefined): string {
 /** A choice the player can pick, one shown locked (a missing discipline...), or one not shown. */
 export function choiceState(s: AdvState, c: { if?: Cond }, book?: Book): "ok" | "locked" | "hidden" {
   if (check(s, c.if, book)) return "ok";
-  const negative = (x: Cond): boolean => "hasAny" in x || "notDisc" in x || "goldBelow" in x || "notItem" in x || "notFlag" in x || "epBelow" in x || "notRank" in x || "noWeapon" in x || "arrowsBelow" in x || "luneBelow" in x || "notLoreCircle" in x || "noPack" in x || ("all" in x && x.all.some(negative)) || ("any" in x && x.any.every(negative));
+  const negative = (x: Cond): boolean => "hasAny" in x || "notDisc" in x || "goldBelow" in x || "notItem" in x || "notFlag" in x || "epBelow" in x || "notRank" in x || "noWeapon" in x || "arrowsBelow" in x || "luneBelow" in x || "kikaBelow" in x || "notWields" in x || "notLoreCircle" in x || "noPack" in x || ("all" in x && x.all.some(negative)) || ("any" in x && x.any.every(negative));
   return c.if && negative(c.if) ? "hidden" : "locked";
 }
 
@@ -504,6 +513,19 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined, rng: Rn
     } else if ("gold" in e) {
       if (e.optional && e.gold > 0) { s.offers.push({ gold: e.gold }); continue; }
       out.push(...changeGold(s, e.gold));
+    } else if ("kika" in e) {
+      if (e.optional && e.kika > 0) { s.offers.push({ kika: e.kika }); continue; }
+      out.push(...changeKika(s, e.kika));
+    } else if ("bet" in e) {
+      // nothing to stake: no wager
+      if ((e.bet === "kika" ? s.kika ?? 0 : s.gold) > 0) s.offers.push({ bet: e.bet, min: e.min ?? 1, into: e.into });
+    } else if ("payBet" in e) {
+      const st = s.stashes?.[e.payBet];
+      if (st) {
+        if (st.kika) out.push(...changeKika(s, st.kika * e.mul));
+        if (st.gold) out.push(...changeGold(s, st.gold * e.mul));
+        delete s.stashes![e.payBet];
+      }
     } else if ("lune" in e) {
       if (e.optional && e.lune > 0) { s.offers.push({ lune: e.lune }); continue; }
       out.push(...changeLune(s, e.lune));
@@ -516,11 +538,11 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined, rng: Rn
       // nothing to lose: the fallback ("if you have no Backpack Items, you lose a Weapon instead")
       if (!pool.length && e.orElse) out.push(...apply(book, s, e.orElse, rng));
       else out.push(...removeEntries(book, s, randomEntries(pool, e.loseRandom.n, rng), e.into));
-    } else if ("loseHalf" in e && (e.loseHalf === "gold" || e.loseHalf === "lune")) {
+    } else if ("loseHalf" in e && (e.loseHalf === "gold" || e.loseHalf === "lune" || e.loseHalf === "kika")) {
       // half the Belt Pouch: the number lost is rounded down (`up`: rounded up)
-      const have = e.loseHalf === "gold" ? s.gold : s.lune ?? 0;
+      const have = e.loseHalf === "gold" ? s.gold : e.loseHalf === "lune" ? s.lune ?? 0 : s.kika ?? 0;
       const lost = e.up ? Math.ceil(have / 2) : Math.floor(have / 2);
-      if (lost) out.push(...(e.loseHalf === "gold" ? changeGold(s, -lost) : changeLune(s, -lost)));
+      if (lost) out.push(...(e.loseHalf === "gold" ? changeGold(s, -lost) : e.loseHalf === "lune" ? changeLune(s, -lost) : changeKika(s, -lost)));
     } else if ("loseHalf" in e && e.loseHalf === "meals") {
       const lost = e.up ? Math.ceil(s.meals / 2) : Math.floor(s.meals / 2);
       if (lost) { s.meals -= lost; out.push({ kind: "meal", label: `Mất ${lost} Phần Ăn`, good: false, item: "Meal" }); }
@@ -532,7 +554,7 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined, rng: Rn
       out.push(...removeEntries(book, s, randomEntries(all, e.up ? Math.ceil(all.length / 2) : Math.floor(all.length / 2), rng), e.into));
     } else if ("arrows" in e) {
       const before = s.arrows;
-      s.arrows = Math.max(0, Math.min(has(s, "Quiver") ? 6 : 0, s.arrows + e.arrows));
+      s.arrows = Math.max(0, Math.min(arrowCap(book, s), s.arrows + e.arrows));
       if (s.arrows !== before) out.push({ kind: "item", label: `Mũi tên ${s.arrows - before > 0 ? "+" : ""}${s.arrows - before}`, good: s.arrows > before, item: "Arrow" });
     } else if ("loseChoice" in e) {
       // nothing to pick from: the fallback ("if you have no Backpack Items, you lose a Weapon instead")
@@ -558,11 +580,20 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined, rng: Rn
       if (k === "special" || k === "everything") { s.special = []; s.arrows = 0; }
       if (k === "gold" || k === "everything") s.gold = 0;
       if (k === "lune" || k === "everything") s.lune = 0;
+      if (k === "kika" || k === "everything") s.kika = 0;
       s.ep = Math.min(s.ep, epMax(book, s));
-      out.push({ kind: "item", label: k === "gold" ? "Mất hết Vương Miện Vàng" : k === "lune" ? "Mất hết Lune" : k === "everything" ? "Mất toàn bộ hành trang" : k === "weapons" ? "Mất hết vũ khí" : k === "backpack" ? "Mất mọi thứ trong Ba Lô" : k === "pack" ? "Mất Ba Lô và mọi thứ trong đó" : k === "meals" ? "Mất hết Phần Ăn" : "Mất các Vật Phẩm Đặc Biệt", good: false });
+      out.push({ kind: "item", label: k === "gold" ? "Mất hết Vương Miện Vàng" : k === "lune" ? "Mất hết Lune" : k === "kika" ? "Mất hết Kika" : k === "everything" ? "Mất toàn bộ hành trang" : k === "weapons" ? "Mất hết vũ khí" : k === "backpack" ? "Mất mọi thứ trong Ba Lô" : k === "pack" ? "Mất Ba Lô và mọi thứ trong đó" : k === "meals" ? "Mất hết Phần Ăn" : "Mất các Vật Phẩm Đặc Biệt", good: false });
     } else if ("eat" in e) {
       if (!e.noHunt && !s.flags.nohunt && s.disciplines.includes(profile(book).hunt)) out.push({ kind: "meal", label: `${book.names.disc[profile(book).hunt]}: tự kiếm được cái ăn`, good: true });
       else if (s.meals > 0) { s.meals--; out.push({ kind: "meal", label: "Ăn 1 Phần Ăn", good: true, item: "Meal" }); }
+      else if (s.backpack.some((id) => itemDef(book, s, id)?.meal)) {
+        // a food carried as a Meal (Gnallia: each restores 2 ENDURANCE)
+        const id = s.backpack.find((x) => itemDef(book, s, x)?.meal)!;
+        const it = itemDef(book, s, id)!;
+        takeDose(book, s, id, it);
+        out.push({ kind: "meal", label: `Ăn ${itemName(book, id)}`, good: true, item: id });
+        if (it.heal) out.push(...changeEp(book, s, it.heal));
+      }
       else out.push({ kind: "meal", label: "Không có gì ăn", good: false }, ...changeEp(book, s, -3));
     } else if ("stash" in e) {
       addToStash(s, e.stash, confiscate(book, s, e.only, !!e.weaponLike));
@@ -590,7 +621,8 @@ export function apply(book: Book, s: AdvState, fx: Effect[] | undefined, rng: Rn
         if (st.meals) back("Meal", "meal", st.meals);
         s.gold = Math.min(MAX_GOLD, s.gold + st.gold);
         if (st.lune) s.lune = (s.lune ?? 0) + st.lune;
-        s.arrows = Math.min(has(s, "Quiver") ? 6 : 0, s.arrows + st.arrows);
+        if (st.kika) s.kika = (s.kika ?? 0) + st.kika;
+        s.arrows = Math.min(arrowCap(book, s), s.arrows + st.arrows);
         delete s.stashes![e.unstash];
         out.push({ kind: "item", label: "Lấy lại hành trang", good: true });
       }
@@ -616,7 +648,7 @@ function addToStash(s: AdvState, name: string, took: Stash) {
   const at = (st: Stash, k: "weapons" | "backpack" | "special") => st[k].map((_, i) => st.pos?.[k]?.[i] ?? -1);
   const pos = (k: "weapons" | "backpack" | "special") => [...(old ? at(old, k) : []), ...at(took, k)];
   s.stashes[name] = old ? { weapons: [...old.weapons, ...took.weapons], backpack: [...old.backpack, ...took.backpack], special: [...old.special, ...took.special],
-    meals: old.meals + took.meals, gold: old.gold + took.gold, arrows: old.arrows + took.arrows, lune: (old.lune ?? 0) + (took.lune ?? 0),
+    meals: old.meals + took.meals, gold: old.gold + took.gold, arrows: old.arrows + took.arrows, lune: (old.lune ?? 0) + (took.lune ?? 0), kika: (old.kika ?? 0) + (took.kika ?? 0),
     pos: { weapons: pos("weapons"), backpack: pos("backpack"), special: pos("special") } } : took;
 }
 
@@ -641,7 +673,7 @@ export function confiscate(book: Book, s: AdvState, only: StashPart[] | undefine
   }
   took.pos = pos;
   // Lune are money too: they go with the Gold Crowns
-  if (part("gold")) { took.gold = s.gold; s.gold = 0; if (s.lune) { took.lune = s.lune; s.lune = 0; } }
+  if (part("gold")) { took.gold = s.gold; s.gold = 0; if (s.lune) { took.lune = s.lune; s.lune = 0; } if (s.kika) { took.kika = s.kika; s.kika = 0; } }
   if (part("arrows") || (took.special.includes("Quiver") && !s.special.includes("Quiver"))) { took.arrows = s.arrows; s.arrows = 0; }
   s.ep = Math.min(s.ep, epMax(book, s));
   return took;
@@ -653,6 +685,20 @@ function changeLune(s: AdvState, d: number): Change[] {
   s.lune = Math.max(0, before + d);
   const real = s.lune - before;
   return real ? [{ kind: "gold", label: `${real > 0 ? "+" : ""}${real} Lune`, good: real > 0, item: "Lune" }] : [];
+}
+
+/** Kika: no upper limit, never turned into Gold Crowns. */
+function changeKika(s: AdvState, d: number): Change[] {
+  const before = s.kika ?? 0;
+  s.kika = Math.max(0, before + d);
+  const real = s.kika - before;
+  return real ? [{ kind: "gold", label: `${real > 0 ? "+" : ""}${real} Kika`, good: real > 0, item: "Kika" }] : [];
+}
+
+/** Arrows the Quiver holds: six, one fewer for each Special Item kept in it in place of an Arrow (Zejar-dulaga). */
+export function arrowCap(book: Book | undefined, s: AdvState): number {
+  if (!has(s, "Quiver")) return 0;
+  return Math.max(0, 6 - (book ? s.special.filter((id) => itemDef(book, s, id)?.quiverSlot).length : 0));
 }
 
 /** One item of an Action Chart list, where it sits. */
@@ -721,7 +767,7 @@ function removeEntries(book: Book, s: AdvState, xs: Entry[], into?: string): Cha
 /** Offers pick-limited loot under a group: at most `max` of the items may be taken. */
 export function openPick(s: AdvState, group: string, max: number, items: PickItem[]) {
   (s.pickLeft ??= {})[group] = Math.max(0, max);
-  for (const it of items) s.offers.push("gain" in it ? { gain: it.gain, type: it.type, n: it.n ?? 1, desc: it.desc, group } : "gold" in it ? { gold: it.gold, group } : { lune: it.lune, group });
+  for (const it of items) s.offers.push("gain" in it ? { gain: it.gain, type: it.type, n: it.n ?? 1, desc: it.desc, group } : "gold" in it ? { gold: it.gold, group } : "lune" in it ? { lune: it.lune, group } : { kika: it.kika, group });
 }
 
 /** The group of a choice's pick-limited loot (`pickMax`). */
@@ -1008,6 +1054,17 @@ export function takeOffer(book: Book, s: AdvState, i: number, choice?: string): 
   const count = () => { if (o.group && !o.picked) { o.picked = true; s.pickLeft![o.group] = Math.max(0, (s.pickLeft?.[o.group] ?? 0) - 1); } };
   if ("gold" in o) { s.offers.splice(i, 1); count(); return changeGold(s, o.gold); }
   if ("lune" in o) { s.offers.splice(i, 1); count(); return changeLune(s, o.lune); }
+  if ("kika" in o) { s.offers.splice(i, 1); count(); return changeKika(s, o.kika); }
+  if ("bet" in o) {
+    // the stake the player chose (`choice`: a number), at least the minimum unless that is all they have
+    const have = o.bet === "kika" ? s.kika ?? 0 : s.gold;
+    const n = Math.floor(Number(choice));
+    if (!Number.isFinite(n) || n < Math.min(o.min, have) || n > have || n <= 0) return [];
+    s.offers.splice(i, 1);
+    addToStash(s, o.into, { weapons: [], backpack: [], special: [], meals: 0, gold: o.bet === "gold" ? n : 0, arrows: 0, ...(o.bet === "kika" ? { kika: n } : {}) });
+    if (o.bet === "kika") s.kika = have - n; else s.gold = have - n;
+    return [{ kind: "gold", label: `Đặt cược ${n} ${o.bet === "kika" ? "Kika" : "Vương Miện Vàng"}`, good: false, item: o.bet === "kika" ? "Kika" : "Gold" }];
+  }
   if ("loseChoice" in o) {
     if (!choice || !losePool(book, s, o.loseChoice, o.except).includes(choice)) return [];
     if (o.into) {
@@ -1031,7 +1088,7 @@ export function takeOffer(book: Book, s: AdvState, i: number, choice?: string): 
 }
 
 /** Offers that must be settled before moving on (giving something up is not optional). */
-export const pendingLoss = (s: AdvState) => s.offers.some((o) => "loseChoice" in o);
+export const pendingLoss = (s: AdvState) => s.offers.some((o) => "loseChoice" in o || "bet" in o);
 
 // ------------------------------------------------------------------ combat
 
@@ -1060,6 +1117,8 @@ export interface Battle {
   breathN?: number;
   /** combat.heroLossRoll: where the last number picked instead of a wound leads (`to`). */
   rollTo?: string;
+  /** combat.scarIfWorse: the first round went worse for the hero, later losses are permanent. */
+  scarred?: boolean;
   /** combat.psychic: ENDURANCE from armour set aside for this fight (given back when it ends). */
   armour?: number;
 }
@@ -1075,6 +1134,9 @@ export function startBattle(book: Book, s: AdvState, sec: Section, rng: Rng = Ma
   const c = sec.combat!;
   const avail = mindAllowed(c) ? mindChoices(book, s)[0] ?? -1 : -1;
   const b: Battle = { foes: fightFoes(s, c, book), idx: 0, round: 0, mind: avail, lost: 0, ep0: s.ep };
+  // "if you wish to use it": such a weapon stays sheathed until the player draws it
+  const opt = optInWeapons(book, s, c);
+  if (opt.length) s.unused = opt; else delete s.unused;
   if (c.heroEp !== undefined) b.pool = b.poolMax = Math.max(1, c.heroEp === "ep" ? s.ep : c.heroEp);
   // under water: the rounds the hero can hold his breath (0 = 10)
   // mind combat: the ENDURANCE armour gives does not count while it lasts (given back when it ends)
@@ -1096,6 +1158,7 @@ function fightOver(s: AdvState, b: Battle) {
   if (b.armour && s.ep > 0 && b.pool === undefined) { s.ep += b.armour; if (b.ep0 !== undefined) b.ep0 += b.armour; b.armour = 0; }
   s.csNext = 0;
   delete s.noPotions;
+  delete s.unused;
   s.lastFight = { lost: b.pool !== undefined ? 0 : Math.max(0, (b.ep0 ?? s.ep) - (b.over === "beaten" ? 0 : s.ep)), beaten: b.over === "beaten" && b.pool === undefined };
   for (const f of b.foes) if (f.def.keep) (s.foesLeft ??= {})[f.def.keep] = Math.max(0, f.ep);
 }
@@ -1186,8 +1249,20 @@ export function fightWeapons(book: Book, s: AdvState, c?: Combat, round?: number
   // a borrowed weapon (combat.weapon) is the only one used
   if (c?.weapon) return [c.weapon];
   const pool = c?.unarmedUnless === "weaponLike" ? s.special.filter((id) => weaponLike(book, s, id) && weaponKind(book, s, id) !== "Bow") : meleeWeapons(book, s);
-  return pool.filter((id) => !forbidden(book, s, c, id));
+  // "retrieve the Sommerswerd after the first three rounds": not in hand before
+  const early = c && round !== undefined && c.firstRound?.forbid && inFirstRounds(s, c, round) ? c.firstRound.forbid : [];
+  return pool.filter((id) => !forbidden(book, s, c, id) && !s.unused?.includes(id) && !early.some((f) => f === id || f === weaponKind(book, s, id)));
 }
+
+/** Items the player may choose whether to fight with (`optIn`), carried and usable in this fight. */
+export const optInWeapons = (book: Book, s: AdvState, c?: Combat) =>
+  (c?.weapon ? [] : [...s.weapons, ...s.special]).filter((id) => itemDef(book, s, id)?.optIn && !forbidden(book, s, c, id));
+
+/** The COMBAT SKILL an item gives against this foe (`csVs`: more against a Darklord). */
+export const itemCs = (book: Book, s: AdvState, id: string, foe?: FoeDef) => {
+  const d = itemDef(book, s, id);
+  return d?.csVs && foe?.tags?.includes(d.csVs.tag) ? d.csVs.cs : d?.cs ?? 0;
+};
 
 /** COMBAT SKILL a weapon gives in hand: Weaponskill / Weaponmastery with its kind, and its own bonus (Sommerswerd +8). */
 function weaponWorth(book: Book, s: AdvState, id: string): number {
@@ -1257,7 +1332,7 @@ export function heroCs(book: Book, s: AdvState, c: Combat, foe: FoeDef, mind = -
     // a weapon-like Special Item adds its COMBAT SKILL only as the weapon in hand (not beside a borrowed one)
     const hand = wielded(book, s, c, round);
     for (const id of s.special) {
-      const cs = itemDef(book, s, id)?.cs;
+      const cs = itemCs(book, s, id, foe);
       if (psy && !psy.keep?.includes(id)) continue;
       if (cs && itemOn(book, s, id) && !forbidden(book, s, c, id) && (!weaponLike(book, s, id) || id === hand)) parts.push({ label: itemName(book, id, s), v: cs });
     }
@@ -1321,7 +1396,11 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
   const held = (foe.def.holdRounds ?? 0) >= b.round;
   // under water: every round past the breath the hero could hold costs more
   const air = c.breath && b.breath !== undefined && b.round > b.breath ? c.breath.ep : 0;
-  const drain = (c.heroDrain && check(s, c.heroDrain.if) ? c.heroDrain.ep : 0) + (c.mindforce && !knows(s, profile(book).shield) ? c.mindforce : 0) + air;
+  // a blade that feeds on its wielder (Helshezag): basic ENDURANCE lost for good from its round on
+  const hand = c.heroCs === undefined && !c.psychic ? wielded(book, s, c, b.round - 1) : null;
+  const bite = hand && itemDef(book, s, hand)?.drain && b.round >= itemDef(book, s, hand)!.drain!.fromRound ? itemDef(book, s, hand)!.drain!.ep : 0;
+  if (bite) s.epBase = Math.max(1, s.epBase - bite);
+  const drain = bite + (c.heroDrain && check(s, c.heroDrain.if) ? c.heroDrain.ep : 0) + (c.mindforce && !knows(s, profile(book).shield) ? c.mindforce : 0) + air;
   const pts = b.pool !== undefined;
   let wound = held ? 0 : hl === KILL ? (pts ? b.pool! : s.ep) : scaledHeroLoss(s, c, hl);
   // "do not subtract them: pick a number instead" (the Javek's fangs on a padded arm)
@@ -1352,6 +1431,11 @@ export function playRound(book: Book, s: AdvState, b: Battle, evade = false, rng
   }
   s.ep = Math.max(0, s.ep - heroLoss);
   if (heroLoss > 0) s.hurt = true;
+  // "any ENDURANCE you lose afterwards in this combat is permanent" (the first round went worse for the hero)
+  if (c.scarIfWorse) {
+    if (b.scarred && heroLoss > 0) s.epBase = Math.max(1, s.epBase - heroLoss);
+    if (b.round === 1 && heroLoss > foeLoss) b.scarred = true;
+  }
   // "If you lose any ENDURANCE, turn immediately to …"
   if (c.onHurt && heroLoss > 0 && s.ep > 0) { b.over = "hurt"; fightOver(s, b); return { n, ratio, foe: foeIdx, foeLoss, heroLoss, mindCost, foeKilled: !evade && foe.ep <= 0, heroKilled: false, evaded: evade, lossRoll, air }; }
   b.lost += heroLoss;

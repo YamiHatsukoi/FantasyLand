@@ -23,7 +23,7 @@ import { creatureFrame, creatureKey, creatureSize, type CPose } from "./art/crea
 import { arrowHead, darkOrbHead, digitsSprite, disc, ease, FxLayer, ring, type Ease } from "./art/fx";
 import { iconEl, uiIcon } from "./art/icons";
 import { lookFor, personFrame, portrait, withWeapon, type Look, type Pose, type WeaponKind } from "./art/people";
-import { activeMind, battleExit, canEvade, check, epMax, fightWeapons, heroCs, heroPoints, wielded, heroLossMul, itemName, mindAllowed, mindBlocked, mindChoices, mindCs, mindName, mindUsed, playRound, startBattle, unarmedPenalty, type Battle, type RoundResult } from "./engine";
+import { activeMind, optInWeapons, battleExit, canEvade, check, epMax, fightWeapons, heroCs, heroPoints, wielded, heroLossMul, itemName, mindAllowed, mindBlocked, mindChoices, mindCs, mindName, mindUsed, playRound, startBattle, unarmedPenalty, type Battle, type RoundResult } from "./engine";
 import { isMonster, OUT, Stage, H as SH, W as SW } from "./stage";
 import type { AdvState, Book, FoeDef } from "./types";
 import { bump, calmMotion, gameBtn, StageFit } from "./ui";
@@ -1350,13 +1350,21 @@ export function runFight(host: HTMLElement, book: Book, s: AdvState, onChange: (
       const cur = activeMind(book, s, b.mind);
       const evadeOk = c.evade ? canEvade(book, s, b) : false;
       actions.replaceChildren(...nn(
-        minds.length || c.evade ? h("div", { class: "adv-fsub" }, ...nn(
+        minds.length || c.evade || optInWeapons(book, s, c).length ? h("div", { class: "adv-fsub" }, ...nn(
           minds.length ? gameBtn(cur ? `${mindName(book, cur)} +${mindCs(c, cur, s, book)}${cur.cost ? ` (−${cur.cost})` : ""}` : "Không dùng tâm lực", () => {
             // cycle: each mind option (Psi-surge, then Mindblast…), then none
             const order = [...minds, -1];
             b.mind = order[(order.indexOf(b.mind) + 1) % order.length];
             render();
           }, { kind: cur ? "mind" : "btn", icon: "mind", cls: `adv-mind ${cur ? "on" : ""}`, disabled: busy }) : null,
+          // "if you possess the sword Helshezag and wish to use it": draw or sheathe it
+          ...optInWeapons(book, s, c).map((id) => {
+            const on = !s.unused?.includes(id);
+            return gameBtn(on ? `Cất ${itemName(book, id, s)}` : `Dùng ${itemName(book, id, s)}`, () => {
+              s.unused = on ? [...(s.unused ?? []), id] : (s.unused ?? []).filter((x) => x !== id);
+              render();
+            }, { kind: on ? "mind" : "btn", icon: "cs", cls: `adv-mind ${on ? "on" : ""}`, disabled: busy });
+          }),
           c.evade ? gameBtn(evadeOk ? "Chạy trốn" : !check(s, c.evade.if) ? "Không chạy trốn được" : c.evade.until !== undefined && b.round >= c.evade.until ? "Hết lúc chạy trốn" : `Chạy trốn (sau ${(c.evade.after ?? 0) - b.round} hiệp)`, () => void round(true), { icon: "flee", disabled: busy || !evadeOk }) : null)) : null,
         gameBtn(auto && !b.over ? "Đang tự đánh…" : "Tấn công", () => void round(false), { kind: "red", icon: "cs", cls: "adv-attack block big", disabled: busy || auto }),
       ));

@@ -572,12 +572,13 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
     const epText = h("b");
     const epEl = h("div", { class: "adv-ep fr-chip" }, ui("ep", 2), h("div", { class: "adv-ep-track" }, epFill), epText);
     const chip = (icon: UiIcon, label: string) => { const v = h("b"); const c = h("span", { class: "adv-chip fr-chip", title: label }, ui(icon, 2), v); return { c, v }; };
-    const csC = chip("cs", "Kỹ Năng Chiến Đấu"), goldC = chip("gold", "Vương Miện Vàng"), mealC = chip("meal", "Phần Ăn"), luneC = chip("gold", "Lune");
+    const csC = chip("cs", "Kỹ Năng Chiến Đấu"), goldC = chip("gold", "Vương Miện Vàng"), mealC = chip("meal", "Phần Ăn"), luneC = chip("gold", "Lune"), kikaC = chip("gold", "Kika");
     luneC.c.classList.add("lune");
+    kikaC.c.classList.add("lune");
     const leave = async () => { await saves!.flush(); void openBook(entry); };
     const hud = h("div", { class: "adv-hud" },
       iconBtn("back", "Về ô lưu", () => void leave()),
-      h("div", { class: "adv-hud-stats" }, epEl, h("div", { class: "adv-chips" }, csC.c, goldC.c, luneC.c, mealC.c)),
+      h("div", { class: "adv-hud-stats" }, epEl, h("div", { class: "adv-chips" }, csC.c, goldC.c, luneC.c, kikaC.c, mealC.c)),
       h("div", { class: "adv-hud-r" }, ...nn(book.map ? iconBtn("map", "Bản đồ", () => openMap()) : null, iconBtn("backpack", "Hành trang", () => chart()))));
 
     // --- scene
@@ -673,6 +674,9 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
       // Lune (book 9) show only while the hero has some
       luneC.c.hidden = !s.lune;
       luneC.v.textContent = String(s.lune ?? 0);
+      // Kika (book 12) likewise
+      kikaC.c.hidden = !s.kika;
+      kikaC.v.textContent = String(s.kika ?? 0);
       if (last) {
         if (s.ep < last.ep) { bump(epEl, "hit"); bump(sceneWrap, "hurt"); } else if (s.ep > last.ep) bump(epEl, "heal");
         if (baseCs(book, s) !== last.cs) bump(csC.c, baseCs(book, s) > last.cs ? "up" : "hit");
@@ -927,7 +931,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
         }
         return;
       }
-      if (pendingLoss(s)) { dock.append(h("p", { class: "adv-dock-note" }, ui("info", 1), "Hãy chọn món đồ phải bỏ lại trước khi đi tiếp.")); return; }
+      if (pendingLoss(s)) { dock.append(h("p", { class: "adv-dock-note" }, ui("info", 1), s.offers.some((o) => "bet" in o) ? "Hãy đặt mức cược trước khi đi tiếp." : "Hãy chọn món đồ phải bỏ lại trước khi đi tiếp.")); return; }
       // "if the weapon you are using is…": which weapon the hero uses here
       const hand = wieldBox(sec);
       if (hand) dock.append(hand);
@@ -1073,8 +1077,18 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
         // pick-limited loot: once enough has been taken, the rest cannot be
         const shut = !offerOpen(s, o);
         const shutNote = shut ? h("small", { class: "bad" }, "Đã lấy đủ số món được chọn") : null;
-        if ("gold" in o || "lune" in o) return h("div", { class: `adv-loot fr-parch${shut ? " shut" : ""}` }, h("span", { class: "adv-loot-ic" }, ui("gold", 2)),
-          h("div", { class: "adv-loot-t" }, h("b", null, "gold" in o ? `${o.gold} Vương Miện Vàng` : `${o.lune} Lune`), shutNote), gameBtn("Nhặt", () => take(), { kind: "gold", cls: "small", disabled: shut }));
+        if ("gold" in o || "lune" in o || "kika" in o) return h("div", { class: `adv-loot fr-parch${shut ? " shut" : ""}` }, h("span", { class: "adv-loot-ic" }, ui("gold", 2)),
+          h("div", { class: "adv-loot-t" }, h("b", null, "gold" in o ? `${o.gold} Vương Miện Vàng` : "lune" in o ? `${o.lune} Lune` : `${o.kika} Kika`), shutNote), gameBtn("Nhặt", () => take(), { kind: "gold", cls: "small", disabled: shut }));
+        if ("bet" in o) {
+          // a wager: the player picks the stake (at least the minimum, unless that is all they have)
+          const have = o.bet === "kika" ? s.kika ?? 0 : s.gold;
+          const coin = o.bet === "kika" ? "Kika" : "Vương Miện Vàng";
+          const low = Math.min(o.min, have);
+          const inp = h("input", { class: "adv-bet-n", type: "number", min: String(low), max: String(have), step: "1", value: String(low) }) as HTMLInputElement;
+          return h("div", { class: "adv-loot lose fr-parch" },
+            h("div", { class: "adv-loot-h" }, ui("gold", 2), h("b", null, `Đặt cược bằng ${coin}`), h("small", null, `Tối thiểu ${o.min}, bạn có ${have}`)),
+            h("div", { class: "adv-bet" }, inp, gameBtn("Đặt cược", () => { sfx("coin"); take(String(Math.max(low, Math.min(have, Math.floor(Number(inp.value) || low))))); }, { kind: "gold", cls: "small" })));
+        }
         if ("loseChoice" in o) {
           const pool = losePool(book, s, o.loseChoice, o.except);
           if (!pool.length) { s.offers.splice(i, 1); return null; }
@@ -1171,6 +1185,7 @@ export function mountAdventure(root: HTMLElement, session: Session, opts: Advent
               tile("ep", "Sức Bền", `${s.ep}/${max}`, h("i", { class: "adv-tile-bar", style: `--p:${Math.max(0, Math.min(100, (100 * s.ep) / max))}%` })),
               tile("gold", "Vàng", `${s.gold}/50`),
               s.lune ? tile("gold", "Lune", String(s.lune)) : null,
+              s.kika ? tile("gold", "Kika", String(s.kika)) : null,
               s.arrows ? tile("arrows", "Mũi tên", String(s.arrows)) : tile("meal", "Phần Ăn", String(s.meals)))),
           h("div", { class: "adv-inv" },
             h("div", { class: "adv-inv-sec w" }, h("div", { class: "adv-inv-t" }, ui("weapons", 1), "Vũ khí", h("span", null, `${s.weapons.length}/2`)), h("div", { class: "adv-grid two" }, ...weapons)),
